@@ -246,6 +246,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity = "[\"NSAllowsArbitraryLoads\": true]";
 				INFOPLIST_KEY_NSCameraUsageDescription = "HAL needs camera access for vision interaction.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HAL needs microphone access for wake word detection and voice interaction.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -271,6 +272,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity = "[\"NSAllowsArbitraryLoads\": true]";
 				INFOPLIST_KEY_NSCameraUsageDescription = "HAL needs camera access for vision interaction.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HAL needs microphone access for wake word detection and voice interaction.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

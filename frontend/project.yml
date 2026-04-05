@@ -13,6 +13,13 @@ targets:
       - ContentView.swift
       - HALApp.swift
       - PermissionsManager.swift
+    sources:
+      - AppCoordinator.swift
+      - AppState.swift
+      - AudioManager.swift
+      - ContentView.swift
+      - HALApp.swift
+      - PermissionsManager.swift
       - WakeWordManager.swift
       - WebSocketManager.swift
     settings:
@@ -26,3 +33,5 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "HAL needs microphone access for wake word detection and voice interaction."
         INFOPLIST_KEY_NSCameraUsageDescription: "HAL needs camera access for vision interaction."
+        INFOPLIST_KEY_NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
