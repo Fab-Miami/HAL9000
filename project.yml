@@ -1,0 +1,28 @@
+name: HAL
+options:
+  bundleIdPrefix: com.example
+targets:
+  HAL:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - AppCoordinator.swift
+      - AppState.swift
+      - AudioManager.swift
+      - ContentView.swift
+      - HALApp.swift
+      - PermissionsManager.swift
+      - WakeWordManager.swift
+      - WebSocketManager.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.0
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "HAL needs microphone access for wake word detection and voice interaction."
+        INFOPLIST_KEY_NSCameraUsageDescription: "HAL needs camera access for vision interaction."
