@@ -35,7 +35,7 @@ Built on a completely decentralized "Sensory Node / Mainframe" architecture, the
 ⚙️ The Architecture
 The system is designed for aerospace-grade speed. By utilizing persistent WebSockets and raw PCM audio chunking, we bypass standard API bottlenecks to create a real-time conversational flow.
 
-Code snippet
+```mermaid
 graph TD
     classDef frontend fill:#1a1a1a,stroke:#ff3333,stroke-width:2px,color:#fff;
     classDef backend fill:#092E20,stroke:#4CAF50,stroke-width:2px,color:#fff;
@@ -60,6 +60,7 @@ graph TD
     class WW,MIC,SPK,UI,WS_OUT,WS_IN frontend;
     class WS_IN_SRV,BUF,KOKO,WS_OUT_SRV backend;
     class GEM ai;
+```
 🛠️ System Components
 1. The Client (iOS / Swift)
 The iPhone runs a lightweight SwiftUI application that does zero natural language processing.
