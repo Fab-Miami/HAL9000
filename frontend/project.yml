@@ -1,18 +1,11 @@
 name: HAL
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.hal9000
 targets:
   HAL:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
-    sources:
-      - AppCoordinator.swift
-      - AppState.swift
-      - AudioManager.swift
-      - ContentView.swift
-      - HALApp.swift
-      - PermissionsManager.swift
     sources:
       - AppCoordinator.swift
       - AppState.swift
@@ -33,5 +26,6 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "HAL needs microphone access for wake word detection and voice interaction."
         INFOPLIST_KEY_NSCameraUsageDescription: "HAL needs camera access for vision interaction."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "HAL needs speech recognition access to detect the wake word 'HAL'."
         INFOPLIST_KEY_NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true

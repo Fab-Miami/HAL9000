@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Speech
 
 class PermissionsManager {
     static let shared = PermissionsManager()
@@ -23,4 +24,18 @@ class PermissionsManager {
             completion(false)
         }
     }
+    
+    func requestSpeechRecognitionPermission(completion: @escaping (Bool) -> Void) {
+        SFSpeechRecognizer.requestAuthorization { status in
+            DispatchQueue.main.async {
+                switch status {
+                case .authorized:
+                    completion(true)
+                default:
+                    completion(false)
+                }
+            }
+        }
+    }
 }
+

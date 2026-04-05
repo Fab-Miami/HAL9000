@@ -22,22 +22,30 @@ class AppCoordinator: ObservableObject {
     
     func start() {
         appState.log("App launched. Requesting permissions...")
-        PermissionsManager.shared.requestMicrophonePermission { [weak self] granted in
+        PermissionsManager.shared.requestMicrophonePermission { [weak self] micGranted in
             guard let self = self else { return }
-            if granted {
+            if micGranted {
                 self.appState.log("Microphone permission granted.")
-                
-                // Set up the bridge flow when WakeWordManager hears "computer"
-                self.wakeWordManager.onWakeWordDetected = { [weak self] in
-                    self?.handleWakeWord()
+                PermissionsManager.shared.requestSpeechRecognitionPermission { speechGranted in
+                    if speechGranted {
+                        self.appState.log("Speech recognition permission granted.")
+                        
+                        // Set up the bridge flow when WakeWordManager hears "HAL"
+                        self.wakeWordManager.onWakeWordDetected = { [weak self] in
+                            self?.handleWakeWord()
+                        }
+                        
+                        self.wakeWordManager.start()
+                    } else {
+                        self.appState.log("Speech recognition permission denied.")
+                    }
                 }
-                
-                self.wakeWordManager.start()
             } else {
                 self.appState.log("Microphone permission denied.")
             }
         }
     }
+
     
     private func handleWakeWord() {
         // Step 1: Trigger WebSocket to connect (if not already connected)

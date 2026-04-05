@@ -1,12 +1,15 @@
 import Foundation
-import Porcupine // Instructed: Add Porcupine Swift Package via SPM
+import Speech
+import AVFoundation
 
 class WakeWordManager {
-    private var porcupineManager: PorcupineManager?
-    private let accessKey = "YOUR_PICOVOICE_ACCESS_KEY"
-    private let keyword: Porcupine.BuiltInKeyword = .computer
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
     
     private unowned let appState: AppState
+    private let triggerWord = "HAL"
     
     var onWakeWordDetected: (() -> Void)?
     
@@ -15,37 +18,94 @@ class WakeWordManager {
     }
     
     func start() {
+        appState.log("Starting native wake word detection for '\(triggerWord)'...")
+        
+        // Ensure recognizer is available and supports on-device
+        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            appState.log("Speech recognizer not available.")
+            return
+        }
+        
         do {
-            porcupineManager = try PorcupineManager(
-                accessKey: accessKey,
-                keyword: keyword,
-                onDetection: { [weak self] keywordIndex in
-                    self?.handleWakeWordDetection()
-                }
-            )
-            
-            try porcupineManager?.start()
-            appState.log("Porcupine initialized and listening for wake word '\(keyword.rawValue)'.")
+            try startRecording()
+            appState.log("Native recognizer listening (on-device)...")
         } catch {
-            appState.log("Porcupine initialization failed: \(error.localizedDescription)")
+            appState.log("Failed to start recording: \(error.localizedDescription)")
+        }
+    }
+    
+    private func startRecording() throws {
+        // Cancel any existing task
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playAndRecord, mode: .measurement, options: .duckOthers)
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest = recognitionRequest else { return }
+        
+        recognitionRequest.shouldReportPartialResults = true
+        
+        // Force on-device recognition as requested
+        if speechRecognizer?.supportsOnDeviceRecognition == true {
+            recognitionRequest.requiresOnDeviceRecognition = true
+        }
+        
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { (buffer, _) in
+            recognitionRequest.append(buffer)
+        }
+        
+        audioEngine.prepare()
+        try audioEngine.start()
+        
+        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let result = result {
+                let transcription = result.bestTranscription.formattedString.uppercased()
+                // appState.log("Heard: \(transcription)") // Debug
+                
+                if transcription.contains(self.triggerWord.uppercased()) {
+                    self.handleWakeWordDetection()
+                }
+            }
+            
+            if error != nil || result?.isFinal == true {
+                self.audioEngine.stop()
+                inputNode.removeTap(onBus: 0)
+                self.recognitionRequest = nil
+                self.recognitionTask = nil
+                
+                // If it stopped due to timeout but we are still in idle, restart
+                if self.appState.status == .idle {
+                    try? self.startRecording()
+                }
+            }
         }
     }
     
     func stop() {
-        do {
-            try porcupineManager?.stop()
-            appState.log("Porcupine stopped.")
-        } catch {
-            appState.log("Failed to stop Porcupine: \(error.localizedDescription)")
-        }
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        appState.log("Native recognizer stopped.")
     }
     
     private func handleWakeWordDetection() {
-        appState.log("Wake word detected!")
+        // Stop listening to prevent self-triggering during conversation
+        stop()
+        
+        appState.log("Wake word '\(triggerWord)' detected!")
         DispatchQueue.main.async {
             self.appState.status = .listening
+            self.onWakeWordDetected?()
         }
-        
-        onWakeWordDetected?()
     }
 }
+
