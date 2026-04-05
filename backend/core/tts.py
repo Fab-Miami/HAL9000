@@ -1,7 +1,44 @@
+import os
+import numpy as np
+from kokoro_onnx import Kokoro
+
+# Locate the models we downloaded into the core directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(current_dir, "kokoro-v1.0.onnx")
+voices_path = os.path.join(current_dir, "voices-v1.0.bin")
+
+try:
+    print("[Kokoro] Loading TTS Engine... this might take a moment.")
+    kokoro = Kokoro(model_path, voices_path)
+    print("[Kokoro] TTS Engine loaded successfully.")
+except Exception as e:
+    print(f"[Kokoro] Failed to initialize: {e}")
+    kokoro = None
+
 def text_to_speech(text: str) -> bytes:
     """
-    Stub for future voice engine.
-    Prints the given text and returns a dummy payload (1024 bytes of 0s).
+    Synthesizes speech using Kokoro-ONNX and returns raw 16-bit PCM bytes.
     """
-    print(f"TTS Engine received: {text}")
-    return b'\x00' * 1024
+    print(f"TTS Engine generating audio for: {text}")
+    if kokoro is None:
+        print("[Kokoro] Engine is not available. Yielding silence.")
+        return b'\x00' * 1024
+        
+    try:
+        # am_michael is a default deep male voice. 
+        # Decreased speed to 0.85 to mimic HAL's slow, deliberate cadence.
+        samples, sample_rate = kokoro.create(
+            text, 
+            voice="am_michael", 
+            speed=0.85, 
+            lang="en-us"
+        )
+        
+        # Kokoro returns float32 array in range [-1.0, 1.0]. Convert to 16-bit PCM.
+        audio_int16 = (samples * 32767).astype(np.int16)
+        return audio_int16.tobytes()
+        
+    except Exception as e:
+        print(f"[Kokoro] Error generating speech: {e}")
+        return b'\x00' * 1024
+

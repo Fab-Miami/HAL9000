@@ -44,8 +44,26 @@ class AudioManager {
         
         // Install tap
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] (buffer, time) in
-            self?.processAudioBuffer(buffer)
+            guard let self = self else { return }
+            
+            // Calculate real-time intensity (RMS) for UI pulsing
+            if let channelData = buffer.floatChannelData?[0] {
+                let frameLength = Int(buffer.frameLength)
+                var sum: Float = 0
+                for i in 0..<frameLength {
+                    sum += channelData[i] * channelData[i]
+                }
+                let rms = sqrt(sum / Float(frameLength))
+                let normalizedIntensity = Double(min(max(rms * 5.0, 0.0), 1.0))
+                
+                DispatchQueue.main.async {
+                    self.appState.intensity = normalizedIntensity
+                }
+            }
+            
+            self.processAudioBuffer(buffer)
         }
+
         
         audioEngine.prepare()
         

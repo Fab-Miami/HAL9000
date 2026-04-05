@@ -5,24 +5,42 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top half: Status Circle
+            // Top half: HAL 9000 Eye (Layered Animation)
             ZStack {
                 Color.black.edgesIgnoringSafeArea(.all)
                 
+                // Static Background Image (The Hardware)
+                AsyncImage(url: URL(string: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/HAL9000.svg/1280px-HAL9000.svg.png")) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 300, height: 300)
+                } placeholder: {
+                    Circle()
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(width: 300, height: 300)
+                }
+                
+                // Pulsing Inner Glow (The Intelligence)
+                // This layer reacts to audio intensity without moving the frame.
                 Circle()
-                    .fill(Color.red)
-                    .frame(width: appState.status == .idle ? 50 : 150,
-                           height: appState.status == .idle ? 50 : 150)
-                    .opacity(appState.status == .idle ? 0.3 : 1.0)
-                    .shadow(color: .red, radius: appState.status == .idle ? 0 : 20)
-                    .animation(
-                        appState.status == .listening 
-                            ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true) 
-                            : .default,
-                        value: appState.status
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [.red, Color.red.opacity(0.3), .clear]),
+                            center: .center,
+                            startRadius: 5,
+                            endRadius: 60
+                        )
                     )
+                    .frame(width: 140, height: 140)
+                    .scaleEffect(0.8 + (appState.intensity * 0.5))
+                    .opacity(0.3 + (appState.intensity * 0.7))
+                    .blur(radius: 2)
+                    .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.8), value: appState.intensity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+
             
             // Bottom half: Debug Logs
             ScrollView {
