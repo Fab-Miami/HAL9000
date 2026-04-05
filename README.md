@@ -101,5 +101,5 @@ To achieve the haunting, mid-Atlantic calmness of Douglas Rain's performance, th
 <br>
 
 <div align="center">
-  <i>"I'm sorry, Dave. I'm afraid I can't do that."</i>
+  <i>$\color{#ff3333}{\text{"I'm sorry, Dave. I'm afraid I can't do that."}}$</i>
 </div>
