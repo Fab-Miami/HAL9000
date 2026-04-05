@@ -5,19 +5,7 @@
 
 <br>
 
-```text
-        ████████████████████        
-      ████████████████████████      
-    ██████████▒▒▒▒▒▒▒▒██████████    
-    ██████▒▒▒▒▒▒░░░░▒▒▒▒▒▒██████    
-   █████▒▒▒▒░░░░░░░░░░░░▒▒▒▒█████  
-  ██████▒▒▒▒░░░░░🔴░░░░░▒▒▒▒██████  
-   █████▒▒▒▒░░░░░░░░░░░░▒▒▒▒█████  
-    ██████▒▒▒▒▒▒░░░░▒▒▒▒▒▒██████    
-    ██████████▒▒▒▒▒▒▒▒██████████    
-      ████████████████████████      
-████████████████████
-```
+<img src="https://upload.wikimedia.org/wikipedia/commons/f/f6/HAL9000.svg" width="250" alt="HAL 9000 Eye" />
 
 "I am putting myself to the fullest possible use, which is all I think that any conscious entity can ever hope to do."
 
