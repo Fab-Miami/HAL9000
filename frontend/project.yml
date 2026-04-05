@@ -11,6 +11,7 @@ targets:
       - AppState.swift
       - AudioManager.swift
       - ContentView.swift
+      - Color+Hex.swift
       - HALApp.swift
       - PermissionsManager.swift
       - WakeWordManager.swift
@@ -18,7 +19,7 @@ targets:
       - Assets.xcassets
     settings:
       base:
-        DEVELOPMENT_TEAM: BSGY6N2M8X
+        DEVELOPMENT_TEAM: J5PL75K859
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
         CURRENT_PROJECT_VERSION: 1
@@ -30,5 +31,4 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "HAL needs microphone access for wake word detection and voice interaction."
         INFOPLIST_KEY_NSCameraUsageDescription: "HAL needs camera access for vision interaction."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "HAL needs speech recognition access to detect the wake word 'HAL'."
-        INFOPLIST_KEY_NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+        INFOPLIST_FILE: Info.plist

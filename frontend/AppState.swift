@@ -10,7 +10,6 @@ enum AppStateStatus {
 class AppState: ObservableObject {
     @Published var status: AppStateStatus = .idle
     @Published var intensity: Double = 0.0
-    @Published var debugLogs: [String] = []
     
     func log(_ message: String) {
         let formatter = DateFormatter()
@@ -19,7 +18,6 @@ class AppState: ObservableObject {
         let logMessage = "[\(timestamp)] \(message)"
         
         DispatchQueue.main.async {
-            self.debugLogs.append(logMessage)
             print(logMessage)
         }
     }

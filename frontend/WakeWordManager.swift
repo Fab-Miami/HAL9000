@@ -9,7 +9,7 @@ class WakeWordManager {
     private let audioEngine = AVAudioEngine()
     
     private unowned let appState: AppState
-    private let triggerWord = "HAL"
+    private let triggerWords = ["HAL", "HOWL", "HAUL", "HELL", "HELLO", "HALL", "PAL", "HELP", "HOW", "AL"]
     
     var onWakeWordDetected: (() -> Void)?
     
@@ -18,7 +18,7 @@ class WakeWordManager {
     }
     
     func start() {
-        appState.log("Starting native wake word detection for '\(triggerWord)'...")
+        appState.log("Starting native wake word detection for '\(triggerWords[0])' (and variants)...")
         
         // Ensure recognizer is available and supports on-device
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
@@ -70,9 +70,10 @@ class WakeWordManager {
             
             if let result = result {
                 let transcription = result.bestTranscription.formattedString.uppercased()
-                // appState.log("Heard: \(transcription)") // Debug
+                self.appState.log("Heard: \(transcription)") // Debug
                 
-                if transcription.contains(self.triggerWord.uppercased()) {
+                let matches = self.triggerWords.contains { transcription.contains($0) }
+                if matches {
                     self.handleWakeWordDetection()
                 }
             }
@@ -103,7 +104,7 @@ class WakeWordManager {
         // Stop listening to prevent self-triggering during conversation
         stop()
         
-        appState.log("Wake word '\(triggerWord)' detected!")
+        appState.log("Wake word detected!")
         DispatchQueue.main.async {
             self.appState.status = .listening
             self.onWakeWordDetected?()
