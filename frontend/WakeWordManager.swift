@@ -59,6 +59,8 @@ class WakeWordManager {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { (buffer, _) in
             recognitionRequest.append(buffer)
         }
+
+
         
         audioEngine.prepare()
         try audioEngine.start()

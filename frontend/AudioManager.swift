@@ -56,7 +56,7 @@ class AudioManager {
                 let rms = sqrt(sum / Float(frameLength))
                 let normalizedIntensity = Double(min(max(rms * 5.0, 0.0), 1.0))
                 
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.appState.intensity = normalizedIntensity
                 }
             }
