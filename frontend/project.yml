@@ -15,6 +15,7 @@ targets:
       - PermissionsManager.swift
       - WakeWordManager.swift
       - WebSocketManager.swift
+      - Assets.xcassets
     settings:
       base:
         DEVELOPMENT_TEAM: BSGY6N2M8X

@@ -12,6 +12,7 @@
 		2CBB3C84591604591B20F7FC /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF92BBC0610A056897F7F3B /* AppCoordinator.swift */; };
 		688108F5D797340898151336 /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02B427481DF01F744D36252 /* AudioManager.swift */; };
 		7ED43A3C727A537360794509 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136EB881F2A4168004CA14EC /* WebSocketManager.swift */; };
+		89EC135B0D57B2B9C6EEF3A2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BF0F53D7BCBC05F5CD16FC43 /* Assets.xcassets */; };
 		B4C3AEE70A35177E1FF4EE2E /* WakeWordManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E572A2DD25E6C327A1824861 /* WakeWordManager.swift */; };
 		BA5B59368B96738D65955891 /* HALApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D4D5872F4C966F92D211B8E /* HALApp.swift */; };
 		D6209BB6921ED6819901F953 /* PermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26032FD94EC03CB1DE384530 /* PermissionsManager.swift */; };
@@ -24,6 +25,7 @@
 		3333F478F177A5F2CDD7251D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9BF92BBC0610A056897F7F3B /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		B02B427481DF01F744D36252 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		BF0F53D7BCBC05F5CD16FC43 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C1F9A0C4D200411E37AB2835 /* HAL.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HAL.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E572A2DD25E6C327A1824861 /* WakeWordManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordManager.swift; sourceTree = "<group>"; };
 		F0C4AEEEF52BDD516527EBC1 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -43,6 +45,7 @@
 			children = (
 				9BF92BBC0610A056897F7F3B /* AppCoordinator.swift */,
 				F0C4AEEEF52BDD516527EBC1 /* AppState.swift */,
+				BF0F53D7BCBC05F5CD16FC43 /* Assets.xcassets */,
 				B02B427481DF01F744D36252 /* AudioManager.swift */,
 				3333F478F177A5F2CDD7251D /* ContentView.swift */,
 				1D4D5872F4C966F92D211B8E /* HALApp.swift */,
@@ -61,6 +64,7 @@
 			buildConfigurationList = 5F68DDF0E21DE90A25F1C820 /* Build configuration list for PBXNativeTarget "HAL" */;
 			buildPhases = (
 				89AD013B752B0FE084EA6E30 /* Sources */,
+				5C732BAC924112A3D404F4E5 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -106,6 +110,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5C732BAC924112A3D404F4E5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89EC135B0D57B2B9C6EEF3A2 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		89AD013B752B0FE084EA6E30 /* Sources */ = {
