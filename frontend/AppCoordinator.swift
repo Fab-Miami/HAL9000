@@ -41,7 +41,14 @@ class AppCoordinator: ObservableObject {
                         
                         // Set up audio playback
                         self.webSocketManager.onAudioReceived = { [weak self] data in
+                            // Stop recording now that the server is replying
+                            self?.audioManager.stopTapping()
+                            self?.appState.status = .processing
                             self?.audioPlayerManager.play(pcmData: data)
+                        }
+                        
+                        self.audioPlayerManager.onPlaybackFinished = { [weak self] in
+                            self?.stopInteraction()
                         }
                         
                         self.wakeWordManager.start()
@@ -64,11 +71,10 @@ class AppCoordinator: ObservableObject {
         audioManager.startTapping()
         
         // NOTE: We no longer use a simulated timeout. 
-        // The interaction continues as long as HAL is responding.
+        // We stop tapping the microphone when `onAudioReceived` fires.
     }
     
     private func stopInteraction() {
-        audioManager.stopTapping()
         appState.status = .idle
         // Restart wake word detection
         wakeWordManager.start()

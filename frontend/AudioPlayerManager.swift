@@ -31,13 +31,17 @@ class AudioPlayerManager {
         }
     }
     
+    var onPlaybackFinished: (() -> Void)?
+    
+    // ... (rest of the file remains the same except play func) ...
+    
     func play(pcmData: Data) {
         let format = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                    sampleRate: sampleRate,
                                    channels: 1,
                                    interleaved: false)!
         
-        let frameCount = UInt32(pcmData.count) / 2 // 16-bit = 2 bytes per frame
+        let frameCount = UInt32(pcmData.count) / 2
         
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
             return
@@ -45,7 +49,6 @@ class AudioPlayerManager {
         
         buffer.frameLength = frameCount
         
-        // Copy data into the buffer
         pcmData.withUnsafeBytes { (rawBufferPointer: UnsafeRawBufferPointer) in
             if let address = rawBufferPointer.baseAddress {
                 let int16Pointer = address.assumingMemoryBound(to: Int16.self)
@@ -61,8 +64,10 @@ class AudioPlayerManager {
         
         playerNode.play()
         playerNode.scheduleBuffer(buffer) { [weak self] in
-            // Handle completion if needed
-            print("Audio playback finished.")
+            DispatchQueue.main.async {
+                print("Audio playback finished.")
+                self?.onPlaybackFinished?()
+            }
         }
     }
     
