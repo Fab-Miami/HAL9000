@@ -1,11 +1,17 @@
 import Foundation
 
-class WebSocketManager {
+class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
     private let appState: AppState
+    private var session: URLSession?
     
     init(appState: AppState) {
         self.appState = appState
+        super.init()
+        
+        // Use a custom session to handle SSL certificate bypass
+        let configuration = URLSessionConfiguration.default
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
     }
     
     func connect() {
@@ -14,13 +20,14 @@ class WebSocketManager {
             return
         }
         
-        // Connect to remote server
-        guard let url = URL(string: "ws://159.223.167.180/ws/hal/") else {
+        // Connect to remote server on dedicated port 8001
+        guard let url = URL(string: "ws://159.223.167.180:8001/ws/hal/") else {
             appState.log("Invalid WebSocket URL.")
             return
         }
         
-        webSocketTask = URLSession.shared.webSocketTask(with: url)
+        guard let session = session else { return }
+        webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
         appState.log("WebSocket connecting to \(url.absoluteString)...")
         
@@ -67,6 +74,19 @@ class WebSocketManager {
                 print("WebSocket receive error: \(error.localizedDescription)")
                 self.webSocketTask = nil
             }
+        }
+    }
+    
+    // MARK: - URLSessionDelegate
+    
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        
+        // For development: Skip SSL validation for the specific IP
+        if challenge.protectionSpace.host == "159.223.167.180" {
+            appState.log("Bypassing SSL validation for 159.223.167.180...")
+            completionHandler(.useCredential, URLCredential(trust: challenge.protectionSpace.serverTrust!))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
         }
     }
 }
