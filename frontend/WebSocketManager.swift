@@ -5,6 +5,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     private let appState: AppState
     private var session: URLSession?
     
+    var onAudioReceived: ((Data) -> Void)?
+    
     init(appState: AppState) {
         self.appState = appState
         super.init()
@@ -61,6 +63,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
                 switch message {
                 case .data(let data):
                     print("Received data: \(data.count) bytes")
+                    self.onAudioReceived?(data)
                 case .string(let text):
                     print("Received string: \(text)")
                 @unknown default:

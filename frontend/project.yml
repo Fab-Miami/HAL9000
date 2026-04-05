@@ -8,6 +8,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - AppCoordinator.swift
+      - AudioPlayerManager.swift
       - AppState.swift
       - AudioManager.swift
       - ContentView.swift

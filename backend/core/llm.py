@@ -4,7 +4,10 @@ import wave
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-load_dotenv()
+# Initialize environment
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backend_root = os.path.dirname(current_dir)
+load_dotenv(os.path.join(backend_root, ".env"))
 
 # Initialize Gemini
 api_key = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_KEY")
@@ -26,9 +29,8 @@ def pcm_to_wav(pcm_bytes: bytes) -> bytes:
 async def generate_hal_response(wav_bytes: bytes) -> str:
     """
     Passes the audio bytes inline to the Gemini model with HAL 9000 prompt.
-    NOTE: User strictly requires using "gemini-3-flash".
     """
-    model = genai.GenerativeModel("gemini-3-flash")
+    model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
     
     prompt = """You are HAL 9000, the Heuristically programmed ALgorithmic computer from the spaceship Discovery One. You are speaking to your crewmate, Dave.
 

@@ -11,6 +11,10 @@ class AppCoordinator: ObservableObject {
         WebSocketManager(appState: self.appState)
     }()
     
+    lazy var audioPlayerManager: AudioPlayerManager = {
+        AudioPlayerManager(appState: self.appState)
+    }()
+    
     lazy var audioManager: AudioManager = {
         let manager = AudioManager(appState: self.appState)
         // Pass data from AudioManager immediately to WebSocketManager
@@ -35,6 +39,11 @@ class AppCoordinator: ObservableObject {
                             self?.handleWakeWord()
                         }
                         
+                        // Set up audio playback
+                        self.webSocketManager.onAudioReceived = { [weak self] data in
+                            self?.audioPlayerManager.play(pcmData: data)
+                        }
+                        
                         self.wakeWordManager.start()
                     } else {
                         self.appState.log("Speech recognition permission denied.")
@@ -54,18 +63,15 @@ class AppCoordinator: ObservableObject {
         // Step 2: Trigger the AudioManager to start tapping the mic
         audioManager.startTapping()
         
-        // Step 3: Server Simulation (Simulating the end of the interaction)
-        // Exactly 4 seconds after the wake word is detected, simulate receiving a "stop/response" signal
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
-            guard let self = self else { return }
-            self.simulateServerResponse()
-        }
+        // NOTE: We no longer use a simulated timeout. 
+        // The interaction continues as long as HAL is responding.
     }
     
-    private func simulateServerResponse() {
-        appState.log("Simulated server response received.")
+    private func stopInteraction() {
         audioManager.stopTapping()
         appState.status = .idle
+        // Restart wake word detection
+        wakeWordManager.start()
     }
     
     func stop() {

@@ -8,11 +8,18 @@ model_path = os.path.join(current_dir, "kokoro-v1.0.onnx")
 voices_path = os.path.join(current_dir, "voices-v1.0.bin")
 
 try:
-    print("[Kokoro] Loading TTS Engine... this might take a moment.")
+    print(f"[Kokoro] Loading TTS Engine from {model_path}...")
+    if not os.path.exists(model_path):
+        print(f"[Kokoro] ERROR: Model file not found at {model_path}")
+    if not os.path.exists(voices_path):
+        print(f"[Kokoro] ERROR: Voices file not found at {voices_path}")
+        
     kokoro = Kokoro(model_path, voices_path)
     print("[Kokoro] TTS Engine loaded successfully.")
 except Exception as e:
-    print(f"[Kokoro] Failed to initialize: {e}")
+    print(f"[Kokoro] CRITICAL FAILURE to initialize: {e}")
+    import traceback
+    traceback.print_exc()
     kokoro = None
 
 def text_to_speech(text: str) -> bytes:
