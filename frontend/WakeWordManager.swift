@@ -9,7 +9,7 @@ class WakeWordManager {
     private let audioEngine = AVAudioEngine()
     
     private unowned let appState: AppState
-    private let triggerWords = ["HAL", "HOWL", "HAUL", "HELL", "HELLO", "HALL", "PAL", "HELP", "HOW", "AL"]
+    private let triggerWords = ["HELLO", "HI HAL","HI", "HAL", "HOWL", "HAUL", "HELL", "HELLO", "HALL", "PAL", "HELP", "HOW", "AL"]
     
     var onWakeWordDetected: (() -> Void)?
     
