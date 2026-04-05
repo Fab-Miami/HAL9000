@@ -14,8 +14,8 @@ class WebSocketManager {
             return
         }
         
-        // Dummy local URL as requested for Phase 2
-        guard let url = URL(string: "ws://localhost:8000/ws/hal/") else {
+        // Connect to remote server
+        guard let url = URL(string: "ws://159.223.167.180/ws/hal/") else {
             appState.log("Invalid WebSocket URL.")
             return
         }
