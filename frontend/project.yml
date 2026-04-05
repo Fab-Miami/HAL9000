@@ -17,6 +17,8 @@ targets:
       - WebSocketManager.swift
     settings:
       base:
+        DEVELOPMENT_TEAM: BSGY6N2M8X
+        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 1.0
