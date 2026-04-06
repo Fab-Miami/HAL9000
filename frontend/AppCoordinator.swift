@@ -62,10 +62,15 @@ class AppCoordinator: ObservableObject {
         }
     }
 
+    private var conversationTimer: Timer?
     
     private func handleWakeWord() {
         // Step 1: Trigger WebSocket to connect (if not already connected)
         webSocketManager.connect()
+        
+        // Stop any trailing conversation timer since we're actively handling a response
+        conversationTimer?.invalidate()
+        conversationTimer = nil
         
         // Step 2: Trigger the AudioManager to start tapping the mic
         audioManager.startTapping()
@@ -75,8 +80,21 @@ class AppCoordinator: ObservableObject {
     }
     
     private func stopInteraction() {
+        webSocketManager.disconnect()
         appState.status = .idle
-        // Restart wake word detection
+        
+        // Start intelligent 120s VAD listening mode
+        appState.isConversationActive = true
+        appState.log("Entering 120-second continuous conversation mode.")
+        
+        conversationTimer?.invalidate()
+        conversationTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.appState.isConversationActive = false
+            self.appState.log("Conversation mode timed out. Returning to wake word only mode.")
+        }
+        
+        // Restart wake word detection (which now acts as VAD)
         wakeWordManager.start()
     }
     

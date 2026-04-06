@@ -35,13 +35,16 @@ class WakeWordManager {
     }
     
     private func startRecording() throws {
-        // Cancel any existing task
         recognitionTask?.cancel()
         recognitionTask = nil
         
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .measurement, options: .duckOthers)
+        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        
+        // Cancel any existing audio engine tap safely AFTER the session is active
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
         
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else { return }
@@ -73,7 +76,12 @@ class WakeWordManager {
                 self.appState.log("Heard: \(transcription)") // Debug
                 
                 let matches = self.triggerWords.contains { transcription.contains($0) }
-                if matches {
+                
+                // If conversation is active, ANY spoken text triggers the upload
+                if self.appState.isConversationActive && !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.appState.log("Conversation is active. Triggering on any speech.")
+                    self.handleWakeWordDetection()
+                } else if matches {
                     self.handleWakeWordDetection()
                 }
             }
