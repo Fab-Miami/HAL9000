@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from channels.generic.websocket import AsyncWebsocketConsumer
 from . import llm
 from . import tts
@@ -6,11 +7,15 @@ from . import tts
 # How long to accumulate audio before processing (seconds).
 CAPTURE_WINDOW = 2.0
 
+def log(msg):
+    """Print with immediate flush so systemd/journalctl shows output in real time."""
+    print(msg, flush=True)
+
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        print("🔌 [HalConsumer] New connection request from iOS client on /ws/hal/ ...")
+        log("🔌 [HalConsumer] New connection request from iOS client on /ws/hal/ ...")
         await self.accept()
-        print("✅ [HalConsumer] Connection accepted. WebSocket is now open.")
+        log("✅ [HalConsumer] Connection accepted. WebSocket is now open.")
         
         # State variables
         self.audio_buffer = bytearray()
@@ -18,7 +23,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.processing_task = None
 
     async def disconnect(self, close_code):
-        print(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
+        log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
         if self.processing_task and not self.processing_task.done():
             self.processing_task.cancel()
 
@@ -29,7 +34,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Start the capture timer on first chunk only
             if not self.is_recording:
                 self.is_recording = True
-                print(f"⏺️ [HalConsumer] First audio chunk received. Starting {CAPTURE_WINDOW}s capture window...")
+                log(f"⏺️ [HalConsumer] First audio chunk received. Starting {CAPTURE_WINDOW}s capture window...")
                 self.processing_task = asyncio.create_task(self._process_pipeline())
 
     async def _process_pipeline(self):
@@ -40,7 +45,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             
             buffer_size = len(self.audio_buffer)
             duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
-            print(f"🤫 [HalConsumer] Capture window ended. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
+            log(f"🤫 [HalConsumer] Capture window ended. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
             
             start_time = time.time()
             pcm_bytes = bytes(self.audio_buffer)
@@ -48,10 +53,10 @@ class HalConsumer(AsyncWebsocketConsumer):
             if not pcm_bytes:
                 return
                 
-            print("📦 [HalConsumer] Packaging to WAV...")
+            log("📦 [HalConsumer] Packaging to WAV...")
             wav_bytes = llm.pcm_to_wav(pcm_bytes)
             
-            print("🧠 [HalConsumer] Sending audio to Gemini (streaming)...")
+            log("🧠 [HalConsumer] Sending audio to Gemini (streaming)...")
             gemini_start = time.time()
             text_buffer = ""
             first_token = True
@@ -59,7 +64,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             
             async for chunk in llm.generate_hal_response(wav_bytes):
                 if first_token:
-                    print(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
+                    log(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
                     first_token = False
                 text_buffer += chunk
                 
@@ -78,43 +83,44 @@ class HalConsumer(AsyncWebsocketConsumer):
                         if sentence:
                             sentence_count += 1
                             tts_start = time.time()
-                            print(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
+                            log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
                             tts_audio = await asyncio.to_thread(tts.text_to_speech, sentence)
                             tts_elapsed = time.time() - tts_start
                             if tts_audio:
-                                print(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
+                                log(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
                                 await self.send(bytes_data=tts_audio)
                     else:
                         break
             
             gemini_elapsed = time.time() - gemini_start
-            print(f"⚡ [HalConsumer] Gemini streaming complete in {gemini_elapsed:.2f}s")
+            log(f"⚡ [HalConsumer] Gemini streaming complete in {gemini_elapsed:.2f}s")
             
             # Process any remaining text in the buffer
             final_sentence = text_buffer.strip()
             if final_sentence:
                 sentence_count += 1
                 tts_start = time.time()
-                print(f"🗣️ [HalConsumer] Synthesizing final sentence #{sentence_count}: {final_sentence}")
+                log(f"🗣️ [HalConsumer] Synthesizing final sentence #{sentence_count}: {final_sentence}")
                 tts_audio = await asyncio.to_thread(tts.text_to_speech, final_sentence)
                 tts_elapsed = time.time() - tts_start
                 if tts_audio:
-                    print(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
+                    log(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
                     await self.send(bytes_data=tts_audio)
             
-            print("🏁 [HalConsumer] Sending DONE signal to iOS...")
+            log("🏁 [HalConsumer] Sending DONE signal to iOS...")
             await self.send(text_data="DONE")
             
             end_time = time.time()
-            print(f"⏱️ [HalConsumer] Pipeline complete in {end_time - start_time:.2f}s ({sentence_count} sentences).")
+            log(f"⏱️ [HalConsumer] Pipeline complete in {end_time - start_time:.2f}s ({sentence_count} sentences).")
             
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"❌ [HalConsumer] Error in processing pipeline: {e}")
+            log(f"❌ [HalConsumer] Error in processing pipeline: {e}")
             import traceback
             traceback.print_exc()
         finally:
-            print("♻️ [HalConsumer] Resetting state for next interaction.")
+            log("♻️ [HalConsumer] Resetting state for next interaction.")
             self.is_recording = False
             self.audio_buffer.clear()
+
