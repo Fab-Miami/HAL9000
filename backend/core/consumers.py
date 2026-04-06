@@ -3,8 +3,8 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from . import llm
 from . import tts
 
-# Silence timeout: if no audio chunk arrives for this many seconds, consider speech done.
-SILENCE_TIMEOUT = 1.5
+# How long to accumulate audio before processing (seconds).
+CAPTURE_WINDOW = 3.0
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -14,49 +14,33 @@ class HalConsumer(AsyncWebsocketConsumer):
         
         # State variables
         self.audio_buffer = bytearray()
-        self.is_processing = False
-        self.silence_task = None
-        self.audio_ready = asyncio.Event()
+        self.is_recording = False
+        self.processing_task = None
 
     async def disconnect(self, close_code):
         print(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
-        # If we're waiting for audio, unblock and let the pipeline handle the partial buffer
-        self.audio_ready.set()
-        if self.silence_task and not self.silence_task.done():
-            self.silence_task.cancel()
+        if self.processing_task and not self.processing_task.done():
+            self.processing_task.cancel()
 
     async def receive(self, text_data=None, bytes_data=None):
         if bytes_data:
             self.audio_buffer.extend(bytes_data)
             
-            # Cancel existing silence timer and restart it
-            if self.silence_task and not self.silence_task.done():
-                self.silence_task.cancel()
-            
-            self.silence_task = asyncio.create_task(self._silence_timer())
-            
-            # Kick off the processing pipeline (only once per interaction)
-            if not self.is_processing:
-                self.is_processing = True
-                print("⏺️ [HalConsumer] First audio chunk received. Waiting for speech to end...")
-                asyncio.create_task(self._process_pipeline())
-
-    async def _silence_timer(self):
-        """Fires after SILENCE_TIMEOUT seconds of no new audio chunks."""
-        try:
-            await asyncio.sleep(SILENCE_TIMEOUT)
-            buffer_size = len(self.audio_buffer)
-            duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
-            print(f"🤫 [HalConsumer] Silence detected. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
-            self.audio_ready.set()
-        except asyncio.CancelledError:
-            pass  # Timer was reset by a new audio chunk
+            # Start the capture timer on first chunk only
+            if not self.is_recording:
+                self.is_recording = True
+                print(f"⏺️ [HalConsumer] First audio chunk received. Starting {CAPTURE_WINDOW}s capture window...")
+                self.processing_task = asyncio.create_task(self._process_pipeline())
 
     async def _process_pipeline(self):
         import time
         try:
-            # Wait until the silence timer fires (meaning the user stopped talking)
-            await self.audio_ready.wait()
+            # Wait for the capture window to accumulate audio
+            await asyncio.sleep(CAPTURE_WINDOW)
+            
+            buffer_size = len(self.audio_buffer)
+            duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
+            print(f"🤫 [HalConsumer] Capture window ended. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
             
             start_time = time.time()
             pcm_bytes = bytes(self.audio_buffer)
@@ -115,6 +99,5 @@ class HalConsumer(AsyncWebsocketConsumer):
             traceback.print_exc()
         finally:
             print("♻️ [HalConsumer] Resetting state for next interaction.")
-            self.is_processing = False
+            self.is_recording = False
             self.audio_buffer.clear()
-            self.audio_ready.clear()
