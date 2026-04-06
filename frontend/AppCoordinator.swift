@@ -47,6 +47,13 @@ class AppCoordinator: ObservableObject {
                             self?.audioPlayerManager.play(pcmData: data)
                         }
                         
+                        self.webSocketManager.onStringReceived = { [weak self] text in
+                            if text == "DONE" {
+                                self?.appState.log("Received DONE signal from server.")
+                                self?.audioPlayerManager.finishStream()
+                            }
+                        }
+                        
                         self.audioPlayerManager.onPlaybackFinished = { [weak self] in
                             self?.stopInteraction()
                         }

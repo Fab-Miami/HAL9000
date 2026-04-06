@@ -6,6 +6,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     private var session: URLSession?
     
     var onAudioReceived: ((Data) -> Void)?
+    var onStringReceived: ((String) -> Void)?
     
     init(appState: AppState) {
         self.appState = appState
@@ -47,8 +48,10 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
         
         let message = URLSessionWebSocketTask.Message.data(data)
         webSocketTask.send(message) { error in
-            if let error = error {
-                // Not logging to appState to avoid spam loops, but can print to console
+            if let error = error as NSError? {
+                if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
+                    return // Ignore cancelled error on disconnect
+                }
                 print("WebSocket send error: \(error.localizedDescription)")
             }
         }
@@ -66,6 +69,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
                     self.onAudioReceived?(data)
                 case .string(let text):
                     print("Received string: \(text)")
+                    self.onStringReceived?(text)
                 @unknown default:
                     break
                 }

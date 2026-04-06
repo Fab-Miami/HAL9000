@@ -32,14 +32,16 @@ class HalConsumer(AsyncWebsocketConsumer):
                 self.processing_task = asyncio.create_task(self.process_audio_after_delay())
 
     async def process_audio_after_delay(self):
+        import time
         try:
-            # Wait for exactly 3 seconds to accumulate audio
-            await asyncio.sleep(3)
+            # Wait for 2.0 seconds to accumulate audio (reduced from 3 to improve latency)
+            await asyncio.sleep(2.0)
             
             # Stop accumulating (simulate a cut-off)
-            print(f"[HalConsumer] 3 seconds elapsed. Captured {len(self.audio_buffer)} bytes.")
+            print(f"[HalConsumer] 2.0 seconds elapsed. Captured {len(self.audio_buffer)} bytes.")
             self.is_recording = False  # Reset for potential next phrases if stream continues
             
+            start_time = time.time()
             # Copy buffer for processing and clear it immediately
             pcm_bytes = bytes(self.audio_buffer)
             self.audio_buffer.clear()
@@ -51,16 +53,46 @@ class HalConsumer(AsyncWebsocketConsumer):
             wav_bytes = llm.pcm_to_wav(pcm_bytes)
             
             print("[HalConsumer] Sending audio to Gemini...")
-            ai_text = await llm.generate_hal_response(wav_bytes)
-            print(f"[HalConsumer] Gemini returned: {ai_text}")
+            text_buffer = ""
             
-            print("[HalConsumer] Sending text to TTS stub...")
-            tts_audio = tts.text_to_speech(ai_text)
+            async for chunk in llm.generate_hal_response(wav_bytes):
+                text_buffer += chunk
+                
+                # Check for sentence boundaries
+                while True:
+                    # Simple sentence splitters for HAL's formal speech
+                    split_idx = -1
+                    for punct in ['. ', '? ', '! ']:
+                        idx = text_buffer.find(punct)
+                        if idx != -1 and (split_idx == -1 or idx < split_idx):
+                            split_idx = idx
+                            
+                    if split_idx != -1:
+                        # Extract the full sentence including the punctuation
+                        sentence = text_buffer[:split_idx + 1].strip()
+                        text_buffer = text_buffer[split_idx + 1:].lstrip()
+                        
+                        if sentence:
+                            print(f"[HalConsumer] Synthesizing sentence: {sentence}")
+                            tts_audio = tts.text_to_speech(sentence)
+                            if tts_audio:
+                                await self.send(bytes_data=tts_audio)
+                    else:
+                        break
             
-            print("[HalConsumer] Sending TTS audio back to iOS...")
-            await self.send(bytes_data=tts_audio)
+            # Process any remaining text in the buffer (e.g. final sentence lacking trailing space)
+            final_sentence = text_buffer.strip()
+            if final_sentence:
+                print(f"[HalConsumer] Synthesizing final sentence: {final_sentence}")
+                tts_audio = tts.text_to_speech(final_sentence)
+                if tts_audio:
+                    await self.send(bytes_data=tts_audio)
             
-            print("[HalConsumer] Pipeline complete. Ready for next interaction.")
+            print("[HalConsumer] Sending DONE signal to iOS...")
+            await self.send(text_data="DONE")
+            
+            end_time = time.time()
+            print(f"[HalConsumer] Pipeline complete in {end_time - start_time:.2f}s. Ready for next interaction.")
             
         except asyncio.CancelledError:
             pass

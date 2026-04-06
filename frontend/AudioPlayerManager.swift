@@ -33,7 +33,8 @@ class AudioPlayerManager {
     
     var onPlaybackFinished: (() -> Void)?
     
-    // ... (rest of the file remains the same except play func) ...
+    private var scheduledBuffersCount: Int = 0
+    private var isStreamFinished: Bool = false
     
     func play(pcmData: Data) {
         let format = AVAudioFormat(commonFormat: .pcmFormatInt16,
@@ -62,11 +63,36 @@ class AudioPlayerManager {
             try? audioEngine.start()
         }
         
-        playerNode.play()
+        if !playerNode.isPlaying {
+            playerNode.play()
+        }
+        
+        DispatchQueue.main.async {
+            self.scheduledBuffersCount += 1
+        }
+        
         playerNode.scheduleBuffer(buffer) { [weak self] in
             DispatchQueue.main.async {
-                print("Audio playback finished.")
-                self?.onPlaybackFinished?()
+                guard let self = self else { return }
+                self.scheduledBuffersCount -= 1
+                
+                if self.isStreamFinished && self.scheduledBuffersCount == 0 {
+                    print("Audio playback fully finished.")
+                    self.isStreamFinished = false // Reset for next interaction
+                    self.onPlaybackFinished?()
+                }
+            }
+        }
+    }
+    
+    func finishStream() {
+        DispatchQueue.main.async {
+            self.isStreamFinished = true
+            // In case there weren't any chunks successfully played, or they finished instantly
+            if self.scheduledBuffersCount == 0 {
+                print("Stream finished and queue is empty.")
+                self.isStreamFinished = false
+                self.onPlaybackFinished?()
             }
         }
     }
@@ -74,5 +100,9 @@ class AudioPlayerManager {
     func stop() {
         playerNode.stop()
         audioEngine.stop()
+        DispatchQueue.main.async {
+            self.scheduledBuffersCount = 0
+            self.isStreamFinished = false
+        }
     }
 }

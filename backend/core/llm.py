@@ -26,9 +26,10 @@ def pcm_to_wav(pcm_bytes: bytes) -> bytes:
     
     return wav_io.getvalue()
 
-async def generate_hal_response(wav_bytes: bytes) -> str:
+async def generate_hal_response(wav_bytes: bytes):
     """
     Passes the audio bytes inline to the Gemini model with HAL 9000 prompt.
+    Yields chunks of text as they are streamed from the model.
     """
     model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
     
@@ -70,8 +71,12 @@ Process the incoming audio transcript and respond:"""
                 "mime_type": "audio/wav",
                 "data": wav_bytes
             }
-        ])
-        return response.text.replace('*', '').strip()
+        ], stream=True)
+        
+        async for chunk in response:
+            if chunk.text:
+                yield chunk.text.replace('*', '')
+                
     except Exception as e:
         print(f"[LLM] Error generating response: {e}")
-        return "I'm sorry, Dave. I'm afraid I cannot process that request at this time."
+        yield "I'm sorry, Dave. I'm afraid I cannot process that request at this time."
