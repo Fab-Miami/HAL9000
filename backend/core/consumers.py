@@ -3,49 +3,63 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from . import llm
 from . import tts
 
+# Silence timeout: if no audio chunk arrives for this many seconds, consider speech done.
+SILENCE_TIMEOUT = 1.5
+
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         print("[HalConsumer] New connection request from iOS client on /ws/hal/ ...")
-        # Accept the incoming connection
         await self.accept()
         print("[HalConsumer] Connection accepted. WebSocket is now open.")
         
-        # State variables to track incoming audio stream
+        # State variables
         self.audio_buffer = bytearray()
-        self.is_recording = False
-        self.processing_task = None
+        self.is_processing = False
+        self.silence_task = None
+        self.audio_ready = asyncio.Event()
 
     async def disconnect(self, close_code):
         print(f"[HalConsumer] Client disconnected. Code: {close_code}")
-        if self.processing_task:
-            self.processing_task.cancel()
+        # If we're waiting for audio, unblock and let the pipeline handle the partial buffer
+        self.audio_ready.set()
+        if self.silence_task and not self.silence_task.done():
+            self.silence_task.cancel()
 
     async def receive(self, text_data=None, bytes_data=None):
-        # We only expect binary PCM audio from the iPhone right now
         if bytes_data:
-            if not getattr(self, "is_recording", False):
-                self.is_recording = True
-                self.audio_buffer.clear()
-                self.audio_buffer.extend(bytes_data)
-                print("[HalConsumer] First audio chunk received. Starting 2-second capture window...")
-                # Start the 2-second timer
-                self.processing_task = asyncio.create_task(self.process_audio_after_delay())
-            else:
-                self.audio_buffer.extend(bytes_data)
+            self.audio_buffer.extend(bytes_data)
+            
+            # Cancel existing silence timer and restart it
+            if self.silence_task and not self.silence_task.done():
+                self.silence_task.cancel()
+            
+            self.silence_task = asyncio.create_task(self._silence_timer())
+            
+            # Kick off the processing pipeline (only once per interaction)
+            if not self.is_processing:
+                self.is_processing = True
+                print("[HalConsumer] First audio chunk received. Waiting for speech to end...")
+                asyncio.create_task(self._process_pipeline())
 
-    async def process_audio_after_delay(self):
+    async def _silence_timer(self):
+        """Fires after SILENCE_TIMEOUT seconds of no new audio chunks."""
+        try:
+            await asyncio.sleep(SILENCE_TIMEOUT)
+            buffer_size = len(self.audio_buffer)
+            duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
+            print(f"[HalConsumer] Silence detected. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
+            self.audio_ready.set()
+        except asyncio.CancelledError:
+            pass  # Timer was reset by a new audio chunk
+
+    async def _process_pipeline(self):
         import time
         try:
-            # Wait for 2.0 seconds to accumulate audio (reduced from 3 to improve latency)
-            await asyncio.sleep(2.0)
-            
-            # Stop accumulating (simulate a cut-off)
-            print(f"[HalConsumer] 2.0 seconds elapsed. Captured {len(self.audio_buffer)} bytes.")
+            # Wait until the silence timer fires (meaning the user stopped talking)
+            await self.audio_ready.wait()
             
             start_time = time.time()
-            # Copy buffer for processing
             pcm_bytes = bytes(self.audio_buffer)
-            # DO NOT clear or unset is_recording here, so trailing chunks do not spawn new duplicate tasks!
             
             if not pcm_bytes:
                 return
@@ -53,7 +67,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             print("[HalConsumer] Packaging to WAV...")
             wav_bytes = llm.pcm_to_wav(pcm_bytes)
             
-            print("[HalConsumer] Sending audio to Gemini...")
+            print("[HalConsumer] Sending audio to Gemini (streaming)...")
             text_buffer = ""
             
             async for chunk in llm.generate_hal_response(wav_bytes):
@@ -61,7 +75,6 @@ class HalConsumer(AsyncWebsocketConsumer):
                 
                 # Check for sentence boundaries
                 while True:
-                    # Simple sentence splitters for HAL's formal speech
                     split_idx = -1
                     for punct in ['. ', '? ', '! ']:
                         idx = text_buffer.find(punct)
@@ -69,20 +82,18 @@ class HalConsumer(AsyncWebsocketConsumer):
                             split_idx = idx
                             
                     if split_idx != -1:
-                        # Extract the full sentence including the punctuation
                         sentence = text_buffer[:split_idx + 1].strip()
                         text_buffer = text_buffer[split_idx + 1:].lstrip()
                         
                         if sentence:
                             print(f"[HalConsumer] Synthesizing sentence: {sentence}")
-                            # Prevent Starvation of the ASGI Event Loop by running Kokoro-ONNX in a thread!
                             tts_audio = await asyncio.to_thread(tts.text_to_speech, sentence)
                             if tts_audio:
                                 await self.send(bytes_data=tts_audio)
                     else:
                         break
             
-            # Process any remaining text in the buffer (e.g. final sentence lacking trailing space)
+            # Process any remaining text in the buffer
             final_sentence = text_buffer.strip()
             if final_sentence:
                 print(f"[HalConsumer] Synthesizing final sentence: {final_sentence}")
@@ -94,13 +105,16 @@ class HalConsumer(AsyncWebsocketConsumer):
             await self.send(text_data="DONE")
             
             end_time = time.time()
-            print(f"[HalConsumer] Pipeline complete in {end_time - start_time:.2f}s. Ready for next interaction.")
+            print(f"[HalConsumer] Pipeline complete in {end_time - start_time:.2f}s.")
             
         except asyncio.CancelledError:
             pass
         except Exception as e:
             print(f"[HalConsumer] Error in processing pipeline: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
-            print("[HalConsumer] Resetting stream state.")
-            self.is_recording = False
+            print("[HalConsumer] Resetting state for next interaction.")
+            self.is_processing = False
             self.audio_buffer.clear()
+            self.audio_ready.clear()
