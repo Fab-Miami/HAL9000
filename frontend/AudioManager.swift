@@ -22,7 +22,7 @@ class AudioManager {
     private func setupAudioFormat() {
         // Preferred 16kHz, mono, 16-bit PCM for server/AI processing
         guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false) else {
-            appState.log("AudioManager: Failed to create 16kHz mono format.")
+            appState.log("⚠️ AudioManager: Failed to create 16kHz mono format.")
             return
         }
         self.outputFormat = format
@@ -35,7 +35,7 @@ class AudioManager {
         let inputFormat = inputNode.outputFormat(forBus: 0)
         
         guard let outputFormat = self.outputFormat else {
-            appState.log("AudioManager: Missing output format.")
+            appState.log("⚠️ AudioManager: Missing output format.")
             return
         }
         
@@ -71,9 +71,9 @@ class AudioManager {
             try audioEngine.start()
             isRecording = true
             firstChunkLogged = false
-            appState.log("AudioManager: Microphone tap started (16kHz Mono).")
+            appState.log("⏺️ AudioManager: Microphone tap started (16kHz Mono).")
         } catch {
-            appState.log("AudioManager: Engine failed to start - \(error.localizedDescription)")
+            appState.log("⚠️ AudioManager: Engine failed to start - \(error.localizedDescription)")
         }
     }
     
@@ -83,7 +83,7 @@ class AudioManager {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false
-        appState.log("AudioManager: Microphone tap stopped.")
+        appState.log("⏹️ AudioManager: Microphone tap stopped.")
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -112,7 +112,7 @@ class AudioManager {
         }
         
         if status == .error || error != nil {
-            print("Audio conversion error")
+            print("⚠️ Audio conversion error")
             return
         }
         
@@ -126,7 +126,7 @@ class AudioManager {
         // Throttle log spam: Only log the first chunk
         if !firstChunkLogged {
             DispatchQueue.main.async { [weak self] in
-                self?.appState.log("AudioManager: First raw audio chunk sent (\(dataSize) bytes).")
+                self?.appState.log("⬆️ AudioManager: First raw audio chunk sent (\(dataSize) bytes).")
             }
             firstChunkLogged = true
         }

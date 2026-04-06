@@ -18,19 +18,19 @@ class WakeWordManager {
     }
     
     func start() {
-        appState.log("Starting native wake word detection for '\(triggerWords[0])' (and variants)...")
+        appState.log("👂 Starting native wake word detection for '\(triggerWords[0])' (and variants)...")
         
         // Ensure recognizer is available and supports on-device
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
-            appState.log("Speech recognizer not available.")
+            appState.log("❌ Speech recognizer not available.")
             return
         }
         
         do {
             try startRecording()
-            appState.log("Native recognizer listening (on-device)...")
+            appState.log("🎤 Native recognizer listening (on-device)...")
         } catch {
-            appState.log("Failed to start recording: \(error.localizedDescription)")
+            appState.log("❌ Failed to start recording: \(error.localizedDescription)")
         }
     }
     
@@ -73,13 +73,13 @@ class WakeWordManager {
             
             if let result = result {
                 let transcription = result.bestTranscription.formattedString.uppercased()
-                self.appState.log("Heard: \(transcription)") // Debug
+                self.appState.log("🗣️ Heard: \(transcription)") // Debug
                 
                 let matches = self.triggerWords.contains { transcription.contains($0) }
                 
                 // If conversation is active, ANY spoken text triggers the upload
                 if self.appState.isConversationActive && !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.appState.log("Conversation is active. Triggering on any speech.")
+                    self.appState.log("💬 Conversation is active. Triggering on any speech.")
                     self.handleWakeWordDetection()
                 } else if matches {
                     self.handleWakeWordDetection()
@@ -105,14 +105,14 @@ class WakeWordManager {
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
-        appState.log("Native recognizer stopped.")
+        appState.log("⏹️ Native recognizer stopped.")
     }
     
     private func handleWakeWordDetection() {
         // Stop listening to prevent self-triggering during conversation
         stop()
         
-        appState.log("Wake word detected!")
+        appState.log("🎯 Wake word detected!")
         DispatchQueue.main.async {
             self.appState.status = .listening
             self.onWakeWordDetected?()

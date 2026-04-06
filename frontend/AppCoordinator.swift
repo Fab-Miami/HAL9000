@@ -25,14 +25,14 @@ class AppCoordinator: ObservableObject {
     }()
     
     func start() {
-        appState.log("App launched. Requesting permissions...")
+        appState.log("🚀 App launched. Requesting permissions...")
         PermissionsManager.shared.requestMicrophonePermission { [weak self] micGranted in
             guard let self = self else { return }
             if micGranted {
-                self.appState.log("Microphone permission granted.")
+                self.appState.log("✅ Microphone permission granted.")
                 PermissionsManager.shared.requestSpeechRecognitionPermission { speechGranted in
                     if speechGranted {
-                        self.appState.log("Speech recognition permission granted.")
+                        self.appState.log("✅ Speech recognition permission granted.")
                         
                         // Set up the bridge flow when WakeWordManager hears "HAL"
                         self.wakeWordManager.onWakeWordDetected = { [weak self] in
@@ -49,7 +49,7 @@ class AppCoordinator: ObservableObject {
                         
                         self.webSocketManager.onStringReceived = { [weak self] text in
                             if text == "DONE" {
-                                self?.appState.log("Received DONE signal from server.")
+                                self?.appState.log("🏁 Received DONE signal from server.")
                                 self?.audioPlayerManager.finishStream()
                             }
                         }
@@ -60,11 +60,11 @@ class AppCoordinator: ObservableObject {
                         
                         self.wakeWordManager.start()
                     } else {
-                        self.appState.log("Speech recognition permission denied.")
+                        self.appState.log("❌ Speech recognition permission denied.")
                     }
                 }
             } else {
-                self.appState.log("Microphone permission denied.")
+                self.appState.log("❌ Microphone permission denied.")
             }
         }
     }
@@ -92,13 +92,13 @@ class AppCoordinator: ObservableObject {
         
         // Start intelligent 120s VAD listening mode
         appState.isConversationActive = true
-        appState.log("Entering 120-second continuous conversation mode.")
+        appState.log("💬 Entering 120-second continuous conversation mode.")
         
         conversationTimer?.invalidate()
         conversationTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             self.appState.isConversationActive = false
-            self.appState.log("Conversation mode timed out. Returning to wake word only mode.")
+            self.appState.log("⏳ Conversation mode timed out. Returning to wake word only mode.")
         }
         
         // Restart wake word detection (which now acts as VAD)

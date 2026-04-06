@@ -78,5 +78,5 @@ Process the incoming audio transcript and respond:"""
                 yield chunk.text.replace('*', '')
                 
     except Exception as e:
-        print(f"[LLM] Error generating response: {e}")
+        print(f"❌ [LLM] Error generating response: {e}")
         yield "I'm sorry, Dave. I'm afraid I cannot process that request at this time."

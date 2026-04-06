@@ -27,7 +27,7 @@ class AudioPlayerManager {
         do {
             try audioEngine.start()
         } catch {
-            appState.log("Audio Engine failed to start: \(error.localizedDescription)")
+            appState.log("⚠️ Audio Engine failed to start: \(error.localizedDescription)")
         }
     }
     
@@ -77,7 +77,7 @@ class AudioPlayerManager {
                 self.scheduledBuffersCount -= 1
                 
                 if self.isStreamFinished && self.scheduledBuffersCount == 0 {
-                    print("Audio playback fully finished.")
+                    print("🔊 Audio playback fully finished.")
                     self.isStreamFinished = false // Reset for next interaction
                     self.onPlaybackFinished?()
                 }
@@ -90,7 +90,7 @@ class AudioPlayerManager {
             self.isStreamFinished = true
             // In case there weren't any chunks successfully played, or they finished instantly
             if self.scheduledBuffersCount == 0 {
-                print("Stream finished and queue is empty.")
+                print("⏹️ Stream finished and queue is empty.")
                 self.isStreamFinished = false
                 self.onPlaybackFinished?()
             }

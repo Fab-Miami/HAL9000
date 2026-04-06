@@ -19,20 +19,20 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     
     func connect() {
         guard webSocketTask == nil else {
-            appState.log("WebSocket is already connected or connecting.")
+            appState.log("ℹ️ WebSocket is already connected or connecting.")
             return
         }
         
         // Connect to remote server on dedicated port 8001
         guard let url = URL(string: "ws://159.223.167.180:8001/ws/hal/") else {
-            appState.log("Invalid WebSocket URL.")
+            appState.log("❌ Invalid WebSocket URL.")
             return
         }
         
         guard let session = session else { return }
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
-        appState.log("WebSocket connecting to \(url.absoluteString)...")
+        appState.log("🔌 WebSocket connecting to \(url.absoluteString)...")
         
         receiveMessage()
     }
@@ -40,7 +40,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     func disconnect() {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        appState.log("WebSocket disconnected.")
+        appState.log("🔴 WebSocket disconnected.")
     }
     
     func send(data: Data) {
@@ -52,7 +52,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
                 if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled {
                     return // Ignore cancelled error on disconnect
                 }
-                print("WebSocket send error: \(error.localizedDescription)")
+                print("⚠️ WebSocket send error: \(error.localizedDescription)")
             }
         }
     }
@@ -65,10 +65,10 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
             case .success(let message):
                 switch message {
                 case .data(let data):
-                    print("Received data: \(data.count) bytes")
+                    print("⬇️ Received data: \(data.count) bytes")
                     self.onAudioReceived?(data)
                 case .string(let text):
-                    print("Received string: \(text)")
+                    print("⬇️ Received string: \(text)")
                     self.onStringReceived?(text)
                 @unknown default:
                     break
@@ -78,7 +78,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
                 self.receiveMessage()
                 
             case .failure(let error):
-                print("WebSocket receive error: \(error.localizedDescription)")
+                print("⚠️ WebSocket receive error: \(error.localizedDescription)")
                 self.webSocketTask = nil
             }
         }
@@ -90,7 +90,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
         
         // For development: Skip SSL validation for the specific IP
         if challenge.protectionSpace.host == "159.223.167.180" {
-            appState.log("Bypassing SSL validation for 159.223.167.180...")
+            appState.log("🔓 Bypassing SSL validation for 159.223.167.180...")
             completionHandler(.useCredential, URLCredential(trust: challenge.protectionSpace.serverTrust!))
         } else {
             completionHandler(.performDefaultHandling, nil)
