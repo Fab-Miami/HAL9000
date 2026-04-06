@@ -4,7 +4,7 @@ from . import llm
 from . import tts
 
 # How long to accumulate audio before processing (seconds).
-CAPTURE_WINDOW = 3.0
+CAPTURE_WINDOW = 2.0
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -52,9 +52,15 @@ class HalConsumer(AsyncWebsocketConsumer):
             wav_bytes = llm.pcm_to_wav(pcm_bytes)
             
             print("🧠 [HalConsumer] Sending audio to Gemini (streaming)...")
+            gemini_start = time.time()
             text_buffer = ""
+            first_token = True
+            sentence_count = 0
             
             async for chunk in llm.generate_hal_response(wav_bytes):
+                if first_token:
+                    print(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
+                    first_token = False
                 text_buffer += chunk
                 
                 # Check for sentence boundaries
@@ -70,26 +76,37 @@ class HalConsumer(AsyncWebsocketConsumer):
                         text_buffer = text_buffer[split_idx + 1:].lstrip()
                         
                         if sentence:
-                            print(f"🗣️ [HalConsumer] Synthesizing sentence: {sentence}")
+                            sentence_count += 1
+                            tts_start = time.time()
+                            print(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
                             tts_audio = await asyncio.to_thread(tts.text_to_speech, sentence)
+                            tts_elapsed = time.time() - tts_start
                             if tts_audio:
+                                print(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
                                 await self.send(bytes_data=tts_audio)
                     else:
                         break
             
+            gemini_elapsed = time.time() - gemini_start
+            print(f"⚡ [HalConsumer] Gemini streaming complete in {gemini_elapsed:.2f}s")
+            
             # Process any remaining text in the buffer
             final_sentence = text_buffer.strip()
             if final_sentence:
-                print(f"🗣️ [HalConsumer] Synthesizing final sentence: {final_sentence}")
+                sentence_count += 1
+                tts_start = time.time()
+                print(f"🗣️ [HalConsumer] Synthesizing final sentence #{sentence_count}: {final_sentence}")
                 tts_audio = await asyncio.to_thread(tts.text_to_speech, final_sentence)
+                tts_elapsed = time.time() - tts_start
                 if tts_audio:
+                    print(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
                     await self.send(bytes_data=tts_audio)
             
             print("🏁 [HalConsumer] Sending DONE signal to iOS...")
             await self.send(text_data="DONE")
             
             end_time = time.time()
-            print(f"⏱️ [HalConsumer] Pipeline complete in {end_time - start_time:.2f}s.")
+            print(f"⏱️ [HalConsumer] Pipeline complete in {end_time - start_time:.2f}s ({sentence_count} sentences).")
             
         except asyncio.CancelledError:
             pass
