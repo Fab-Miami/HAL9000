@@ -23,13 +23,15 @@ class HalConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         # We only expect binary PCM audio from the iPhone right now
         if bytes_data:
-            self.audio_buffer.extend(bytes_data)
-            
-            if not self.is_recording:
+            if not getattr(self, "is_recording", False):
                 self.is_recording = True
-                print("[HalConsumer] First audio chunk received. Starting 3-second capture window...")
-                # Start the 3-second timer
+                self.audio_buffer.clear()
+                self.audio_buffer.extend(bytes_data)
+                print("[HalConsumer] First audio chunk received. Starting 2-second capture window...")
+                # Start the 2-second timer
                 self.processing_task = asyncio.create_task(self.process_audio_after_delay())
+            else:
+                self.audio_buffer.extend(bytes_data)
 
     async def process_audio_after_delay(self):
         import time
@@ -39,12 +41,11 @@ class HalConsumer(AsyncWebsocketConsumer):
             
             # Stop accumulating (simulate a cut-off)
             print(f"[HalConsumer] 2.0 seconds elapsed. Captured {len(self.audio_buffer)} bytes.")
-            self.is_recording = False  # Reset for potential next phrases if stream continues
             
             start_time = time.time()
-            # Copy buffer for processing and clear it immediately
+            # Copy buffer for processing
             pcm_bytes = bytes(self.audio_buffer)
-            self.audio_buffer.clear()
+            # DO NOT clear or unset is_recording here, so trailing chunks do not spawn new duplicate tasks!
             
             if not pcm_bytes:
                 return
@@ -74,7 +75,8 @@ class HalConsumer(AsyncWebsocketConsumer):
                         
                         if sentence:
                             print(f"[HalConsumer] Synthesizing sentence: {sentence}")
-                            tts_audio = tts.text_to_speech(sentence)
+                            # Prevent Starvation of the ASGI Event Loop by running Kokoro-ONNX in a thread!
+                            tts_audio = await asyncio.to_thread(tts.text_to_speech, sentence)
                             if tts_audio:
                                 await self.send(bytes_data=tts_audio)
                     else:
@@ -84,7 +86,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             final_sentence = text_buffer.strip()
             if final_sentence:
                 print(f"[HalConsumer] Synthesizing final sentence: {final_sentence}")
-                tts_audio = tts.text_to_speech(final_sentence)
+                tts_audio = await asyncio.to_thread(tts.text_to_speech, final_sentence)
                 if tts_audio:
                     await self.send(bytes_data=tts_audio)
             
@@ -98,5 +100,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             pass
         except Exception as e:
             print(f"[HalConsumer] Error in processing pipeline: {e}")
+        finally:
+            print("[HalConsumer] Resetting stream state.")
             self.is_recording = False
             self.audio_buffer.clear()
