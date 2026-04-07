@@ -50,5 +50,8 @@ project.xcworkspace/
 # Swift Package Manager
 .build/
 
+# Photoshop
+*.psd
+
 # XcodeGen (Generated project directory)
 # HAL.xcodeproj/ (uncomment if you want to ignore the generated xcodeproj entirely)

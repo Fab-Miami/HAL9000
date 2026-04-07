@@ -97,9 +97,9 @@ graph TD
 | **01** | iOS Project Foundation & Native Wake Word Gatekeeper | 🟢 Done |
 | **02** | AVAudioEngine PCM tap & WebSocket chunking | 🟢 Done |
 | **03a** | Django Channels ASGI server setup & bi-directional mock loop | 🟢 Done |
-| **03b** | Gemini 3 Flash native audio ingestion & prompt engineering | 🟡 Pending |
-| **04** | KokoClone TTS Integration & Voice Cloning | 🟡 Pending |
-| **05** | Hardware mounting & UI polish | 🟡 Pending |
+| **03b** | Gemini 3 Flash native audio ingestion & prompt engineering | 🟢 Done |
+| **04** | KokoClone TTS Integration & Voice Cloning | 🟢 Done |
+| **05** | Hardware mounting & UI polish | 🟡 In Progress |
 
 <br>
 <br>
