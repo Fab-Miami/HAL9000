@@ -21,6 +21,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.audio_buffer = bytearray()
         self.is_recording = False
         self.processing_task = None
+        self.chat_session = llm.create_chat_session()
 
     async def disconnect(self, close_code):
         log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
@@ -62,7 +63,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             first_token = True
             sentence_count = 0
             
-            async for chunk in llm.generate_hal_response(wav_bytes):
+            async for chunk in llm.generate_chat_response(self.chat_session, wav_bytes):
                 if first_token:
                     log(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
                     first_token = False

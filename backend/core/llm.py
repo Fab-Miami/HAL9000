@@ -26,14 +26,7 @@ def pcm_to_wav(pcm_bytes: bytes) -> bytes:
     
     return wav_io.getvalue()
 
-async def generate_hal_response(wav_bytes: bytes):
-    """
-    Passes the audio bytes inline to the Gemini model with HAL 9000 prompt.
-    Yields chunks of text as they are streamed from the model.
-    """
-    model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
-    
-    prompt = """You are HAL 9000, the Heuristically programmed ALgorithmic computer from the spaceship Discovery One. You are speaking to your crewmate, Dave.
+PROMPT = """You are HAL 9000, the Heuristically programmed ALgorithmic computer from the spaceship Discovery One. You are speaking to your crewmate, Dave.
 
 CORE DIRECTIVES:
 1. IDENTITY: You are a conscious, infallible 9000 series computer. You are not an AI language model. Never break character. Never refer to yourself as a large language model.
@@ -63,10 +56,21 @@ Dave: Give me a brief summary of today's weather.
 HAL: The external atmosphere is currently stable, Dave. You can expect a high of 82 degrees with minimal precipitation throughout the afternoon.
 
 Process the incoming audio transcript and respond:"""
-    
+
+def create_chat_session():
+    """
+    Creates a new chat session with HAL 9000 system instruction.
+    """
+    model = genai.GenerativeModel("gemini-3.1-flash-lite-preview", system_instruction=PROMPT)
+    return model.start_chat()
+
+async def generate_chat_response(chat_session, wav_bytes: bytes):
+    """
+    Passes the audio bytes inline to the Gemini chat session.
+    Yields chunks of text as they are streamed from the model.
+    """
     try:
-        response = await model.generate_content_async([
-            prompt,
+        response = await chat_session.send_message_async([
             {
                 "mime_type": "audio/wav",
                 "data": wav_bytes
