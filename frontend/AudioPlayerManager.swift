@@ -24,6 +24,29 @@ class AudioPlayerManager {
         
         audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
         
+        let mixerFormat = audioEngine.mainMixerNode.outputFormat(forBus: 0)
+        audioEngine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: mixerFormat) { [weak self] (buffer, _) in
+            guard let self = self, self.appState.status == .processing else { return }
+            
+            if let channelData = buffer.floatChannelData?[0] {
+                let frameLength = Int(buffer.frameLength)
+                var sum: Float = 0
+                for i in 0..<frameLength {
+                    sum += channelData[i] * channelData[i]
+                }
+                let rms = sqrt(sum / Float(frameLength))
+                
+                // HAL is talking -> apply 1.5x amplitude multiplier for more visible UI feedback
+                let normalizedIntensity = Double(min(max(rms * 5.0, 0.0), 1.0)) * 1.5
+                
+                DispatchQueue.main.async {
+                    if self.appState.status == .processing {
+                        self.appState.intensity = normalizedIntensity
+                    }
+                }
+            }
+        }
+        
         do {
             try audioEngine.start()
         } catch {

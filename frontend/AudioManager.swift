@@ -84,6 +84,10 @@ class AudioManager {
         audioEngine.stop()
         isRecording = false
         appState.log("⏹️ AudioManager: Microphone tap stopped.")
+        
+        Task { @MainActor in
+            self.appState.intensity = 0.0
+        }
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
