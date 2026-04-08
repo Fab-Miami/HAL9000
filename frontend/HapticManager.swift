@@ -5,7 +5,7 @@ class HapticManager {
     
     private init() {}
     
-    func impact(style: UIImpactFeedbackStyle) {
+    func impact(style: UIImpactFeedbackGenerator.FeedbackStyle) {
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
