@@ -81,6 +81,9 @@ class WakeWordManager {
                 if self.appState.isConversationActive && !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     self.appState.log("💬 Conversation is active. Triggering on any speech.")
                     self.handleWakeWordDetection()
+                } else if self.appState.isScreenPressed && !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.appState.log("🖐️ Screen is pressed. Triggering on any speech.")
+                    self.handleWakeWordDetection()
                 } else if matches {
                     self.handleWakeWordDetection()
                 }

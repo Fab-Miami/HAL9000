@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/localMac/kvoicewalk/.venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/localMac/kvoicewalk"
+    ]
+}

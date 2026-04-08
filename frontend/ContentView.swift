@@ -46,6 +46,21 @@ struct ContentView: View {
                     }
                 }
         }
+        .contentShape(Rectangle()) // Make the whole ZStack tappable
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !appState.isScreenPressed {
+                        appState.isScreenPressed = true
+                        HapticManager.shared.triggerHeavy()
+                        appState.log("🖐️ Screen pressed")
+                    }
+                }
+                .onEnded { _ in
+                    appState.isScreenPressed = false
+                    appState.log("🖐️ Screen released")
+                }
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             if appState.status == .listening {

@@ -11,6 +11,7 @@ class AppState: ObservableObject {
     @Published var status: AppStateStatus = .idle
     @Published var intensity: Double = 0.0
     @Published var isConversationActive: Bool = false
+    @Published var isScreenPressed: Bool = false
     
     func log(_ message: String) {
         let formatter = DateFormatter()

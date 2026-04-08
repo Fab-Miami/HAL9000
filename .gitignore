@@ -55,3 +55,6 @@ project.xcworkspace/
 
 # XcodeGen (Generated project directory)
 # HAL.xcodeproj/ (uncomment if you want to ignore the generated xcodeproj entirely)
+
+# Local Mac testing
+localMac/
