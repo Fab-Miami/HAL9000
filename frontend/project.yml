@@ -17,6 +17,7 @@ targets:
       - PermissionsManager.swift
       - WakeWordManager.swift
       - WebSocketManager.swift
+      - HapticManager.swift
       - Assets.xcassets
     settings:
       base:

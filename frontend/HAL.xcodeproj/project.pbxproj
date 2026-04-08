@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1F1DA08203135E7288426A8C /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32535C032941BBF2B40D4303 /* HapticManager.swift */; };
 		21E8C65232FD9539CB4A85C3 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C4AEEEF52BDD516527EBC1 /* AppState.swift */; };
 		2504BDB7F289C540ED43378D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3333F478F177A5F2CDD7251D /* ContentView.swift */; };
 		2CBB3C84591604591B20F7FC /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF92BBC0610A056897F7F3B /* AppCoordinator.swift */; };
@@ -25,6 +26,7 @@
 		136EB881F2A4168004CA14EC /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
 		1D4D5872F4C966F92D211B8E /* HALApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HALApp.swift; sourceTree = "<group>"; };
 		26032FD94EC03CB1DE384530 /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
+		32535C032941BBF2B40D4303 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		3333F478F177A5F2CDD7251D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4D05FB768AD744B33C6E3820 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		9BF92BBC0610A056897F7F3B /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
@@ -55,6 +57,7 @@
 				4D05FB768AD744B33C6E3820 /* Color+Hex.swift */,
 				3333F478F177A5F2CDD7251D /* ContentView.swift */,
 				1D4D5872F4C966F92D211B8E /* HALApp.swift */,
+				32535C032941BBF2B40D4303 /* HapticManager.swift */,
 				26032FD94EC03CB1DE384530 /* PermissionsManager.swift */,
 				E572A2DD25E6C327A1824861 /* WakeWordManager.swift */,
 				136EB881F2A4168004CA14EC /* WebSocketManager.swift */,
@@ -140,6 +143,7 @@
 				724B6E27C0A390649C99C4AD /* Color+Hex.swift in Sources */,
 				2504BDB7F289C540ED43378D /* ContentView.swift in Sources */,
 				BA5B59368B96738D65955891 /* HALApp.swift in Sources */,
+				1F1DA08203135E7288426A8C /* HapticManager.swift in Sources */,
 				D6209BB6921ED6819901F953 /* PermissionsManager.swift in Sources */,
 				B4C3AEE70A35177E1FF4EE2E /* WakeWordManager.swift in Sources */,
 				7ED43A3C727A537360794509 /* WebSocketManager.swift in Sources */,
