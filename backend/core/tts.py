@@ -33,11 +33,11 @@ def text_to_speech(text: str) -> bytes:
         
     try:
         # Custom generated HAL 9000 voice
-        # Speed set to 0.85 for the ideal cadence
+        # Speed set to 0.9 for the ideal cadence
         samples, sample_rate = kokoro.create(
             text, 
-            voice="am_michael", 
-            speed=0.85, 
+            voice="hal9000", 
+            speed=0.9, 
             lang="en-us"
         )
         
