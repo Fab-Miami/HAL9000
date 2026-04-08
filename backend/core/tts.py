@@ -32,8 +32,8 @@ def text_to_speech(text: str) -> bytes:
         return b'\x00' * 1024
         
     try:
-        # am_michael is a default deep male voice. 
-        # Decreased speed to 0.85 to mimic HAL's slow, deliberate cadence.
+        # Custom generated HAL 9000 voice
+        # Speed set to 0.85 for the ideal cadence
         samples, sample_rate = kokoro.create(
             text, 
             voice="am_michael", 
