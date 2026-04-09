@@ -87,7 +87,6 @@ class AppCoordinator: ObservableObject {
     }
     
     private func stopInteraction() {
-        webSocketManager.disconnect()
         appState.status = .idle
         
         // Start intelligent 120s VAD listening mode
@@ -98,7 +97,8 @@ class AppCoordinator: ObservableObject {
         conversationTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             self.appState.isConversationActive = false
-            self.appState.log("⏳ Conversation mode timed out. Returning to wake word only mode.")
+            self.webSocketManager.disconnect() 
+            self.appState.log("⏳ Conversation mode timed out. WebSocket disconnected.")
         }
         
         // Restart wake word detection (which now acts as VAD)

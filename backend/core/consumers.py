@@ -16,16 +16,20 @@ def log(msg):
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        log("🔌 [HalConsumer] New connection request from iOS client on /ws/hal/ ...")
+        self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
+        log(f"🔌 [HalConsumer] New connection from client: {self.client_id}")
         await self.accept()
-        log("✅ [HalConsumer] Connection accepted. WebSocket is now open.")
+        log(f"✅ [HalConsumer] Connection accepted for {self.client_id}.")
         
         # State variables
         self.audio_buffer = bytearray()
         self.is_recording = False
         self.processing_task = None
         self.last_speech_time = 0
-        self.chat_session = llm.create_chat_session()
+        
+        # Load and start session
+        history = await asyncio.to_thread(llm.load_history, self.client_id)
+        self.chat_session = llm.create_chat_session(history=history)
 
     async def disconnect(self, close_code):
         log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
@@ -100,10 +104,31 @@ class HalConsumer(AsyncWebsocketConsumer):
             text_buffer = ""
             first_token = True
             
+            # --- Transcription Interception Logic ---
+            interceptor_buffer = ""
+            is_stripping = True
+            manual_transcript = ""
+
             async for chunk in llm.generate_chat_response(self.chat_session, wav_bytes):
                 if first_token:
                     log(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
                     first_token = False
+                
+                if is_stripping:
+                    interceptor_buffer += chunk
+                    if "HALANSWER:" in interceptor_buffer:
+                        # Split by the marker
+                        parts = interceptor_buffer.split("HALANSWER:", 1)
+                        # Extract the user transcript from before the marker
+                        transcript_raw = parts[0].replace("USERTRANSCRIPT:", "").strip()
+                        manual_transcript = transcript_raw
+                        log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
+                        
+                        # The rest is the actual response for Dave
+                        text_buffer = parts[1]
+                        is_stripping = False
+                    continue # Keep buffering until we find the marker
+                
                 text_buffer += chunk
                 
                 # Check for sentence boundaries
@@ -137,6 +162,11 @@ class HalConsumer(AsyncWebsocketConsumer):
             await tts_task
             
             log(f"⚡ [HalConsumer] Gemini streaming complete in {gemini_elapsed:.2f}s")
+            
+            # Save the updated history back to the database, swapping the audio for the text transcript
+            history = self.chat_session.get_history()
+            await asyncio.to_thread(llm.save_history, self.client_id, history, manual_transcript=manual_transcript)
+            
             log("🏁 [HalConsumer] Sending DONE signal to iOS...")
             await self.send(text_data="DONE")
             

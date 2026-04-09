@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
@@ -24,7 +25,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
         }
         
         // Connect to remote server on dedicated port 8001
-        guard let url = URL(string: "ws://159.223.167.180:8001/ws/hal/") else {
+        let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown_device"
+        guard let url = URL(string: "ws://159.223.167.180:8001/ws/hal/\(deviceId)/") else {
             appState.log("❌ Invalid WebSocket URL.")
             return
         }
