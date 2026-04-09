@@ -27,9 +27,13 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.processing_task = None
         self.last_speech_time = 0
         
-        # Load and start session
-        history = await asyncio.to_thread(llm.load_history, self.client_id)
-        self.chat_session = llm.create_chat_session(history=history)
+        # Load recent history and long-term summaries
+        history, summaries = await asyncio.to_thread(llm.load_history, self.client_id)
+        self.chat_session = llm.create_chat_session(history=history, summaries_text=summaries)
+        
+        # Trigger background summarization for any other old chats this client might have
+        # This runs "when the time comes" in a separate thread, without blocking Dave.
+        asyncio.create_task(asyncio.to_thread(llm.summarize_old_conversations, self.client_id))
 
     async def disconnect(self, close_code):
         log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
