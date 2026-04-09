@@ -4,6 +4,7 @@ import Combine
 enum AppStateStatus {
     case idle
     case listening
+    case thinking
     case processing
 }
 

@@ -69,6 +69,9 @@ class HalConsumer(AsyncWebsocketConsumer):
             duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
             log(f"🤫 [HalConsumer] Silence detected. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
             
+            # Inform the client that we are now thinking
+            await self.send(text_data="THINKING")
+            
             start_time = time.time()
             pcm_bytes = bytes(self.audio_buffer)
             

@@ -54,7 +54,7 @@ class AudioManager {
                     sum += channelData[i] * channelData[i]
                 }
                 let rms = sqrt(sum / Float(frameLength))
-                let normalizedIntensity = Double(min(max(rms * 5.0, 0.0), 1.0))
+                let normalizedIntensity = Double(min(max(rms * 6.0, 0.0), 1.0))
                 
                 Task { @MainActor in
                     self.appState.intensity = normalizedIntensity

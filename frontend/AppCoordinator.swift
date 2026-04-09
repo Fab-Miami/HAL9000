@@ -48,7 +48,12 @@ class AppCoordinator: ObservableObject {
                         }
                         
                         self.webSocketManager.onStringReceived = { [weak self] text in
-                            if text == "DONE" {
+                            if text == "THINKING" {
+                                self?.appState.log("🤔 Received THINKING signal. HAL is processing...")
+                                // Transition to thinking state and stop mic immediately
+                                self?.appState.status = .thinking
+                                self?.audioManager.stopTapping()
+                            } else if text == "DONE" {
                                 self?.appState.log("🏁 Received DONE signal from server.")
                                 self?.audioPlayerManager.finishStream()
                             }

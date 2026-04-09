@@ -36,8 +36,8 @@ class AudioPlayerManager {
                 }
                 let rms = sqrt(sum / Float(frameLength))
                 
-                // HAL is talking -> apply 1.5x amplitude multiplier for more visible UI feedback
-                let normalizedIntensity = Double(min(max(rms * 5.0, 0.0), 1.0)) * 1.5
+                // HAL is talking -> apply 1.8x amplitude multiplier (previously 1.5x) for 20% more visual feedback
+                let normalizedIntensity = Double(min(max(rms * 6.0, 0.0), 1.0)) * 1.8
                 
                 DispatchQueue.main.async {
                     if self.appState.status == .processing {

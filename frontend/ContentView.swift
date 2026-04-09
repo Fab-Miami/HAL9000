@@ -5,6 +5,8 @@ struct ContentView: View {
     
     // For the slow pulse in LISTENING mode
     @State private var isPulsing = false
+    // For the ocular core in THINKING mode
+    @State private var orangePulse = false
     
     var body: some View {
         // Center the entire graphism in the screen
@@ -23,11 +25,11 @@ struct ContentView: View {
                     RadialGradient(
                         gradient: Gradient(colors: [.red, Color.red.opacity(0.5), .clear]),
                         center: .center,
-                        startRadius: 5,
-                        endRadius: 80
+                        startRadius: 6,
+                        endRadius: 96
                     )
                 )
-                .frame(width: 180, height: 180)
+                .frame(width: 216, height: 216)
                 .scaleEffect(currentScale)
                 .opacity(currentOpacity)
                 .blur(radius: 2)
@@ -39,12 +41,28 @@ struct ContentView: View {
                         withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                             isPulsing = true
                         }
+                    } else if newStatus == .thinking {
+                        withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                            orangePulse = true
+                        }
                     } else {
                         withAnimation(.easeInOut(duration: 0.5)) {
                             isPulsing = false
+                            orangePulse = false
                         }
                     }
                 }
+            
+            // The Ocular Core (The "Thinking" Dot)
+            Circle()
+                .fill(Color(hex: "f4f846"))
+                .frame(width: 8, height: 8)
+                .blur(radius: 0.5)
+                .scaleEffect(appState.status == .thinking ? (orangePulse ? 1.5 : 1.0) : 0.5)
+                .opacity(appState.status == .thinking ? 1.0 : 0.0)
+                .blendMode(.plusLighter) // Makes it pop against the red
+                .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: orangePulse)
+                .animation(.easeInOut(duration: 0.3), value: appState.status)
         }
         .contentShape(Rectangle()) // Make the whole ZStack tappable
         .gesture(
@@ -75,20 +93,20 @@ struct ContentView: View {
         if appState.status == .idle {
             // Nothing is happening => no animation (rest at 0.9)
             return 0.9
-        } else if appState.status == .listening && appState.intensity < 0.05 {
-            // HAL is in LISTENING mode, no audio => slow pulsating state
+        } else if (appState.status == .listening || appState.status == .thinking) && appState.intensity < 0.05 {
+            // HAL is waiting or thinking => slow pulsating state
             return isPulsing ? 1.0 : 0.9
         } else {
             // User or HAL is talking => reacting to volume
             // Note: During .processing (HAL talking), intensity is artificially scaled x1.5 in AudioPlayerManager
-            return 0.9 + (appState.intensity * 0.4)
+            return 0.9 + (appState.intensity * 0.48)
         }
     }
     
     private var currentOpacity: Double {
         if appState.status == .idle {
             return 0.4
-        } else if appState.status == .listening && appState.intensity < 0.05 {
+        } else if (appState.status == .listening || appState.status == .thinking) && appState.intensity < 0.05 {
             return isPulsing ? 0.6 : 0.4
         } else {
             return 0.4 + (appState.intensity * 0.6)
