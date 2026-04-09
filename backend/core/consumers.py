@@ -10,9 +10,11 @@ from . import tts
 CAPTURE_WINDOW = 2.0
 SILENCE_THRESHOLD = 500
 
+import datetime
 def log(msg):
     """Print with immediate flush so systemd/journalctl shows output in real time."""
-    print(msg, flush=True)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] {msg}", flush=True)
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -99,11 +101,13 @@ class HalConsumer(AsyncWebsocketConsumer):
                     sentence_count += 1
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
-                    tts_audio = await asyncio.to_thread(tts.text_to_speech, sentence)
+                    
+                    async for chunk_bytes in tts.text_to_speech_stream(sentence):
+                        if chunk_bytes:
+                            await self.send(bytes_data=chunk_bytes)
+                            
                     tts_elapsed = time.time() - tts_start
-                    if tts_audio:
-                        log(f"📤 [HalConsumer] TTS #{sentence_count} took {tts_elapsed:.2f}s, sending {len(tts_audio)} bytes")
-                        await self.send(bytes_data=tts_audio)
+                    log(f"📤 [HalConsumer] TTS #{sentence_count} streaming completed in {tts_elapsed:.2f}s")
                     sentence_queue.task_done()
                     
             tts_task = asyncio.create_task(tts_worker())
@@ -113,7 +117,8 @@ class HalConsumer(AsyncWebsocketConsumer):
             
             # --- Transcription Interception Logic ---
             interceptor_buffer = ""
-            is_stripping = True
+            is_stripping_answer = True
+            is_transcript_mode = False
             manual_transcript = ""
 
             async for chunk in llm.generate_chat_response(self.chat_session, wav_bytes):
@@ -121,27 +126,30 @@ class HalConsumer(AsyncWebsocketConsumer):
                     log(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
                     first_token = False
                 
-                if is_stripping:
+                if is_stripping_answer:
                     interceptor_buffer += chunk
                     if "HALANSWER:" in interceptor_buffer:
-                        # Split by the marker
                         parts = interceptor_buffer.split("HALANSWER:", 1)
-                        # Extract the user transcript from before the marker
-                        transcript_raw = parts[0].replace("USERTRANSCRIPT:", "").strip()
-                        manual_transcript = transcript_raw
-                        log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
-                        
-                        # The rest is the actual response for Dave
                         text_buffer = parts[1]
-                        is_stripping = False
-                    continue # Keep buffering until we find the marker
+                        is_stripping_answer = False
+                    continue
+                
+                if is_transcript_mode:
+                    manual_transcript += chunk
+                    continue
                 
                 text_buffer += chunk
+                
+                if "USERTRANSCRIPT:" in text_buffer:
+                    parts = text_buffer.split("USERTRANSCRIPT:", 1)
+                    text_buffer = parts[0]
+                    manual_transcript = parts[1]
+                    is_transcript_mode = True
                 
                 # Check for sentence boundaries
                 while True:
                     split_idx = -1
-                    for punct in ['. ', '? ', '! ']:
+                    for punct in ['. ', '? ', '! ', ', ', '; ', ': ']:
                         idx = text_buffer.find(punct)
                         if idx != -1 and (split_idx == -1 or idx < split_idx):
                             split_idx = idx
@@ -154,6 +162,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                             await sentence_queue.put(sentence)
                     else:
                         break
+            
+            manual_transcript = manual_transcript.strip()
+            if manual_transcript:
+                log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
             
             gemini_elapsed = time.time() - gemini_start
             

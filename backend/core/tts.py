@@ -49,3 +49,29 @@ def text_to_speech(text: str) -> bytes:
         print(f"❌ [Kokoro] Error generating speech: {e}")
         return b'\x00' * 1024
 
+async def text_to_speech_stream(text: str):
+    """
+    Synthesizes speech using Kokoro-ONNX and yields raw 16-bit PCM bytes as soon as they are ready.
+    """
+    print(f"🗣️ [TTS] Engine generating audio stream for: {text}")
+    if kokoro is None:
+        print("⚠️ [Kokoro] Engine is not available. Yielding silence.")
+        yield b'\x00' * 1024
+        return
+        
+    try:
+        stream = kokoro.create_stream(
+            text, 
+            voice="hal9000", 
+            speed=0.9, 
+            lang="en-us"
+        )
+        
+        async for samples, sample_rate in stream:
+            audio_int16 = (samples * 32767).astype(np.int16)
+            yield audio_int16.tobytes()
+            
+    except Exception as e:
+        print(f"❌ [Kokoro] Error generating speech stream: {e}")
+        yield b'\x00' * 1024
+
