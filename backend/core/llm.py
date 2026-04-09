@@ -82,13 +82,10 @@ def load_history(client_id):
             for item in conv.history_data:
                 parts = []
                 for p in item.get('parts', []):
-                    if 'inline_data' in p:
-                        data = p['inline_data']
-                        content_bytes = base64.b64decode(data['data'])
-                        parts.append(types.Part(inline_data=types.Blob(mime_type=data['mime_type'], data=content_bytes)))
-                    elif 'text' in p:
+                    if 'text' in p:
                         parts.append(types.Part(text=p['text']))
-                history.append(types.Content(role=item.get('role'), parts=parts))
+                if parts:
+                    history.append(types.Content(role=item.get('role'), parts=parts))
 
         # 2. Load Last 4 Summaries
         ltm_entries = LongTermMemory.objects.filter(client_id=client_id).order_by('-created_at')[:4]
@@ -110,18 +107,21 @@ def save_history(client_id, history, manual_transcript=None):
         history_list = []
         for i, content in enumerate(history):
             item = {'role': content.role, 'parts': []}
-            if content.role == 'user' and manual_transcript and i == len(history) - 2:
-                item['parts'].append({'text': manual_transcript})
+            
+            # Case 1: This is the user turn we just processed
+            if content.role == 'user' and i == len(history) - 2:
+                if manual_transcript:
+                    item['parts'].append({'text': manual_transcript})
+                # If manual_transcript is empty/None, we save nothing for this turn
             else:
+                # Case 2: Process existing parts (skipping any binary/audio data)
                 for part in content.parts:
                     if part.text:
                         item['parts'].append({'text': part.text})
-                    elif part.inline_data:
-                        encoded_data = base64.b64encode(part.inline_data.data).decode('utf-8')
-                        item['parts'].append({
-                            'inline_data': {'mime_type': part.inline_data.mime_type, 'data': encoded_data}
-                        })
-            history_list.append(item)
+            
+            # Only save if there's actually something to save
+            if item['parts']:
+                history_list.append(item)
         
         Conversation.objects.update_or_create(
             client_id=client_id,
