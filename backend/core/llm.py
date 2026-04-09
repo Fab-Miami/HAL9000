@@ -17,7 +17,9 @@ load_dotenv(os.path.join(backend_root, ".env"))
 # Initialize Gemini Client (New SDK)
 api_key = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_KEY")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = "gemini-2.0-flash-lite-preview-02-05" 
+# DO NOT CHANGE THE MODEL NAME, IT WILL BREAK THE CODE
+MODEL_NAME = "gemini-3-flash-preview"
+# DO NOT CHANGE THE MODEL NAME, IT WILL BREAK THE CODE
 
 def pcm_to_wav(pcm_bytes: bytes) -> bytes:
     """

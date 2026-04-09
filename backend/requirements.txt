@@ -1,2 +1,12 @@
-google-genai
-python-dotenv
+Django==6.0.3
+channels==4.3.2
+daphne==4.2.1
+google-genai==1.71.0
+numpy==2.4.4
+python-dotenv==1.2.2
+kokoro-onnx==0.5.0
+pydub==0.25.1
+onnxruntime==1.23.2
+requests==2.33.1
+asgiref==3.11.1
+websockets==16.0
