@@ -103,30 +103,47 @@ def save_history(client_id, history, manual_transcript=None):
     """
     Saves the chat history to the database.
     If manual_transcript is provided, the last user turn (audio) is replaced with text.
+    Consolidates streamed model chunks and strips out our internal protocol wrappers.
     """
     try:
-        history_list = []
+        consolidated = []
         for i, content in enumerate(history):
-            item = {'role': content.role, 'parts': []}
+            role = content.role
+            full_text = ""
             
-            # Case 1: This is the user turn we just processed
-            if content.role == 'user' and i == len(history) - 2:
-                if manual_transcript:
-                    item['parts'].append({'text': manual_transcript})
-                # If manual_transcript is empty/None, we save nothing for this turn
+            for part in content.parts:
+                if part.text:
+                    full_text += part.text
+            
+            if role == 'user':
+                if i == len(history) - 2 and manual_transcript:
+                    full_text = manual_transcript.strip()
+                else:
+                    full_text = full_text.strip()
+                    
+            if not full_text:
+                continue
+                
+            if consolidated and consolidated[-1]['role'] == role:
+                consolidated[-1]['parts'][0]['text'] += " " + full_text
             else:
-                # Case 2: Process existing parts (skipping any binary/audio data)
-                for part in content.parts:
-                    if part.text:
-                        item['parts'].append({'text': part.text})
-            
-            # Only save if there's actually something to save
-            if item['parts']:
-                history_list.append(item)
-        
+                consolidated.append({'role': role, 'parts': [{'text': full_text}]})
+                
+        # Clean up backend prompt protocol from the saved text
+        for item in consolidated:
+            if item['role'] == 'model':
+                text = item['parts'][0]['text']
+                if "HALANSWER:" in text:
+                    text = text.split("HALANSWER:", 1)[-1]
+                if "USERTRANSCRIPT:" in text:
+                    text = text.split("USERTRANSCRIPT:", 1)[0]
+                item['parts'][0]['text'] = text.strip()
+                
+        final_history = [x for x in consolidated if x['parts'][0]['text']]
+
         Conversation.objects.update_or_create(
             client_id=client_id,
-            defaults={'history_data': history_list}
+            defaults={'history_data': final_history}
         )
     except Exception as e:
         print(f"⚠️ [LLM] Error saving history for {client_id}: {e}")
