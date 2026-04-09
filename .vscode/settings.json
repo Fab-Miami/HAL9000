@@ -1,6 +1,7 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/localMac/kvoicewalk/.venv/bin/python",
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/localMac/kvoicewalk"
+        "${workspaceFolder}/localMac/kvoicewalk",
+        "${workspaceFolder}/backend"
     ]
 }
