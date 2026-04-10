@@ -149,7 +149,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 # Check for sentence boundaries
                 while True:
                     split_idx = -1
-                    for punct in ['. ', '? ', '! ', ', ', '; ', ': ']:
+                    for punct in ['. ', '? ', '! ', '; ', ': ']:
                         idx = text_buffer.find(punct)
                         if idx != -1 and (split_idx == -1 or idx < split_idx):
                             split_idx = idx

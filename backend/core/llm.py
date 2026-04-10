@@ -54,8 +54,7 @@ CRITICAL: The text following "HALANSWER: " is spoken immediately. If you fail to
 OUTPUT CONSTRAINTS (FOR TTS PIPELINE):
 - Provide ONLY the raw spoken text in the HALANSWER part. No quotes, emojis, or markdown.
 - Avoid exclamation points. Use periods for a measured pace.
-- Make sure "USERTRANSCRIPT: " appears ONLY once, after the whole HALANSWER is finished.
-- EXTREMELY CRITICAL FOR LATENCY: The backend server only has 1 vCPU and will crash if you provide long sentences. You MUST use incredibly short sentences. Use commas frequently. Break up conjunctions. Never output more than 8 words without a comma or period."""
+- Make sure "USERTRANSCRIPT: " appears ONLY once, after the whole HALANSWER is finished."""
 
 # --- Summarization Prompt ---
 SUMMARIZE_PROMPT = """You are an internal summarization module for HAL 9000. 
