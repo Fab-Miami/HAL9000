@@ -26,7 +26,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
         
         // Connect to remote server on dedicated port 8001
         let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown_device"
-        guard let url = URL(string: "ws://159.223.167.180:8001/ws/hal/\(deviceId)/") else {
+        guard let url = URL(string: "ws://87.99.142.137:8001/ws/hal/\(deviceId)/") else {
             appState.log("❌ Invalid WebSocket URL.")
             return
         }
@@ -95,8 +95,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         
         // For development: Skip SSL validation for the specific IP
-        if challenge.protectionSpace.host == "159.223.167.180" {
-            appState.log("🔓 Bypassing SSL validation for 159.223.167.180...")
+        if challenge.protectionSpace.host == "87.99.142.137" {
+            appState.log("🔓 Bypassing SSL validation for 87.99.142.137...")
             completionHandler(.useCredential, URLCredential(trust: challenge.protectionSpace.serverTrust!))
         } else {
             completionHandler(.performDefaultHandling, nil)
