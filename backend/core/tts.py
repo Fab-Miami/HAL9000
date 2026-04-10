@@ -2,20 +2,28 @@ import os
 import numpy as np
 from kokoro_onnx import Kokoro
 
-# Locate the models we downloaded into the core directory
+# Model selection (v1.0-quant is ~2.2x faster than v1.0 standard)
+MODEL_NAME = "kokoro-v1.0-quant.onnx"
+# MODEL_NAME = "kokoro-v1.0.onnx" # Original FP32 backup
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(current_dir, "kokoro-v1.0.onnx")
+model_path = os.path.join(current_dir, MODEL_NAME)
 voices_path = os.path.join(current_dir, "voices-v1.0.bin")
 
 try:
-    print(f"👂 [Kokoro] Loading TTS Engine from {model_path}...")
+    print(f"👂 [Kokoro] Loading TTS Engine ({MODEL_NAME})...")
     if not os.path.exists(model_path):
         print(f"❌ [Kokoro] ERROR: Model file not found at {model_path}")
+        # Fallback to original if quant is missing
+        if "quant" in MODEL_NAME:
+            print("⚠️ [Kokoro] Falling back to original FP32 model...")
+            model_path = os.path.join(current_dir, "kokoro-v1.0.onnx")
+    
     if not os.path.exists(voices_path):
         print(f"❌ [Kokoro] ERROR: Voices file not found at {voices_path}")
         
     kokoro = Kokoro(model_path, voices_path)
-    print("✅ [Kokoro] TTS Engine loaded successfully.")
+    print(f"✅ [Kokoro] TTS Engine loaded successfully from {os.path.basename(model_path)}.")
 except Exception as e:
     print(f"💀 [Kokoro] CRITICAL FAILURE to initialize: {e}")
     import traceback
