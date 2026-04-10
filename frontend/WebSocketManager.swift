@@ -65,12 +65,16 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate {
             
             switch result {
             case .success(let message):
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm:ss.SSS"
+                let timestamp = "[\(formatter.string(from: Date()))]"
+                
                 switch message {
                 case .data(let data):
-                    print("⬇️ Received data: \(data.count) bytes")
+                    print("\(timestamp) ⬇️ Received data: \(data.count) bytes")
                     self.onAudioReceived?(data)
                 case .string(let text):
-                    print("⬇️ Received string: \(text)")
+                    print("\(timestamp) ⬇️ Received string: \(text)")
                     self.onStringReceived?(text)
                 @unknown default:
                     break
