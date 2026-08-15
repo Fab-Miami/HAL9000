@@ -8,7 +8,10 @@ from datetime import timedelta
 from django.utils import timezone
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 from .models import ConversationHistory, ConversationSummary
+
+load_dotenv()
 
 # Initialize Gemini Client
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")

@@ -1,13 +1,12 @@
 from django.contrib import admin
-from .models import Conversation, LongTermMemory
+from .models import ConversationHistory, ConversationSummary
 
-@admin.register(Conversation)
-class ConversationAdmin(admin.ModelAdmin):
-    list_display = ('client_id', 'updated_at')
-    search_fields = ('client_id',)
+@admin.register(ConversationHistory)
+class ConversationHistoryAdmin(admin.ModelAdmin):
+    list_display = ('client_id', 'role', 'created_at')
+    search_fields = ('client_id', 'content')
 
-@admin.register(LongTermMemory)
-class LongTermMemoryAdmin(admin.ModelAdmin):
+@admin.register(ConversationSummary)
+class ConversationSummaryAdmin(admin.ModelAdmin):
     list_display = ('client_id', 'created_at')
-    search_fields = ('client_id',)
-    list_filter = ('created_at',)
+    search_fields = ('client_id', 'summary_text')
