@@ -246,6 +246,11 @@ document.addEventListener('visibilitychange', async () => {
 async function initializeSystem() {
   log('🚀 Initializing HAL 9000 system on iPhone...');
 
+  // Always fade out initialization overlay immediately into pure black
+  if (initOverlay) {
+    initOverlay.classList.add('fade-out');
+  }
+
   try {
     // 1. Ensure secure context
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -263,12 +268,7 @@ async function initializeSystem() {
     setState(State.LISTENING);
 
     // 5. Request permanent Screen Wake Lock
-    await requestScreenWakeLock();
-
-    // 6. Fade out initialization overlay into pure black
-    if (initOverlay) {
-      initOverlay.classList.add('fade-out');
-    }
+    requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
 
     log('✅ HAL 9000 fully operational and standing by.');
   } catch (err) {
@@ -279,6 +279,10 @@ async function initializeSystem() {
 
 if (btnInit) {
   btnInit.addEventListener('click', initializeSystem);
+  btnInit.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    initializeSystem();
+  });
 }
 
 // Telemetry / Diagnostic HUD Controls (Tap status bar 3x)
@@ -317,15 +321,101 @@ if (btnSaveHost) {
   });
 }
 
-if (btnReconnect) {
-  btnReconnect.addEventListener('click', () => {
-    wsClient.connect();
-  });
+// ----------------------------------------------------
+// One-Way 3-Second Long-Press: Switch to 3D Printed Box Mode
+// ----------------------------------------------------
+const ringContainer = document.getElementById('long-press-ring-container');
+const ringCircle = document.getElementById('long-press-circle');
+const CIRCLE_CIRCUMFERENCE = 440; // 2 * PI * 70 = ~439.82
+let longPressAnimFrame = null;
+let pressStartTime = 0;
+const LONG_PRESS_DURATION_MS = 3000;
+
+function switchToEnclosureMode() {
+  document.body.classList.remove('mode-desk');
+  document.body.classList.add('mode-enclosure');
+
+  // Haptic confirmation pulse
+  if (navigator.vibrate) {
+    navigator.vibrate([60, 40, 100]);
+  }
+
+  log('🔄 Switched to 3D-PRINTED BOX MODE (Locked until next restart).');
 }
 
-// Set up UI modes via URL parameters (?mode=desk or ?mode=enclosure)
-const urlParams = new URLSearchParams(window.location.search);
-const modeParam = urlParams.get('mode') || 'enclosure';
-document.body.classList.add(`mode-${modeParam}`);
+function updateLongPressProgress() {
+  if (!pressStartTime) return;
+  const elapsed = performance.now() - pressStartTime;
+  const progress = Math.min(1.0, elapsed / LONG_PRESS_DURATION_MS);
 
-log(`📱 Loaded HAL 9000 PWA in [${modeParam.toUpperCase()}] mode.`);
+  if (ringCircle) {
+    const offset = CIRCLE_CIRCUMFERENCE * (1.0 - progress);
+    ringCircle.style.strokeDashoffset = offset;
+  }
+
+  if (progress < 1.0) {
+    longPressAnimFrame = requestAnimationFrame(updateLongPressProgress);
+  } else {
+    // 3.0 seconds completed!
+    cancelLongPress();
+    switchToEnclosureMode();
+  }
+}
+
+function startLongPress(e) {
+  // If already in 3D-printed enclosure mode, IGNORE (No coming back until restart)
+  if (document.body.classList.contains('mode-enclosure')) {
+    return;
+  }
+
+  // Ignore touches on diagnostic panel or init overlay
+  if (e.target.closest('#diag-panel') || e.target.closest('#init-overlay')) {
+    return;
+  }
+
+  cancelLongPress();
+  pressStartTime = performance.now();
+
+  if (ringContainer) {
+    ringContainer.classList.remove('hidden');
+  }
+  if (ringCircle) {
+    ringCircle.style.strokeDashoffset = CIRCLE_CIRCUMFERENCE;
+  }
+
+  longPressAnimFrame = requestAnimationFrame(updateLongPressProgress);
+}
+
+function cancelLongPress() {
+  pressStartTime = 0;
+  if (longPressAnimFrame) {
+    cancelAnimationFrame(longPressAnimFrame);
+    longPressAnimFrame = null;
+  }
+  if (ringContainer) {
+    ringContainer.classList.add('hidden');
+  }
+  if (ringCircle) {
+    ringCircle.style.strokeDashoffset = CIRCLE_CIRCUMFERENCE;
+  }
+}
+
+if (halStage) {
+  // Touch events (iOS Safari / Mobile)
+  halStage.addEventListener('touchstart', startLongPress, { passive: true });
+  halStage.addEventListener('touchend', cancelLongPress, { passive: true });
+  halStage.addEventListener('touchcancel', cancelLongPress, { passive: true });
+  halStage.addEventListener('touchmove', cancelLongPress, { passive: true });
+
+  // Mouse events (Desktop / Testing)
+  halStage.addEventListener('mousedown', startLongPress);
+  halStage.addEventListener('mouseup', cancelLongPress);
+  halStage.addEventListener('mouseleave', cancelLongPress);
+}
+
+// APP ALWAYS starts in standard mode (Desk Mode with HAL9000.png image)
+localStorage.removeItem('hal_display_mode');
+document.body.classList.remove('mode-enclosure');
+document.body.classList.add('mode-desk');
+
+log('📱 Initialized HAL 9000 in STANDARD DESK MODE.');

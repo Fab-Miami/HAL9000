@@ -40,8 +40,9 @@ export class WsClient {
 
     clearTimeout(this.reconnectTimer);
 
-    // On local LAN without valid cert on port 8001, connect directly via ws://
-    const wsUrl = `ws://${this.serverHost}/ws/hal/${this.clientId}/`;
+    // Auto-detect protocol and host for seamless same-origin WebSocket proxying
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/hal/${this.clientId}/`;
     this.onLog(`🌐 Connecting WebSocket: ${wsUrl}`);
     this.onStatusChange('CONNECTING');
 

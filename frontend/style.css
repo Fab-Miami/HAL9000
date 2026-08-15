@@ -85,13 +85,15 @@ html, body {
   opacity: 0.95;
   mix-blend-mode: screen;
 
-  /* 2x less gradient falloff: middle color extends to outer boundary */
+  /* Smooth cinematic fade into deep pitch black */
   background: radial-gradient(
     circle closest-side,
-    rgba(220, 20, 0, 0.95) 0%,
-    rgba(210, 10, 0, 0.88) 35%,
-    rgba(180, 0, 0, 0.72) 70%,
-    rgba(145, 0, 0, 0.52) 100%
+    rgba(235, 20, 0, 0.95) 0%,
+    rgba(220, 10, 0, 0.85) 30%,
+    rgba(180, 0, 0, 0.58) 55%,
+    rgba(110, 0, 0, 0.28) 75%,
+    rgba(40, 0, 0, 0.08) 90%,
+    rgba(0, 0, 0, 0) 100%
   );
 }
 
@@ -132,8 +134,8 @@ body.mode-desk #hal-bezel {
 }
 
 body.mode-desk #hal-glow {
-  width: 48%;
-  height: 48%;
+  width: 58%;
+  height: 58%;
 }
 
 body.mode-desk #hal-core {
@@ -166,26 +168,26 @@ body.mode-enclosure #hal-core {
   height: 96px;
 }
 
-/* Default Mode: Enclosure Mode (Clean, focused on red optics) */
-body:not(.mode-desk) #hal-bezel {
-  display: none;
+/* Default Mode: Desk Mode (Full lens bezel visible) */
+body:not(.mode-enclosure) #hal-container {
+  width: 90vw;
+  height: 90vw;
+  max-width: 90vh;
+  max-height: 90vh;
 }
 
-body:not(.mode-desk) #hal-container {
-  width: 100vw;
-  height: 100vh;
+body:not(.mode-enclosure) #hal-bezel {
+  display: block;
 }
 
-body:not(.mode-desk) #hal-glow {
-  width: 80vw;
-  height: 80vw;
-  max-width: 80vw;
-  max-height: 80vw;
+body:not(.mode-enclosure) #hal-glow {
+  width: 58%;
+  height: 58%;
 }
 
-body:not(.mode-desk) #hal-core {
-  width: 96px;
-  height: 96px;
+body:not(.mode-enclosure) #hal-core {
+  width: 20px;
+  height: 20px;
 }
 
 /* ----------------------------------------------------
@@ -276,6 +278,55 @@ body:not(.mode-desk) #hal-core {
 
 #hold-indicator.visible {
   opacity: 1;
+}
+
+/* ----------------------------------------------------
+   3-Second Long Press Progress Ring (Mode Toggle HUD)
+   ---------------------------------------------------- */
+#long-press-ring-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(1.0);
+  width: 280px;
+  height: 280px;
+  max-width: 85vw;
+  max-height: 85vw;
+  pointer-events: none;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#long-press-ring-container.hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.85);
+  visibility: hidden;
+}
+
+#long-press-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg); /* Start animation at top 12 o'clock */
+}
+
+.ring-bg {
+  fill: none;
+  stroke: rgba(255, 34, 0, 0.15);
+  stroke-width: 3;
+}
+
+.ring-progress {
+  fill: none;
+  stroke: #ff2200;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-dasharray: 440; /* 2 * PI * 70 = 439.82 */
+  stroke-dashoffset: 440;
+  filter: drop-shadow(0 0 8px rgba(255, 34, 0, 0.95)) drop-shadow(0 0 16px rgba(255, 68, 0, 0.7));
+  transition: stroke-dashoffset 0.03s linear;
 }
 
 /* ----------------------------------------------------

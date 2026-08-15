@@ -56,6 +56,14 @@
       <span id="status-text">OFFLINE</span>
     </header>
 
+    <!-- 3-Second Long Press Mode Switcher Progress Ring -->
+    <div id="long-press-ring-container" class="hidden">
+      <svg id="long-press-svg" viewBox="0 0 160 160">
+        <circle class="ring-bg" cx="80" cy="80" r="70"></circle>
+        <circle id="long-press-circle" class="ring-progress" cx="80" cy="80" r="70"></circle>
+      </svg>
+    </div>
+
     <!-- Tap & Hold manual talk overlay (Optional fallback to voice VAD) -->
     <div id="hold-indicator">
       <span>LISTENING...</span>
