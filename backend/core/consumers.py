@@ -1,4 +1,6 @@
 import asyncio
+import json
+import re
 import sys
 import time
 import numpy as np
@@ -7,8 +9,8 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 2.0
-SILENCE_THRESHOLD = 500
+CAPTURE_WINDOW = 1.0
+SILENCE_THRESHOLD = 2200  # Elevated threshold: filters out ambient noise (900-1400 RMS) while catching human voice (4000-8000+ RMS)
 
 import datetime
 def log(msg):
@@ -25,16 +27,22 @@ class HalConsumer(AsyncWebsocketConsumer):
         
         # State variables
         self.audio_buffer = bytearray()
+        self.pre_roll_buffer = bytearray()
+        self.last_speech_time = time.time()
         self.is_recording = False
+        self.speech_detected = False
         self.processing_task = None
-        self.last_speech_time = 0
+        self.current_volume = 5
         
         # Load recent history and long-term summaries
-        history, summaries = await asyncio.to_thread(llm.load_history, self.client_id)
-        self.chat_session = llm.create_chat_session(history=history, summaries_text=summaries)
+        self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
+        self.chat_session = llm.create_chat_session(
+            history=self.history, 
+            summaries_text=self.summaries, 
+            current_volume=self.current_volume
+        )
         
         # Trigger background summarization for any other old chats this client might have
-        # This runs "when the time comes" in a separate thread, without blocking Dave.
         asyncio.create_task(asyncio.to_thread(llm.summarize_old_conversations, self.client_id))
 
     async def disconnect(self, close_code):
@@ -43,41 +51,117 @@ class HalConsumer(AsyncWebsocketConsumer):
             self.processing_task.cancel()
 
     async def receive(self, text_data=None, bytes_data=None):
+        if text_data:
+            if text_data == "INTERRUPT":
+                log("🛑 [HalConsumer] Voice Barge-In signal received. Terminating response generation...")
+                if self.processing_task and not self.processing_task.done():
+                    self.processing_task.cancel()
+                self.audio_buffer = bytearray()
+                self.pre_roll_buffer = bytearray()
+                self.is_recording = False
+                self.speech_detected = False
+                return
+
+            try:
+                msg = json.loads(text_data)
+                if isinstance(msg, dict) and 'volume' in msg:
+                    self.current_volume = max(1, min(10, int(msg['volume'])))
+                    log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
+                    self.chat_session = llm.create_chat_session(
+                        history=self.history, 
+                        summaries_text=self.summaries, 
+                        current_volume=self.current_volume
+                    )
+            except Exception as e:
+                log(f"⚠️ [HalConsumer] JSON message parse error: {e}")
+
         if bytes_data:
-            self.audio_buffer.extend(bytes_data)
-            
-            # Check for voice activity
+            # Check for voice activity in this chunk
             data = np.frombuffer(bytes_data, dtype=np.int16)
+            rms = 0.0
             if len(data) > 0:
-                # Calculate root mean square (RMS)
-                rms = np.sqrt(np.mean(np.square(data.astype(np.float32))))
-                if rms > SILENCE_THRESHOLD:
-                    self.last_speech_time = time.time()
-            
-            # Start the capture timer on first chunk only
-            if not self.is_recording:
-                self.is_recording = True
+                rms = float(np.sqrt(np.mean(np.square(data.astype(np.float32)))))
+
+            if rms > SILENCE_THRESHOLD:
                 self.last_speech_time = time.time()
-                log(f"⏺️ [HalConsumer] First audio chunk received. Listening until {CAPTURE_WINDOW}s of silence...")
-                self.processing_task = asyncio.create_task(self._process_pipeline())
+                if not self.is_recording:
+                    self.is_recording = True
+                    self.speech_detected = True
+                    # Prepend pre-roll buffer (0.5s) so speech onset isn't lost
+                    self.audio_buffer = bytearray(self.pre_roll_buffer)
+                    self.audio_buffer.extend(bytes_data)
+                    log(f"🎙️ [HalConsumer] Speech detected (RMS: {rms:.0f}). Capturing until {CAPTURE_WINDOW}s of silence...")
+                    self.processing_task = asyncio.create_task(self._process_pipeline())
+                else:
+                    self.audio_buffer.extend(bytes_data)
+            else:
+                if self.is_recording:
+                    # User spoke previously, now accumulating silence window
+                    self.audio_buffer.extend(bytes_data)
+                else:
+                    # Ambient silence: maintain 0.5s rolling pre-roll buffer (16000 bytes)
+                    self.pre_roll_buffer.extend(bytes_data)
+                    if len(self.pre_roll_buffer) > 16000:
+                        self.pre_roll_buffer = self.pre_roll_buffer[-16000:]
 
     async def _process_pipeline(self):
         try:
             # Wait for the capture window of silence to accumulate audio
             while time.time() - self.last_speech_time < CAPTURE_WINDOW:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.05)
             
             buffer_size = len(self.audio_buffer)
             duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
             log(f"🤫 [HalConsumer] Silence detected. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
             
+            # If no speech was detected or buffer is too short, reset silently without inference
+            if not self.speech_detected or buffer_size < 19200:
+                log("⚠️ [HalConsumer] Insufficient speech energy. Resetting silently.")
+                self.audio_buffer = bytearray()
+                self.pre_roll_buffer = bytearray()
+                self.is_recording = False
+                self.speech_detected = False
+                await self.send(text_data="DONE")
+                return
+
+            # Trim trailing dead silence from buffer, leaving a clean 0.15s cushion
+            trailing_silence_s = time.time() - self.last_speech_time
+            trim_duration_s = max(0.0, trailing_silence_s - 0.15)
+            trim_bytes = int(trim_duration_s * 16000) * 2  # Strictly even number of bytes
+            
+            if trim_bytes > 0 and len(self.audio_buffer) > trim_bytes + 6400:
+                pcm_bytes = bytes(self.audio_buffer[:-trim_bytes])
+                log(f"✂️ [HalConsumer] Trimmed {trim_bytes} bytes ({trim_duration_s:.2f}s) of dead trailing silence.")
+            else:
+                pcm_bytes = bytes(self.audio_buffer)
+            
+            # Ensure strict 16-bit PCM word alignment (must be multiple of 2 bytes)
+            if len(pcm_bytes) % 2 != 0:
+                pcm_bytes = pcm_bytes[:-1]
+
+            # Strict validation: verify trimmed audio payload duration and RMS volume
+            speech_duration_s = len(pcm_bytes) / (16000 * 2)
+            audio_arr = np.frombuffer(pcm_bytes, dtype=np.int16)
+            peak_rms = 0.0
+            if len(audio_arr) > 0:
+                peak_rms = float(np.sqrt(np.mean(np.square(audio_arr.astype(np.float32)))))
+
+            if speech_duration_s < 0.40 or peak_rms < (SILENCE_THRESHOLD * 0.70):
+                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom trigger (Duration: {speech_duration_s:.2f}s, RMS: {peak_rms:.0f}). Resetting.")
+                self.audio_buffer = bytearray()
+                self.pre_roll_buffer = bytearray()
+                self.is_recording = False
+                self.speech_detected = False
+                await self.send(text_data="DONE")
+                return
+
             # Inform the client that we are now thinking
             await self.send(text_data="THINKING")
-            
             start_time = time.time()
-            pcm_bytes = bytes(self.audio_buffer)
             
             if not pcm_bytes:
+                self.is_recording = False
+                self.speech_detected = False
                 return
                 
             log("📦 [HalConsumer] Packaging to WAV...")
@@ -94,112 +178,129 @@ class HalConsumer(AsyncWebsocketConsumer):
                 sentence_count = 0
                 while True:
                     sentence = await sentence_queue.get()
-                    if sentence is None:  # Sentinel value to terminate
-                        sentence_queue.task_done()
-                        break
-                        
+                    if sentence is None:
+                        break # Poison pill received
+                    
                     sentence_count += 1
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
                     
-                    async for chunk_bytes in tts.text_to_speech_stream(sentence):
-                        if chunk_bytes:
-                            await self.send(bytes_data=chunk_bytes)
-                            
-                    tts_elapsed = time.time() - tts_start
-                    log(f"📤 [HalConsumer] TTS #{sentence_count} streaming completed in {tts_elapsed:.2f}s")
-                    sentence_queue.task_done()
+                    # Stream Kokoro TTS audio chunks back to iOS
+                    async for audio_chunk in tts.text_to_speech_stream(sentence):
+                        await self.send(bytes_data=audio_chunk)
                     
+                    log(f"📤 [HalConsumer] TTS #{sentence_count} streaming completed in {time.time() - tts_start:.2f}s")
+                    sentence_queue.task_done()
+            
             tts_task = asyncio.create_task(tts_worker())
-            
-            text_buffer = ""
-            first_token = True
-            
-            # --- Transcription Interception Logic ---
-            interceptor_buffer = ""
-            is_stripping_answer = True
-            is_transcript_mode = False
-            manual_transcript = ""
 
-            async for chunk in llm.generate_chat_response(self.chat_session, wav_bytes):
-                if first_token:
-                    log(f"⚡ [HalConsumer] Gemini first token in {time.time() - gemini_start:.2f}s")
-                    first_token = False
-                
-                if is_stripping_answer:
-                    interceptor_buffer += chunk
-                    if "HALANSWER:" in interceptor_buffer:
-                        parts = interceptor_buffer.split("HALANSWER:", 1)
-                        text_buffer = parts[1]
-                        is_stripping_answer = False
-                    continue
-                
-                if is_transcript_mode:
-                    manual_transcript += chunk
-                    continue
-                
-                text_buffer += chunk
-                
-                if "USERTRANSCRIPT:" in text_buffer:
-                    parts = text_buffer.split("USERTRANSCRIPT:", 1)
-                    text_buffer = parts[0]
-                    manual_transcript = parts[1]
-                    is_transcript_mode = True
-                
-                # Check for sentence boundaries
-                while True:
-                    split_idx = -1
-                    for punct in ['. ', ', ', '? ', '! ', '; ', ': ']:
-                        idx = text_buffer.find(punct)
-                        if idx != -1 and (split_idx == -1 or idx < split_idx):
-                            split_idx = idx
-                            
-                    if split_idx != -1:
-                        sentence = text_buffer[:split_idx + 1].strip()
-                        text_buffer = text_buffer[split_idx + 1:].lstrip()
-                        
-                        if sentence:
-                            await sentence_queue.put(sentence)
-                    else:
-                        break
+            # Text accumulation and sentence boundary detection
+            accumulated_text = ""
+            full_response_text = ""
+            manual_transcript = ""
+            first_token_time = None
+            is_transcript_mode = False
             
+            # Sentence terminators: period, exclamation, question mark, colon, newline
+            sentence_pattern = re.compile(r'([^.!?:\n]+[.!?:\n]+)')
+
+            # Iterate over the live Gemini stream
+            async for token in llm.stream_gemini_response(self.chat_session, wav_bytes):
+                if first_token_time is None:
+                    first_token_time = time.time()
+                    log(f"⚡ [HalConsumer] Gemini first token in {first_token_time - gemini_start:.2f}s")
+                
+                accumulated_text += token
+
+                # Check if we have crossed into the USERTRANSCRIPT section
+                if not is_transcript_mode:
+                    if "USERTRANSCRIPT:" in accumulated_text:
+                        is_transcript_mode = True
+                        parts = accumulated_text.split("USERTRANSCRIPT:")
+                        hal_part = parts[0]
+                        manual_transcript = parts[1] if len(parts) > 1 else ""
+                        
+                        # Process any remaining sentences in the HAL part
+                        clean_hal = hal_part.replace("HALANSWER:", "").strip()
+                        if clean_hal:
+                            full_response_text += clean_hal + " "
+                            await sentence_queue.put(clean_hal)
+                        accumulated_text = ""
+                    else:
+                        # Extract complete sentences from HAL's answer
+                        while True:
+                            # Strip "HALANSWER: " prefix if present at start of stream
+                            if accumulated_text.startswith("HALANSWER:"):
+                                accumulated_text = accumulated_text[len("HALANSWER:"):].lstrip()
+                                
+                            match = sentence_pattern.search(accumulated_text)
+                            if not match:
+                                break
+                                
+                            complete_sentence = match.group(1).strip()
+                            accumulated_text = accumulated_text[match.end():]
+                            
+                            # Clean up and push to TTS queue
+                            if complete_sentence:
+                                # Intercept and process any embedded volume tag
+                                vol_match = re.search(r'\[volume:\s*(\d+)\]', complete_sentence, re.IGNORECASE)
+                                if vol_match:
+                                    new_vol = max(1, min(10, int(vol_match.group(1))))
+                                    self.current_volume = new_vol
+                                    log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+                                    await self.send(text_data=f"VOLUME:{new_vol}")
+                                    complete_sentence = re.sub(r'\[volume:\s*\d+\]', '', complete_sentence, flags=re.IGNORECASE).strip()
+
+                                if complete_sentence:
+                                    full_response_text += complete_sentence + " "
+                                    await sentence_queue.put(complete_sentence)
+                else:
+                    manual_transcript += token
+
+            # If the stream finished without encountering USERTRANSCRIPT:, flush remaining text
+            if not is_transcript_mode and accumulated_text.strip():
+                clean_tail = accumulated_text.replace("HALANSWER:", "").strip()
+                vol_match = re.search(r'\[volume:\s*(\d+)\]', clean_tail, re.IGNORECASE)
+                if vol_match:
+                    new_vol = max(1, min(10, int(vol_match.group(1))))
+                    self.current_volume = new_vol
+                    log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+                    await self.send(text_data=f"VOLUME:{new_vol}")
+                    clean_tail = re.sub(r'\[volume:\s*\d+\]', '', clean_tail, flags=re.IGNORECASE).strip()
+
+                if clean_tail:
+                    full_response_text += clean_tail
+                    await sentence_queue.put(clean_tail)
+
+            log(f"⚡ [HalConsumer] Gemini streaming complete in {time.time() - gemini_start:.2f}s")
+            
+            # Extract and log transcript
             manual_transcript = manual_transcript.strip()
             if manual_transcript:
                 log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
-            
-            gemini_elapsed = time.time() - gemini_start
-            
-            # Process any remaining text in the buffer
-            final_sentence = text_buffer.strip()
-            if final_sentence:
-                await sentence_queue.put(final_sentence)
-            
-            # Shut down queue cleanly
+
+            # Send poison pill to stop TTS worker and wait for synthesis completion
             await sentence_queue.put(None)
-            
-            # Await the TTS task to ensure everything finishes synthesizing and sending
             await tts_task
-            
-            log(f"⚡ [HalConsumer] Gemini streaming complete in {gemini_elapsed:.2f}s")
-            
-            # Save the updated history back to the database, swapping the audio for the text transcript
-            history = self.chat_session.get_history()
-            await asyncio.to_thread(llm.save_history, self.client_id, history, manual_transcript=manual_transcript)
-            
+
+            # Asynchronously persist updated chat history
+            await asyncio.to_thread(llm.save_history, self.client_id, self.chat_session.history)
+
+            # Signal iOS client that audio generation is complete
             log("🏁 [HalConsumer] Sending DONE signal to iOS...")
             await self.send(text_data="DONE")
-            
-            end_time = time.time()
-            log(f"⏱️ [HalConsumer] Pipeline complete in {end_time - start_time:.2f}s.")
-            
+            log(f"⏱️ [HalConsumer] Pipeline complete in {time.time() - start_time:.2f}s.")
+
         except asyncio.CancelledError:
-            pass
+            log("🛑 [HalConsumer] Pipeline task cancelled (User barge-in or disconnect).")
         except Exception as e:
             log(f"❌ [HalConsumer] Error in processing pipeline: {e}")
             import traceback
             traceback.print_exc()
         finally:
+            # Always reset state so HAL is ready for next speech turn
             log("♻️ [HalConsumer] Resetting state for next interaction.")
+            self.audio_buffer = bytearray()
+            self.pre_roll_buffer = bytearray()
             self.is_recording = False
-            self.audio_buffer.clear()
-
+            self.speech_detected = False

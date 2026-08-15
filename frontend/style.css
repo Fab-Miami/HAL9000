@@ -1,0 +1,486 @@
+/* HAL 9000 Fullscreen Optical Interface */
+
+:root {
+  --bg-color: #000000;
+  --text-color: #e0e0e0;
+  --accent-red: #ff2200;
+  --hal-core-yellow: #ffee55;
+  --hal-glow-red: #e60000;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  position: fixed;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000000;
+}
+
+/* ----------------------------------------------------
+   HAL 9000 Optical Stage & Sizing Modes
+   ---------------------------------------------------- */
+#hal-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+#hal-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vw;
+  max-width: 100vh;
+  max-height: 100vh;
+}
+
+/* Static Lens Bezel Image */
+#hal-bezel {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Dynamic Inner Glow (Modulated by User Voice Activity) */
+#hal-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  opacity: 0.95;
+  mix-blend-mode: screen;
+
+  /* 2x less gradient falloff: middle color extends to outer boundary */
+  background: radial-gradient(
+    circle closest-side,
+    rgba(220, 20, 0, 0.95) 0%,
+    rgba(210, 10, 0, 0.88) 35%,
+    rgba(180, 0, 0, 0.72) 70%,
+    rgba(145, 0, 0, 0.52) 100%
+  );
+}
+
+/* Central LED Diode (Modulated strictly by HAL Speech Voice Activity) */
+#hal-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  transition: opacity 0.08s ease-out, transform 0.08s ease-out;
+  background: radial-gradient(
+    circle,
+    #ffffff 0%,
+    #ffff88 25%,
+    #ffcc00 55%,
+    #ff4400 85%,
+    transparent 100%
+  );
+  box-shadow: 0 0 12px rgba(255, 238, 85, 0.9), 0 0 24px rgba(255, 68, 0, 0.6);
+  opacity: 0.9;
+}
+
+/* ----------------------------------------------------
+   Desk Mode (Standalone iPhone on desk): Full bezel visible
+   ---------------------------------------------------- */
+body.mode-desk #hal-container {
+  width: 90vw;
+  height: 90vw;
+  max-width: 90vh;
+  max-height: 90vh;
+}
+
+body.mode-desk #hal-bezel {
+  display: block;
+}
+
+body.mode-desk #hal-glow {
+  width: 48%;
+  height: 48%;
+}
+
+body.mode-desk #hal-core {
+  width: 20px;
+  height: 20px;
+}
+
+/* ----------------------------------------------------
+   Enclosure Mode (Mounted behind 3D printed bezel):
+   Bezel is hidden; only dynamic optics are displayed.
+   ---------------------------------------------------- */
+body.mode-enclosure #hal-bezel {
+  display: none !important;
+}
+
+body.mode-enclosure #hal-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+body.mode-enclosure #hal-glow {
+  width: 80vw;
+  height: 80vw;
+  max-width: 80vw;
+  max-height: 80vw;
+}
+
+body.mode-enclosure #hal-core {
+  width: 96px;
+  height: 96px;
+}
+
+/* Default Mode: Enclosure Mode (Clean, focused on red optics) */
+body:not(.mode-desk) #hal-bezel {
+  display: none;
+}
+
+body:not(.mode-desk) #hal-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+body:not(.mode-desk) #hal-glow {
+  width: 80vw;
+  height: 80vw;
+  max-width: 80vw;
+  max-height: 80vw;
+}
+
+body:not(.mode-desk) #hal-core {
+  width: 96px;
+  height: 96px;
+}
+
+/* ----------------------------------------------------
+   Optical Breathing Animations by System State
+   ---------------------------------------------------- */
+.state-idle #hal-glow {
+  opacity: 0.9;
+}
+
+.state-listening #hal-glow {
+  opacity: 1.0;
+}
+
+.state-thinking #hal-glow {
+  animation: hal-pulse-thinking 1.2s infinite alternate ease-in-out;
+}
+
+.state-speaking #hal-glow {
+  opacity: 1.0;
+}
+
+@keyframes hal-pulse-thinking {
+  0% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.04);
+    opacity: 1.0;
+  }
+}
+
+/* ----------------------------------------------------
+   Status Bar & Diagnostics HUD
+   ---------------------------------------------------- */
+#status-bar {
+  position: absolute;
+  top: env(safe-area-inset-top, 16px);
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  opacity: 0.35;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  transition: opacity 0.3s ease;
+}
+
+#status-bar:hover, #status-bar:active {
+  opacity: 0.9;
+}
+
+#status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #555555;
+  transition: background-color 0.3s ease;
+}
+
+#status-dot.connected {
+  background-color: #00ff66;
+  box-shadow: 0 0 6px #00ff66;
+}
+
+#status-dot.processing {
+  background-color: var(--accent-red);
+  box-shadow: 0 0 6px var(--accent-red);
+}
+
+/* Hold indicator */
+#hold-indicator {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+
+#hold-indicator.visible {
+  opacity: 1;
+}
+
+/* ----------------------------------------------------
+   Initial Unlock Overlay (Required for iOS Audio Unlock)
+   ---------------------------------------------------- */
+#init-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000000;
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.6s ease, visibility 0.6s;
+}
+
+#init-overlay.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.init-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 24px;
+  max-width: 360px;
+  width: 90vw;
+}
+
+.init-eye {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 3px solid #333333;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+  background: #080808;
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+}
+
+.init-glow {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff2200 0%, #bb0000 60%, transparent 100%);
+  animation: init-eye-pulse 2s infinite alternate ease-in-out;
+}
+
+@keyframes init-eye-pulse {
+  0% { transform: scale(0.85); opacity: 0.5; }
+  100% { transform: scale(1.15); opacity: 0.95; }
+}
+
+.init-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 5px;
+  color: #f0f0f0;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.init-subtitle {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #777777;
+  margin-bottom: 32px;
+  white-space: nowrap;
+}
+
+.init-btn {
+  background: #111111;
+  color: #f0f0f0;
+  border: 1px solid #444444;
+  padding: 14px 28px;
+  font-size: 12px;
+  letter-spacing: 3px;
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s ease;
+}
+
+.init-btn:active {
+  background: #ff2200;
+  border-color: #ff2200;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(255, 34, 0, 0.6);
+}
+
+/* ----------------------------------------------------
+   Diagnostic / Telemetry Modal (Hidden by default)
+   ---------------------------------------------------- */
+#diag-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  max-height: 70vh;
+  background: rgba(12, 12, 12, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid #222222;
+  z-index: 1000;
+  padding: 20px;
+  color: #cccccc;
+  font-size: 12px;
+  font-family: monospace;
+  overflow-y: auto;
+  transition: transform 0.3s ease;
+}
+
+#diag-panel.hidden {
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+.diag-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #222222;
+}
+
+.diag-header h3 {
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #ff3311;
+}
+
+#btn-close-diag {
+  background: none;
+  border: none;
+  color: #888888;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.diag-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.diag-row input {
+  background: #1c1c1c;
+  border: 1px solid #333333;
+  color: #ffffff;
+  padding: 4px 8px;
+  font-family: monospace;
+  font-size: 11px;
+  border-radius: 3px;
+  width: 140px;
+}
+
+.diag-row button {
+  background: #2a2a2a;
+  border: 1px solid #444444;
+  color: #ffffff;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+
+.meter-bar {
+  width: 120px;
+  height: 10px;
+  background: #222222;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff9900, #ff2200);
+  transition: width 0.05s linear;
+}
+
+.diag-action-btn {
+  background: #1f1f1f;
+  border: 1px solid #333333;
+  color: #ff3311;
+  padding: 10px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  border-radius: 4px;
+  margin-top: 8px;
+  cursor: pointer;
+}

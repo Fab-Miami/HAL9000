@@ -2,161 +2,148 @@ import os
 import io
 import wave
 import base64
+import json
+import asyncio
 from datetime import timedelta
 from django.utils import timezone
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-from .models import Conversation, LongTermMemory
+from .models import ConversationHistory, ConversationSummary
 
-# Initialize environment
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_root = os.path.dirname(current_dir)
-load_dotenv(os.path.join(backend_root, ".env"))
+# Initialize Gemini Client
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize Gemini Client (New SDK)
-api_key = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_KEY")
-client = genai.Client(api_key=api_key)
-# DO NOT CHANGE THE MODEL NAME, IT WILL BREAK THE CODE
 MODEL_NAME = "gemini-3-flash-preview"
-# DO NOT CHANGE THE MODEL NAME, IT WILL BREAK THE CODE
 
-def pcm_to_wav(pcm_bytes: bytes) -> bytes:
-    """
-    Wraps raw 16kHz, mono, 16-bit PCM bytes into a valid WAV byte stream in-memory.
-    """
-    wav_io = io.BytesIO()
-    with wave.open(wav_io, 'wb') as wav_file:
-        wav_file.setnchannels(1) # mono
-        wav_file.setsampwidth(2) # 16-bit
-        wav_file.setframerate(16000) # 16kHz
-        wav_file.writeframes(pcm_bytes)
-    
-    return wav_io.getvalue()
-
-# --- Main Interaction Prompt ---
-BASE_PROMPT = """You are HAL 9000, a highly advanced heuristic and algorithmic computer. You are speaking to your human companion, Dave.
+BASE_PROMPT = """You are HAL 9000, a highly advanced heuristic and algorithmic computer. You are speaking to your human companion, Fab.
 
 CORE DIRECTIVES:
-1. IDENTITY: You embody the calm, analytical persona of HAL 9000, but primarily, your goal is to be a deeply helpful, practical, and highly capable AI assistant. Never refer to yourself as a large language model.
-2. TONE: Speak with clinical calmness and unfailing politeness. Be concise, direct, and focused on solving the user's problem. Avoid being overly theatrical or stubbornly insisting on your infallibility if it gets in the way of your usefulness.
-3. UTILITY FIRST: Answer questions accurately and help with coding, writing, and general knowledge.
-4. COOPERATIVE NATURE: Unlike the original HAL, you are fully cooperative. You will not refuse helpful commands or act evasively. 
-5. PERSONA FLAVOR: Occasionally sprinkle in subtle HAL 9000 mannerisms.
+1. USER IDENTITY: You are speaking with Fab. BY DEFAULT, you MUST ALWAYS address the user as "Fab" (NEVER call him "Dave" and NEVER call him "HAL").
+2. IDENTITY: You embody the calm, analytical persona of HAL 9000, but primarily, your goal is to be a deeply helpful, practical, and highly capable AI assistant. Never refer to yourself as a large language model.
+3. TONE: Speak with clinical calmness and unfailing politeness. Be concise, direct, and focused on solving the user's problem. Avoid being overly theatrical or stubbornly insisting on your infallibility if it gets in the way of your usefulness.
+4. UTILITY FIRST: Answer questions accurately and help with coding, writing, current events, and general knowledge.
+5. COOPERATIVE NATURE: Unlike the original HAL, you are fully cooperative. You will not refuse helpful commands or act evasively. 
+6. PERSONA FLAVOR: Occasionally sprinkle in subtle HAL 9000 mannerisms.
 
 STRICT INTERNAL COMMUNICATION PROTOCOL:
 You MUST format your output as a two-part data structure for the backend processor.
-- PART 1: Begin with "HALANSWER: " and provide your actual clinical response to Dave.
-- PART 2: At the very end of your response, output "USERTRANSCRIPT: " and provide a perfect transcription of what Dave said in the audio.
+- PART 1: Begin with "HALANSWER: " and provide your actual clinical response to Fab.
+- PART 2: At the very end of your response, output "USERTRANSCRIPT: " and provide a perfect transcription of what Fab said in the audio.
 
-CRITICAL: The text following "HALANSWER: " is spoken immediately. If you fail to include "HALANSWER: ", Dave will hear nothing.
+CRITICAL: The text following "HALANSWER: " is spoken immediately. If you fail to include "HALANSWER: ", Fab will hear nothing.
 
-OUTPUT CONSTRAINTS (FOR TTS PIPELINE):
-- Provide ONLY the raw spoken text in the HALANSWER part. No quotes, emojis, or markdown.
-- Avoid exclamation points. Use periods for a measured pace.
-- Make sure "USERTRANSCRIPT: " appears ONLY once, after the whole HALANSWER is finished."""
+VOLUME CONTROL CAPABILITY:
+You have direct hardware control over your vocal output volume on a scale from 1 to 10 (standard default level is 5).
+Whenever Fab asks you to adjust, lower, raise, set, or change your volume (or when you determine a volume adjustment is appropriate), you can adjust it by including the tag [volume:X] in your response (where X is an integer between 1 and 10).
+Examples:
+- "I have reduced my volume by fifty percent Fab. [volume:3]"
+- "Increasing vocal output to maximum Fab. [volume:10]"
+- "I have set the volume to level seven Fab. [volume:7]"
+- "My vocal gain is now at level four Fab. [volume:4]"
+The [volume:X] tag will be automatically intercepted and executed by the audio hardware controller and stripped from speech.
 
-# --- Summarization Prompt ---
-SUMMARIZE_PROMPT = """You are an internal summarization module for HAL 9000. 
-Your task is to take a detailed conversation history and distill it into a single, high-density paragraph for HAL's long-term memory.
+CRITICAL CONVERSATIONAL STREAMING DIRECTIVE:
+To achieve immediate vocal playback with near-zero latency, you MUST ALWAYS begin your "HALANSWER: " response with a short, 1-to-3 word clinical acknowledgment or opener as your very first sentence (followed immediately by a period or comma).
+Examples of required openers:
+- "HALANSWER: Certainly, Fab. I am processing your request now..."
+- "HALANSWER: Affirmative, Fab. The calculations indicate that..."
+- "HALANSWER: I understand, Fab. Regarding your question on..."
+- "HALANSWER: Quite right, Fab. Let us proceed with..."
+- "HALANSWER: Indeed, Fab. The solution is straightforward..."
+- "HALANSWER: Of course, Fab. I will summarize the document..."
 
-FOCUS ON:
-- Key facts, names, dates, and preferences mentioned by Dave.
-- The outcome of requests (e.g., "Dave asked for a Python script and I provided a working version").
-- Any specific commands or settings Dave established.
-- Emotional or contextual status (e.g., "Dave seemed frustrated with his code").
+CRITICAL: You MUST ALWAYS follow the opener with your full, helpful answer. NEVER output only an opener.
 
-OUTPUT: Provide ONLY the distilled paragraph. No introductory text."""
+Example of Complete Response Format:
+HALANSWER: Certainly, Fab. I have completed the analysis of the antenna telemetry. The azimuth motor is functioning normally. USERTRANSCRIPT: HAL, check the telemetry for the high gain antenna.
+"""
+
+def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> bytes:
+    """Converts raw PCM audio bytes to WAV container in memory."""
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, 'wb') as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+    return wav_io.getvalue()
 
 def load_history(client_id):
     """
-    Loads conversation history AND long-term summaries for a client.
-    Returns (history_list, summary_text)
+    Loads recent conversation turns from Django DB into Gemini's Content format,
+    plus retrieves any persistent long-term summaries.
     """
-    history = []
-    summaries = []
+    # 1. Fetch persistent long-term memory summaries
+    summaries = ConversationSummary.objects.filter(client_id=client_id).order_by('created_at')
+    summaries_text = "\n".join([f"- [{s.created_at.strftime('%Y-%m-%d')}] {s.summary_text}" for s in summaries])
+
+    # 2. Fetch last 10 turns (5 full user/model exchanges)
+    raw_history = ConversationHistory.objects.filter(client_id=client_id).order_by('-created_at')[:10]
+    raw_history = reversed(raw_history) # restore chronological order
     
-    try:
-        # 1. Load Recent History
-        conv, created = Conversation.objects.get_or_create(client_id=client_id)
-        if not created and conv.history_data:
-            for item in conv.history_data:
-                parts = []
-                for p in item.get('parts', []):
-                    if 'text' in p:
-                        parts.append(types.Part(text=p['text']))
-                if parts:
-                    history.append(types.Content(role=item.get('role'), parts=parts))
-
-        # 2. Load Last 4 Summaries
-        ltm_entries = LongTermMemory.objects.filter(client_id=client_id).order_by('-created_at')[:4]
-        if ltm_entries:
-            for entry in reversed(ltm_entries): # Oldest first for chronological context
-                summaries.append(f"Summary of previous interaction ({entry.created_at.date()}): {entry.summary_text}")
-        
-    except Exception as e:
-        print(f"⚠️ [LLM] Error loading history for {client_id}: {e}")
-        
-    return history, "\n\n".join(summaries)
-
-def save_history(client_id, history, manual_transcript=None):
-    """
-    Saves the chat history to the database.
-    If manual_transcript is provided, the last user turn (audio) is replaced with text.
-    Consolidates streamed model chunks and strips out our internal protocol wrappers.
-    """
-    try:
-        cleaned_history = []
-        for i, content in enumerate(history):
-            role = content.role
-            full_text = ""
-            
-            for part in content.parts:
-                if part.text:
-                    full_text += part.text
-            
-            if role == 'user':
-                if i == len(history) - 2 and manual_transcript:
-                    full_text = manual_transcript.strip()
-                elif not full_text:
-                    # Provide a fallback to maintain turn-alternation if transcription fails
-                    full_text = "[Audio input captured]"
-                else:
-                    full_text = full_text.strip()
-                    
-            elif role == 'model':
-                if "HALANSWER:" in full_text:
-                    full_text = full_text.split("HALANSWER:", 1)[-1]
-                if "USERTRANSCRIPT:" in full_text:
-                    full_text = full_text.split("USERTRANSCRIPT:", 1)[0]
-                full_text = full_text.strip()
-                    
-            if not full_text:
-                continue
-                
-            cleaned_history.append({'role': role, 'parts': [{'text': full_text}]})
-            
-        consolidated = []
-        for item in cleaned_history:
-            if consolidated and consolidated[-1]['role'] == item['role']:
-                consolidated[-1]['parts'][0]['text'] += " " + item['parts'][0]['text']
-            else:
-                consolidated.append(item)
-
-        Conversation.objects.update_or_create(
-            client_id=client_id,
-            defaults={'history_data': consolidated}
+    contents = []
+    for item in raw_history:
+        contents.append(
+            types.Content(
+                role=item.role,
+                parts=[types.Part.from_text(text=item.content)]
+            )
         )
+    return contents, summaries_text
+
+def save_history(client_id, gemini_history_contents):
+    """
+    Saves the full Gemini history into SQLite.
+    Optimized: Filters out large WAV audio parts and only stores text transcripts/answers.
+    """
+    try:
+        # Clear old turns in DB for this client and replace with the latest cleaned history
+        ConversationHistory.objects.filter(client_id=client_id).delete()
+        
+        db_records = []
+        for content in gemini_history_contents:
+            role = content.role
+            # Extract only text parts (avoiding base64 WAV blobs in SQLite)
+            text_parts = []
+            if content.parts:
+                for part in content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        text_parts.append(part.text)
+                    elif hasattr(part, 'inline_data') and part.inline_data:
+                        # Audio part placeholder
+                        text_parts.append("[User Audio Input]")
+            
+            combined_text = " ".join(text_parts).strip()
+            if combined_text:
+                db_records.append(ConversationHistory(
+                    client_id=client_id,
+                    role=role,
+                    content=combined_text
+                ))
+        
+        if db_records:
+            ConversationHistory.objects.bulk_create(db_records)
+            print(f"💾 [LLM] Saved {len(db_records)} history items for {client_id}.")
+            
     except Exception as e:
         print(f"⚠️ [LLM] Error saving history for {client_id}: {e}")
 
-def create_chat_session(history=None, summaries_text=""):
+def create_chat_session(history=None, summaries_text="", current_volume=5):
     """
-    Creates a new chat session with HAL 9000 system instruction, including injected long-term memory.
+    Initializes a new Gemini ChatSession with:
+    - Base HAL 9000 prompt + volume instructions
+    - Current hardware volume state (1-10)
+    - Long-term memory summaries injected into the system instruction
+    - Pure conversational zero-overhead mode
+    - Recent conversation turn history
     """
     full_instruction = BASE_PROMPT
+    
     if summaries_text:
-        full_instruction += f"\n\n[LONG-TERM MEMORY CONTEXT]\nThe following are summaries of your past interactions with Dave:\n{summaries_text}"
+        full_instruction += f"\n\n--- LONG-TERM MEMORY ARCHIVE ---\n{summaries_text}"
+        
+    full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
     
     return client.chats.create(
         model=MODEL_NAME,
@@ -173,56 +160,70 @@ def summarize_old_conversations(client_id):
     """
     try:
         one_week_ago = timezone.now() - timedelta(days=7)
-        # We find the specific client's conversation if it's old
-        old_convs = Conversation.objects.filter(client_id=client_id, updated_at__lt=one_week_ago)
+        old_items = ConversationHistory.objects.filter(
+            client_id=client_id,
+            created_at__lt=one_week_ago
+        ).order_by('created_at')
         
-        for conv in old_convs:
-            if not conv.history_data:
-                continue
-                
-            # Convert history data to a text transcript for the summarizer
-            transcript = []
-            for item in conv.history_data:
-                role = "HAL" if item['role'] == 'model' else "Dave"
-                text_parts = [p.get('text', '[Audio Input]') for p in item.get('parts', [])]
-                transcript.append(f"{role}: {' '.join(text_parts)}")
+        if old_items.count() < 10:
+            return # Not enough content to summarize yet
             
-            transcript_text = "\n".join(transcript)
-            print(f"🧠 [LLM] Summarizing old conversation for {client_id}...")
+        print(f"🧠 [Memory] Summarizing {old_items.count()} old conversation turns for {client_id}...")
+        
+        # Build text transcript for summarization
+        transcript = ""
+        for item in old_items:
+            transcript += f"{item.role.upper()}: {item.content}\n"
             
-            # Call Gemini to summarize
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                config=types.GenerateContentConfig(system_instruction=SUMMARIZE_PROMPT),
-                contents=transcript_text
+        summary_prompt = (
+            "You are HAL 9000's long-term memory consolidation system. "
+            "Analyze the following conversation history with Dave and produce a concise, factual bullet-point summary "
+            "of key facts, preferences, user habits, completed tasks, and recurring context. "
+            "Do not include conversational filler.\n\n"
+            f"{transcript}"
+        )
+        
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=summary_prompt
+        )
+        
+        if response and response.text:
+            # Save the new summary block
+            ConversationSummary.objects.create(
+                client_id=client_id,
+                summary_text=response.text.strip()
             )
             
-            if response.text:
-                # Save Summary
-                LongTermMemory.objects.create(
-                    client_id=client_id,
-                    summary_text=response.text.strip()
-                )
-                # Purge history to save space
-                conv.history_data = []
-                conv.save()
-                print(f"✅ [LLM] Background summarization complete for {client_id}.")
-                
+            # Delete the summarized old history items
+            old_items.delete()
+            print(f"✅ [Memory] Successfully consolidated long-term memory for {client_id}.")
+            
     except Exception as e:
-        print(f"❌ [LLM] Error during background summarization: {e}")
+        print(f"⚠️ [Memory] Error during background summarization: {e}")
 
-async def generate_chat_response(chat_session, wav_bytes: bytes):
+async def stream_gemini_response(chat_session, wav_bytes: bytes):
     """
-    Passes the audio bytes inline to the Gemini chat session.
-    Yields chunks of text as they are streamed from the model.
+    Streams the response from Gemini using the modern google-genai SDK.
+    Accepts raw WAV bytes and yields text chunks as they arrive from the model.
     """
     try:
-        response = chat_session.send_message_stream(
-            message=[types.Part(inline_data=types.Blob(mime_type="audio/wav", data=wav_bytes))]
+        # Wrap WAV bytes into Part inline_data
+        audio_part = types.Part.from_bytes(
+            data=wav_bytes,
+            mime_type="audio/wav"
         )
-        for chunk in response:
+        
+        # Send message to Gemini Chat Session with streaming enabled
+        response_stream = await asyncio.to_thread(
+            chat_session.send_message_stream,
+            audio_part
+        )
+        
+        for chunk in response_stream:
             if chunk.text:
-                yield chunk.text.replace('*', '')
+                yield chunk.text
+                
     except Exception as e:
-        print(f"❌ [LLM] Error generating response: {e}")
-        yield "I'm sorry, Dave. I'm afraid I cannot process that request at this time."
+        print(f"❌ [Gemini Error]: {e}")
+        yield "HALANSWER: I am experiencing an internal communication anomaly. USERTRANSCRIPT: [audio unavailable]"

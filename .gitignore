@@ -56,5 +56,11 @@ project.xcworkspace/
 # XcodeGen (Generated project directory)
 # HAL.xcodeproj/ (uncomment if you want to ignore the generated xcodeproj entirely)
 
+# Web / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+
 # Local Mac testing
 localMac/
