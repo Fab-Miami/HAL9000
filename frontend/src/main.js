@@ -73,26 +73,22 @@ function updateVisuals(intensity, isHalSpeech = false) {
   const norm = Math.min(1.0, Math.max(0.0, intensity));
 
   if (isHalSpeech) {
-    // HAL is speaking: Modulate ONLY the Center LED Diode (#hal-core)
-    // Locked 96px diameter in enclosure mode; subtle scale bloom up to 1.15x
-    const coreScale = 1.0 + norm * 0.15;
-    const coreOpacity = 0.85 + norm * 0.15;
+    // HAL is speaking: LED physical diameter is strictly LOCKED at scale(1.0)
+    // Modulate ONLY opacity (pure GPU compositing without WebKit box-shadow scanlines)
+    const coreOpacity = (0.80 + norm * 0.20).toFixed(2);
     if (halCore) {
-      halCore.style.transform = `translate(-50%, -50%) scale(${coreScale.toFixed(3)})`;
-      halCore.style.opacity = coreOpacity.toFixed(2);
+      halCore.style.opacity = coreOpacity;
     }
   } else {
-    // User is speaking: Modulate ONLY the Background Halo (#hal-glow)
-    // Locked 80vw diameter; subtle luminescence dip (1.0 -> 0.85) on voice activity
-    const glowScale = 1.0;
-    const glowOpacity = 1.0 - norm * 0.15;
-    if (halGlow) {
-      halGlow.style.transform = `translate(-50%, -50%) scale(${glowScale})`;
-      halGlow.style.opacity = glowOpacity.toFixed(2);
+    // User is speaking / Idle: #hal-glow is constant physical lens reflection
+    // Reset #hal-core to resting state when HAL is not talking
+    if (halCore && currentState !== State.THINKING) {
+      halCore.style.opacity = '0.90';
     }
   }
 
-  if (diagIntensity) {
+  // Guard telemetry updates so inactive HUD never forces layout/render passes
+  if (diagIntensity && diagPanel && !diagPanel.classList.contains('hidden')) {
     diagIntensity.style.width = `${Math.round(norm * 100)}%`;
   }
 }
@@ -246,9 +242,14 @@ document.addEventListener('visibilitychange', async () => {
 async function initializeSystem() {
   log('🚀 Initializing HAL 9000 system on iPhone...');
 
-  // Always fade out initialization overlay immediately into pure black
+  // Fade out and completely remove initialization overlay from DOM to destroy GPU CALayers
   if (initOverlay) {
     initOverlay.classList.add('fade-out');
+    setTimeout(() => {
+      if (initOverlay && initOverlay.parentNode) {
+        initOverlay.remove();
+      }
+    }, 400);
   }
 
   try {

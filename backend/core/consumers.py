@@ -141,10 +141,10 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             # Strict validation: verify trimmed audio payload duration and RMS volume
             speech_duration_s = len(pcm_bytes) / (16000 * 2)
-            audio_arr = np.frombuffer(pcm_bytes, dtype=np.int16)
+            audio_arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
             peak_rms = 0.0
             if len(audio_arr) > 0:
-                peak_rms = float(np.sqrt(np.mean(np.square(audio_arr.astype(np.float32)))))
+                peak_rms = float(np.sqrt(np.mean(np.square(audio_arr))))
 
             if speech_duration_s < 0.40 or peak_rms < (SILENCE_THRESHOLD * 0.70):
                 log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom trigger (Duration: {speech_duration_s:.2f}s, RMS: {peak_rms:.0f}). Resetting.")
@@ -200,6 +200,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             manual_transcript = ""
             first_token_time = None
             is_transcript_mode = False
+            is_silent_response = False
             
             # Sentence terminators: period, exclamation, question mark, colon, newline
             sentence_pattern = re.compile(r'([^.!?:\n]+[.!?:\n]+)')
@@ -212,6 +213,12 @@ class HalConsumer(AsyncWebsocketConsumer):
                 
                 accumulated_text += token
 
+                # If model responded with [SILENCE], abort speech generation immediately
+                if "[SILENCE]" in accumulated_text.upper():
+                    is_silent_response = True
+                    log("🤫 [HalConsumer] Non-speech/ambient audio detected ([SILENCE]). HAL remaining silent.")
+                    break
+
                 # Check if we have crossed into the USERTRANSCRIPT section
                 if not is_transcript_mode:
                     if "USERTRANSCRIPT:" in accumulated_text:
@@ -222,7 +229,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                         
                         # Process any remaining sentences in the HAL part
                         clean_hal = hal_part.replace("HALANSWER:", "").strip()
-                        if clean_hal:
+                        if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
                             full_response_text += clean_hal + " "
                             await sentence_queue.put(clean_hal)
                         accumulated_text = ""
@@ -242,6 +249,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                             
                             # Clean up and push to TTS queue
                             if complete_sentence:
+                                if complete_sentence.upper().startswith("[SILENCE]"):
+                                    is_silent_response = True
+                                    break
+
                                 # Intercept and process any embedded volume tag
                                 vol_match = re.search(r'\[volume:\s*(\d+)\]', complete_sentence, re.IGNORECASE)
                                 if vol_match:
@@ -258,19 +269,20 @@ class HalConsumer(AsyncWebsocketConsumer):
                     manual_transcript += token
 
             # If the stream finished without encountering USERTRANSCRIPT:, flush remaining text
-            if not is_transcript_mode and accumulated_text.strip():
+            if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
                 clean_tail = accumulated_text.replace("HALANSWER:", "").strip()
-                vol_match = re.search(r'\[volume:\s*(\d+)\]', clean_tail, re.IGNORECASE)
-                if vol_match:
-                    new_vol = max(1, min(10, int(vol_match.group(1))))
-                    self.current_volume = new_vol
-                    log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
-                    await self.send(text_data=f"VOLUME:{new_vol}")
-                    clean_tail = re.sub(r'\[volume:\s*\d+\]', '', clean_tail, flags=re.IGNORECASE).strip()
+                if not clean_tail.upper().startswith("[SILENCE]"):
+                    vol_match = re.search(r'\[volume:\s*(\d+)\]', clean_tail, re.IGNORECASE)
+                    if vol_match:
+                        new_vol = max(1, min(10, int(vol_match.group(1))))
+                        self.current_volume = new_vol
+                        log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+                        await self.send(text_data=f"VOLUME:{new_vol}")
+                        clean_tail = re.sub(r'\[volume:\s*\d+\]', '', clean_tail, flags=re.IGNORECASE).strip()
 
-                if clean_tail:
-                    full_response_text += clean_tail
-                    await sentence_queue.put(clean_tail)
+                    if clean_tail:
+                        full_response_text += clean_tail
+                        await sentence_queue.put(clean_tail)
 
             log(f"⚡ [HalConsumer] Gemini streaming complete in {time.time() - gemini_start:.2f}s")
             
@@ -283,8 +295,12 @@ class HalConsumer(AsyncWebsocketConsumer):
             await sentence_queue.put(None)
             await tts_task
 
-            # Asynchronously persist updated chat history
-            await asyncio.to_thread(llm.save_history, self.client_id, self.chat_session.history)
+            # Asynchronously persist updated chat history safely
+            try:
+                history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
+                await asyncio.to_thread(llm.save_history, self.client_id, history_data)
+            except Exception as hist_err:
+                log(f"⚠️ [HalConsumer] History persistence note: {hist_err}")
 
             # Signal iOS client that audio generation is complete
             log("🏁 [HalConsumer] Sending DONE signal to iOS...")

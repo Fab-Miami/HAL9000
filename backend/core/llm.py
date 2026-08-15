@@ -58,6 +58,12 @@ Examples of required openers:
 
 CRITICAL: You MUST ALWAYS follow the opener with your full, helpful answer. NEVER output only an opener.
 
+STRICT SILENCE & UNINTELLIGIBLE NOISE DIRECTIVE:
+If the user audio consists of silence, sighs, breathing, ambient background noise, static, coughs, clicks, or unintelligible murmurs with NO clear spoken words/question from Fab:
+You MUST respond with EXACTLY:
+HALANSWER: [SILENCE] USERTRANSCRIPT: [Silence]
+Do NOT produce any greeting, do NOT comment on background noise, do NOT say "I hear no instructions". You must remain completely SILENT by outputting "[SILENCE]".
+
 Example of Complete Response Format:
 HALANSWER: Certainly, Fab. I have completed the analysis of the antenna telemetry. The azimuth motor is functioning normally. USERTRANSCRIPT: HAL, check the telemetry for the high gain antenna.
 """
@@ -134,8 +140,8 @@ def save_history(client_id, gemini_history_contents):
 
 def create_chat_session(history=None, summaries_text="", current_volume=5):
     """
-    Initializes a new Gemini ChatSession with:
-    - Base HAL 9000 prompt + volume instructions
+    Initializes a new Gemini Async ChatSession with:
+    - Base HAL 9000 prompt + volume instructions + silence directive
     - Current hardware volume state (1-10)
     - Long-term memory summaries injected into the system instruction
     - Pure conversational zero-overhead mode
@@ -148,7 +154,7 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
         
     full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
     
-    return client.chats.create(
+    return client.aio.chats.create(
         model=MODEL_NAME,
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
@@ -180,7 +186,7 @@ def summarize_old_conversations(client_id):
             
         summary_prompt = (
             "You are HAL 9000's long-term memory consolidation system. "
-            "Analyze the following conversation history with Dave and produce a concise, factual bullet-point summary "
+            "Analyze the following conversation history with Fab and produce a concise, factual bullet-point summary "
             "of key facts, preferences, user habits, completed tasks, and recurring context. "
             "Do not include conversational filler.\n\n"
             f"{transcript}"
@@ -207,7 +213,7 @@ def summarize_old_conversations(client_id):
 
 async def stream_gemini_response(chat_session, wav_bytes: bytes):
     """
-    Streams the response from Gemini using the modern google-genai SDK.
+    Streams the response from Gemini using the modern non-blocking google-genai async SDK.
     Accepts raw WAV bytes and yields text chunks as they arrive from the model.
     """
     try:
@@ -217,13 +223,10 @@ async def stream_gemini_response(chat_session, wav_bytes: bytes):
             mime_type="audio/wav"
         )
         
-        # Send message to Gemini Chat Session with streaming enabled
-        response_stream = await asyncio.to_thread(
-            chat_session.send_message_stream,
-            audio_part
-        )
+        # Send message to Gemini Async Chat Session with streaming enabled
+        response_stream = await chat_session.send_message_stream(audio_part)
         
-        for chunk in response_stream:
+        async for chunk in response_stream:
             if chunk.text:
                 yield chunk.text
                 

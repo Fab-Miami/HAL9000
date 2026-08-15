@@ -64,3 +64,6 @@ frontend/dist/
 
 # Local Mac testing
 localMac/
+
+# Logs
+daphne.log

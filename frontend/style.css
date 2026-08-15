@@ -72,7 +72,7 @@ html, body {
   pointer-events: none;
 }
 
-/* Dynamic Inner Glow (Modulated by User Voice Activity) */
+/* Dynamic Inner Glow (The Intelligence) */
 #hal-glow {
   position: absolute;
   top: 50%;
@@ -81,9 +81,8 @@ html, body {
   border-radius: 50%;
   pointer-events: none;
   z-index: 2;
-  transition: opacity 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
   opacity: 0.95;
-  mix-blend-mode: screen;
 
   /* Smooth cinematic fade into deep pitch black */
   background: radial-gradient(
@@ -106,17 +105,16 @@ html, body {
   border-radius: 50%;
   pointer-events: none;
   z-index: 3;
-  transition: opacity 0.08s ease-out, transform 0.08s ease-out;
+  transition: opacity 0.08s ease-out;
   background: radial-gradient(
-    circle,
+    circle closest-side,
     #ffffff 0%,
-    #ffff88 25%,
-    #ffcc00 55%,
-    #ff4400 85%,
-    transparent 100%
+    #ffff88 20%,
+    #ffcc00 48%,
+    #ff4400 78%,
+    rgba(255, 68, 0, 0) 100%
   );
-  box-shadow: 0 0 12px rgba(255, 238, 85, 0.9), 0 0 24px rgba(255, 68, 0, 0.6);
-  opacity: 0.9;
+  opacity: 0.90;
 }
 
 /* ----------------------------------------------------
@@ -144,8 +142,9 @@ body.mode-desk #hal-core {
 }
 
 /* ----------------------------------------------------
-   Enclosure Mode (Mounted behind 3D printed bezel):
-   Bezel is hidden; only dynamic optics are displayed.
+   3D Mode (Mounted behind 3D printed bezel):
+   Bezel is hidden; red optical lens gradient is 128vw (80% of 160vw),
+   and central LED diode is 96px.
    ---------------------------------------------------- */
 body.mode-enclosure #hal-bezel {
   display: none !important;
@@ -157,10 +156,10 @@ body.mode-enclosure #hal-container {
 }
 
 body.mode-enclosure #hal-glow {
-  width: 80vw;
-  height: 80vw;
-  max-width: 80vw;
-  max-height: 80vw;
+  width: 128vw;
+  height: 128vw;
+  max-width: 128vw;
+  max-height: 128vw;
 }
 
 body.mode-enclosure #hal-core {
@@ -191,31 +190,20 @@ body:not(.mode-enclosure) #hal-core {
 }
 
 /* ----------------------------------------------------
-   Optical Breathing Animations by System State
+   LED Diode Visual Feedback Animations by System State
+   (Physical LED diameter is locked; modulates only subtle luminous bloom)
    ---------------------------------------------------- */
-.state-idle #hal-glow {
-  opacity: 0.9;
+.state-thinking #hal-core {
+  animation: hal-led-thinking 0.8s infinite alternate ease-in-out;
 }
 
-.state-listening #hal-glow {
-  opacity: 1.0;
-}
-
-.state-thinking #hal-glow {
-  animation: hal-pulse-thinking 1.2s infinite alternate ease-in-out;
-}
-
-.state-speaking #hal-glow {
-  opacity: 1.0;
-}
-
-@keyframes hal-pulse-thinking {
+@keyframes hal-led-thinking {
   0% {
-    transform: translate(-50%, -50%) scale(0.96);
-    opacity: 0.75;
+    transform: translate(-50%, -50%) scale(1.0);
+    opacity: 0.70;
   }
   100% {
-    transform: translate(-50%, -50%) scale(1.04);
+    transform: translate(-50%, -50%) scale(1.0);
     opacity: 1.0;
   }
 }
@@ -274,6 +262,7 @@ body:not(.mode-enclosure) #hal-core {
   pointer-events: none;
   transition: opacity 0.2s ease;
   z-index: 10;
+  display: none !important; /* Disabled to maintain pristine optical faceplate */
 }
 
 #hold-indicator.visible {
@@ -304,6 +293,7 @@ body:not(.mode-enclosure) #hal-core {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.85);
   visibility: hidden;
+  display: none !important;
 }
 
 #long-press-svg {
@@ -350,6 +340,7 @@ body:not(.mode-enclosure) #hal-core {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  display: none !important;
 }
 
 .init-card {
@@ -451,6 +442,7 @@ body:not(.mode-enclosure) #hal-core {
 #diag-panel.hidden {
   transform: translateY(100%);
   pointer-events: none;
+  display: none !important;
 }
 
 .diag-header {
