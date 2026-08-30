@@ -627,15 +627,20 @@ body.sleep-mode #hal-glow {
 
 body.sleep-mode #hal-core {
   transform: translate(-50%, -50%) scale(0.15) !important;
-  opacity: 1.0 !important;
-  background: radial-gradient(
-    circle closest-side,
-    #ff3333 0%,
-    #dd0000 20%,
-    #aa0000 48%,
-    #770000 78%,
-    rgba(119, 0, 0, 0) 100%
-  ) !important;
   box-shadow: none !important;
   transition: all 3.0s ease-in-out !important;
+}
+
+#hal-core::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff0000 0%, #770000 100%);
+  opacity: 0;
+  transition: opacity 3.0s ease-in-out;
+}
+
+body.sleep-mode #hal-core::after {
+  opacity: 1;
 }
