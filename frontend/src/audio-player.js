@@ -40,7 +40,7 @@ export class AudioPlayer {
     }
 
     if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
+      this.audioContext.resume().catch(e => this.onLog(`Resume warning: ${e.message}`));
     }
 
     // Play a silent buffer to prime the iOS audio pipeline

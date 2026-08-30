@@ -260,11 +260,11 @@ async function initializeSystem() {
       throw new Error('iOS requires HTTPS for microphone access. Please open https://' + window.location.host);
     }
 
-    // 2. Initialize & Warm up Audio Player pipeline
-    await audioPlayer.initialize();
-
-    // 3. Connect to WebSocket
+    // 2. Connect to WebSocket first so telemetry works immediately
     wsClient.connect();
+
+    // 3. Initialize & Warm up Audio Player pipeline
+    await audioPlayer.initialize();
 
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
     await audioRecorder.start();
