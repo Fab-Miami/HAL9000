@@ -24,6 +24,8 @@
 </head>
 <body>
   <div id="app">
+    <!-- Transparent Interaction Layer (Forces iOS Safari to register tap and unlock AudioContext) -->
+    <div id="init-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999; cursor:pointer; -webkit-tap-highlight-color:transparent;"></div>
     <!-- Main Optical Faceplate (Centered behind 3D printed bezel) -->
     <div id="hal-stage">
       <div id="hal-container">
