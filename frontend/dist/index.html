@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  
+  <title>HAL 9000</title>
+  <meta name="apple-mobile-web-app-title" content="HAL" />
+  <meta name="application-name" content="HAL" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png?v=3" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png?v=3" />
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png?v=3" />
+  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=3" />
+
+  <script type="module" crossorigin src="/assets/index-CMNhi3hz.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-cAggr0mp.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Initial Unlock Overlay (Required by iOS Safari to start AudioContext & Mic) -->
+    <div id="init-overlay">
+      <div class="init-card">
+        <div class="init-eye">
+          <div class="init-glow"></div>
+        </div>
+        <div class="init-title">HAL 9000</div>
+        <div class="init-subtitle">HEURISTIC ALGORITHMIC COMPUTER</div>
+        <button id="btn-init" class="init-btn">INITIALIZE SYSTEM</button>
+      </div>
+    </div>
+
+    <!-- Main Optical Faceplate (Centered behind 3D printed bezel) -->
+    <div id="hal-stage">
+      <div id="hal-container">
+        <!-- Static Lens Ring Image -->
+        <img id="hal-bezel" src="/HAL9000.png" alt="HAL 9000 Lens" draggable="false" />
+
+        <!-- Dynamic Inner Glow (The Intelligence) -->
+        <div id="hal-glow"></div>
+
+        <!-- Center LED Diode (Vocal Core) -->
+        <div id="hal-core"></div>
+      </div>
+    </div>
+
+    <!-- Status indicator and controls -->
+    <header id="status-bar">
+      <div id="status-dot"></div>
+      <span id="status-text">OFFLINE</span>
+    </header>
+
+    <!-- 3-Second Long Press Mode Switcher Progress Ring -->
+    <div id="long-press-ring-container" class="hidden">
+      <svg id="long-press-svg" viewBox="0 0 160 160">
+        <circle class="ring-bg" cx="80" cy="80" r="70"></circle>
+        <circle id="long-press-circle" class="ring-progress" cx="80" cy="80" r="70"></circle>
+      </svg>
+    </div>
+
+    <!-- Tap & Hold manual talk overlay (Optional fallback to voice VAD) -->
+    <div id="hold-indicator">
+      <span>LISTENING...</span>
+    </div>
+
+    <!-- Calibration Mode Overlay (Triple-tap in enclosure mode) -->
+    <div id="calibration-overlay" class="hidden">
+      <div id="calibration-zone-up" class="calibration-zone"></div>
+      <div id="calibration-hud">
+        <div id="calibration-guide"></div>
+        <span id="calibration-label">CALIBRATION</span>
+        <span id="calibration-offset">0px</span>
+      </div>
+      <div id="calibration-zone-down" class="calibration-zone"></div>
+    </div>
+
+    <!-- Real-time Diagnostic & Connection Overlay -->
+    <div id="diag-panel" class="hidden">
+      <div class="diag-header">
+        <h3>SYSTEM TELEMETRY</h3>
+        <button id="btn-close-diag">✕</button>
+      </div>
+      <div class="diag-body">
+        <div class="diag-row">
+          <span>PIPELINE STATE:</span>
+          <strong id="diag-state">IDLE</strong>
+        </div>
+        <div class="diag-row">
+          <span>WS LINK:</span>
+          <strong id="diag-ws">DISCONNECTED</strong>
+        </div>
+        <div class="diag-row">
+          <span>HOST:</span>
+          <input type="text" id="diag-host-input" />
+          <button id="btn-save-host">SET</button>
+        </div>
+        <div class="diag-row">
+          <span>AUDIO LEVEL:</span>
+          <div class="meter-bar">
+            <div id="diag-intensity" class="meter-fill"></div>
+          </div>
+        </div>
+        <div class="diag-row">
+          <span>WAKE LOCK:</span>
+          <strong id="diag-wakelock">INACTIVE</strong>
+        </div>
+        <div class="diag-row">
+          <span>CONVERSATION TIMER:</span>
+          <strong id="diag-conv-timer">INACTIVE</strong>
+        </div>
+        <button id="btn-reconnect" class="diag-action-btn">RECONNECT WEBSOCKET</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
