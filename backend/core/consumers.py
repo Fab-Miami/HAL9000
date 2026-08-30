@@ -18,6 +18,54 @@ def log(msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     print(f"[{timestamp}] {msg}", flush=True)
 
+def clean_speech_text(text: str) -> str:
+    """
+    Sanitizes raw LLM output text so that Kokoro TTS generates natural human speech
+    without pronouncing markdown punctuation, asterisks, bullet markers, or code symbols.
+    """
+    if not text:
+        return ""
+    t = text
+    # Remove markdown link syntax [text](url) -> text
+    t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
+    # Remove code blocks and inline backticks
+    t = re.sub(r'```.*?```', '', t, flags=re.DOTALL)
+    t = re.sub(r'`([^`]+)`', r'\1', t)
+    # Remove markdown headers (# Header)
+    t = re.sub(r'#+\s*', '', t)
+    # Remove bullet markers like * or - or + or •
+    t = re.sub(r'(?:^|\n|\s)[\*\-\+•]\s+', ' ', t)
+    # Remove all asterisks, underscores, tildes, backticks, hashes, carets, slashes, backslashes, @, |, <, >
+    t = re.sub(r'[\*\_~`#^|><\\@]', '', t)
+    # Convert & to 'and', % to 'percent', + to 'plus'
+    t = re.sub(r'\s*&\s*', ' and ', t)
+    t = re.sub(r'(\d+)\s*%', r'\1 percent', t)
+    t = re.sub(r'\s*\+\s*', ' plus ', t)
+    # Remove parentheses and brackets around words (e.g. (such as X) -> such as X)
+    t = re.sub(r'[\(\)\[\]\{\}]', ' ', t)
+    # Collapse multiple whitespace
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+def is_stop_command(text: str) -> bool:
+    """
+    Returns True if user explicitly said 'stop', 'halt', 'quiet', 'shut up',
+    or if speech contains repeated/consecutive 'stop' words (e.g. 'stop stop', 'stop stop stop').
+    """
+    if not text:
+        return False
+    t = text.strip()
+    # 1. Consecutive stops: "stop stop", "stop, stop", "no stop stop", "HAL stop stop"
+    if re.search(r'\bstop\b(?:[,\s\.\-]+)\bstop\b', t, re.IGNORECASE):
+        return True
+    # 2. Standalone stop: "stop", "HAL stop", "quiet", "shut up", "halt", "be quiet"
+    if re.search(r'^\s*(?:(?:hey\s+|ok\s+)?hal\s*,?\s*)?(?:stop|halt|quiet|shut\s*up|be\s*quiet|silence)[.!?]?\s*$', t, re.IGNORECASE):
+        return True
+    # 3. Explicit stop speaking: "stop talking", "stop speaking", "shut up", "be quiet"
+    if re.search(r'\b(?:stop\s+talking|stop\s+speaking|shut\s+up|be\s+quiet|be\s+silent)\b', t, re.IGNORECASE):
+        return True
+    return False
+
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
@@ -181,12 +229,17 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if sentence is None:
                         break # Poison pill received
                     
+                    speech_text = clean_speech_text(sentence)
+                    if not speech_text:
+                        sentence_queue.task_done()
+                        continue
+
                     sentence_count += 1
                     tts_start = time.time()
-                    log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {sentence}")
+                    log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
                     
                     # Stream Kokoro TTS audio chunks back to iOS
-                    async for audio_chunk in tts.text_to_speech_stream(sentence):
+                    async for audio_chunk in tts.text_to_speech_stream(speech_text):
                         await self.send(bytes_data=audio_chunk)
                     
                     log(f"📤 [HalConsumer] TTS #{sentence_count} streaming completed in {time.time() - tts_start:.2f}s")
@@ -227,6 +280,18 @@ class HalConsumer(AsyncWebsocketConsumer):
                         hal_part = parts[0]
                         manual_transcript = parts[1] if len(parts) > 1 else ""
                         
+                        # Stop command check: if user said "stop" or consecutive stops, remain completely silent
+                        if is_stop_command(manual_transcript):
+                            is_silent_response = True
+                            log(f"🛑 [HalConsumer] Stop command detected in transcript (\"{manual_transcript.strip()}\"). Halting and remaining silent.")
+                            while not sentence_queue.empty():
+                                try:
+                                    sentence_queue.get_nowait()
+                                    sentence_queue.task_done()
+                                except Exception:
+                                    break
+                            break
+
                         # Process any remaining sentences in the HAL part
                         clean_hal = hal_part.replace("HALANSWER:", "").strip()
                         if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
@@ -290,6 +355,15 @@ class HalConsumer(AsyncWebsocketConsumer):
             manual_transcript = manual_transcript.strip()
             if manual_transcript:
                 log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
+                if is_stop_command(manual_transcript):
+                    is_silent_response = True
+                    log(f"🛑 [HalConsumer] Stop command confirmed (\"{manual_transcript}\"). Suppressing any remaining audio.")
+                    while not sentence_queue.empty():
+                        try:
+                            sentence_queue.get_nowait()
+                            sentence_queue.task_done()
+                        except Exception:
+                            break
 
             # Send poison pill to stop TTS worker and wait for synthesis completion
             await sentence_queue.put(None)
@@ -298,7 +372,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Asynchronously persist updated chat history safely
             try:
                 history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                await asyncio.to_thread(llm.save_history, self.client_id, history_data)
+                await asyncio.to_thread(llm.save_history, self.client_id, history_data, manual_transcript)
             except Exception as hist_err:
                 log(f"⚠️ [HalConsumer] History persistence note: {hist_err}")
 

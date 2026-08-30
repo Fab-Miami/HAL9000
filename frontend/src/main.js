@@ -97,8 +97,10 @@ function updateVisuals(intensity, isHalSpeech = false) {
 const audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
+      if (audioRecorder) audioRecorder.muted = true;
       setState(State.PROCESSING);
     } else {
+      if (audioRecorder) audioRecorder.muted = false;
       stopInteraction();
     }
   },
@@ -336,6 +338,9 @@ function switchToEnclosureMode() {
   document.body.classList.remove('mode-desk');
   document.body.classList.add('mode-enclosure');
 
+  // Apply saved vertical calibration offset
+  applyEyeOffset();
+
   // Haptic confirmation pulse
   if (navigator.vibrate) {
     navigator.vibrate([60, 40, 100]);
@@ -414,9 +419,192 @@ if (halStage) {
   halStage.addEventListener('mouseleave', cancelLongPress);
 }
 
-// APP ALWAYS starts in standard mode (Desk Mode with HAL9000.png image)
-localStorage.removeItem('hal_display_mode');
-document.body.classList.remove('mode-enclosure');
-document.body.classList.add('mode-desk');
+// ----------------------------------------------------
+// Calibration Mode: Vertical Eye Position Adjustment
+// Triple-tap in enclosure mode to ENTER.
+// Auto-locks after 5s of inactivity.
+// ----------------------------------------------------
+const calibrationOverlay = document.getElementById('calibration-overlay');
+const calibrationZoneUp = document.getElementById('calibration-zone-up');
+const calibrationZoneDown = document.getElementById('calibration-zone-down');
+const calibrationOffsetLabel = document.getElementById('calibration-offset');
+const halContainer = document.getElementById('hal-container');
 
-log('📱 Initialized HAL 9000 in STANDARD DESK MODE.');
+let isCalibrating = false;
+let eyeOffsetY = -144;
+const NUDGE_PX = 1;
+const NUDGE_INTERVAL_MS = 80;
+let nudgeTimer = null;
+let calibTapCount = 0;
+let calibTapTimer = null;
+const CALIBRATION_TIMEOUT_MS = 5000;
+let calibInactivityTimer = null;
+
+// Load saved offset from localStorage
+function loadCalibrationOffset() {
+  const saved = localStorage.getItem('hal_eye_offset_y');
+  if (saved !== null && !isNaN(parseInt(saved, 10))) {
+    eyeOffsetY = parseInt(saved, 10);
+  } else {
+    eyeOffsetY = -144;
+  }
+}
+
+// Apply the current offset to the eye container
+function applyEyeOffset() {
+  if (halContainer) {
+    halContainer.style.transform = eyeOffsetY !== 0 ? `translateY(${eyeOffsetY}px)` : '';
+  }
+}
+
+// Save offset to localStorage
+function saveCalibrationOffset() {
+  localStorage.setItem('hal_eye_offset_y', eyeOffsetY.toString());
+}
+
+// Update the HUD readout (display flipped: upward shows positive)
+function updateCalibrationHUD() {
+  if (calibrationOffsetLabel) {
+    const display = -eyeOffsetY;
+    const sign = display > 0 ? '+' : '';
+    calibrationOffsetLabel.textContent = `${sign}${display}px`;
+  }
+}
+
+// Reset the 5-second inactivity auto-lock timer
+function resetCalibrationInactivityTimer() {
+  clearTimeout(calibInactivityTimer);
+  calibInactivityTimer = setTimeout(() => {
+    exitCalibration();
+  }, CALIBRATION_TIMEOUT_MS);
+}
+
+// Enter calibration mode
+function enterCalibration() {
+  if (isCalibrating) return;
+  isCalibrating = true;
+
+  if (calibrationOverlay) {
+    calibrationOverlay.classList.remove('hidden');
+  }
+  updateCalibrationHUD();
+  resetCalibrationInactivityTimer();
+
+  // Haptic
+  if (navigator.vibrate) navigator.vibrate(30);
+
+  log('🎯 CALIBRATION MODE: Tap to nudge eye up. Auto-locks after 5s inactivity.');
+}
+
+// Exit calibration mode and save
+function exitCalibration() {
+  if (!isCalibrating) return;
+  isCalibrating = false;
+
+  stopNudge();
+  clearTimeout(calibInactivityTimer);
+
+  if (calibrationOverlay) {
+    calibrationOverlay.classList.add('hidden');
+  }
+
+  saveCalibrationOffset();
+
+  // Haptic confirmation
+  if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
+
+  log(`🔒 CALIBRATION LOCKED at offset: ${eyeOffsetY}px`);
+}
+
+// Nudge the eye up (clamped to -180px max)
+function nudge(direction) {
+  eyeOffsetY += direction * NUDGE_PX;
+  eyeOffsetY = Math.max(-180, Math.min(0, eyeOffsetY));
+  applyEyeOffset();
+  updateCalibrationHUD();
+  resetCalibrationInactivityTimer();
+}
+
+// Start continuous nudging (hold)
+function startNudge(direction) {
+  nudge(direction);
+  stopNudge();
+  nudgeTimer = setInterval(() => nudge(direction), NUDGE_INTERVAL_MS);
+}
+
+// Stop continuous nudging
+function stopNudge() {
+  if (nudgeTimer) {
+    clearInterval(nudgeTimer);
+    nudgeTimer = null;
+  }
+}
+
+// Triple-tap detector to ENTER calibration (enclosure mode only)
+function handleCalibrationTap(e) {
+  if (!document.body.classList.contains('mode-enclosure')) return;
+  if (isCalibrating) return; // Already calibrating — taps go to nudge zones
+  if (e.target.closest('#diag-panel') || e.target.closest('#init-overlay')) return;
+
+  calibTapCount++;
+  clearTimeout(calibTapTimer);
+  calibTapTimer = setTimeout(() => { calibTapCount = 0; }, 500);
+
+  if (calibTapCount >= 3) {
+    calibTapCount = 0;
+    enterCalibration();
+  }
+}
+
+// Wire up triple-tap on the whole stage (entry only)
+if (halStage) {
+  halStage.addEventListener('click', handleCalibrationTap);
+}
+
+// Wire up nudge zone (up only — full screen is one big "nudge up" zone)
+if (calibrationZoneUp) {
+  calibrationZoneUp.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    startNudge(-1);
+  }, { passive: false });
+  calibrationZoneUp.addEventListener('touchend', stopNudge);
+  calibrationZoneUp.addEventListener('touchcancel', stopNudge);
+  calibrationZoneUp.addEventListener('mousedown', () => startNudge(-1));
+  calibrationZoneUp.addEventListener('mouseup', stopNudge);
+  calibrationZoneUp.addEventListener('mouseleave', stopNudge);
+}
+
+if (calibrationZoneDown) {
+  calibrationZoneDown.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    startNudge(1);
+  }, { passive: false });
+  calibrationZoneDown.addEventListener('touchend', stopNudge);
+  calibrationZoneDown.addEventListener('touchcancel', stopNudge);
+  calibrationZoneDown.addEventListener('mousedown', () => startNudge(1));
+  calibrationZoneDown.addEventListener('mouseup', stopNudge);
+  calibrationZoneDown.addEventListener('mouseleave', stopNudge);
+}
+
+// Load calibration offset
+loadCalibrationOffset();
+
+// Start directly in enclosure mode
+document.body.classList.remove('mode-desk');
+document.body.classList.add('mode-enclosure');
+applyEyeOffset();
+
+// Ignore orientation sensor (lock to portrait)
+if (screen.orientation && screen.orientation.lock) {
+  screen.orientation.lock('portrait').catch(e => log('Orientation lock note: ' + e.message));
+} else if (window.screen && window.screen.lockOrientation) {
+  window.screen.lockOrientation('portrait');
+}
+
+log('📱 Initialized HAL 9000 directly in ENCLOSURE MODE.');
+
+// Attempt to auto-initialize the system without requiring a tap
+setTimeout(() => {
+  log('Auto-initializing system...');
+  initializeSystem();
+}, 800);

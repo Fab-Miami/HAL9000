@@ -150,16 +150,29 @@ body.mode-enclosure #hal-bezel {
   display: none !important;
 }
 
+body.mode-enclosure #status-bar {
+  display: none !important;
+}
+
+body.mode-enclosure #hal-container,
+body.mode-enclosure #hal-glow,
+body.mode-enclosure #hal-core,
+body.mode-enclosure #hal-stage {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none;
+}
+
 body.mode-enclosure #hal-container {
   width: 100vw;
   height: 100vh;
 }
 
 body.mode-enclosure #hal-glow {
-  width: 128vw;
-  height: 128vw;
-  max-width: 128vw;
-  max-height: 128vw;
+  width: 160vmax;
+  height: 160vmax;
+  max-width: none;
+  max-height: none;
 }
 
 body.mode-enclosure #hal-core {
@@ -267,6 +280,76 @@ body:not(.mode-enclosure) #hal-core {
 
 #hold-indicator.visible {
   opacity: 1;
+}
+
+/* ----------------------------------------------------
+   Calibration Mode (Enclosure vertical eye alignment)
+   ---------------------------------------------------- */
+#calibration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.3s ease;
+}
+
+#calibration-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+  display: none !important;
+}
+
+.calibration-zone {
+  flex: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#calibration-zone-up:active {
+  background: linear-gradient(180deg, rgba(255, 34, 0, 0.08) 0%, transparent 100%);
+}
+
+#calibration-zone-down:active {
+  background: linear-gradient(0deg, rgba(255, 34, 0, 0.08) 0%, transparent 100%);
+}
+
+#calibration-hud {
+  position: relative;
+  width: 100%;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#calibration-guide {
+  position: absolute;
+  width: 60%;
+  height: 1px;
+  background: rgba(255, 34, 0, 0.35);
+  box-shadow: 0 0 8px rgba(255, 34, 0, 0.2);
+}
+
+#calibration-label {
+  position: absolute;
+  top: 12px;
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: rgba(255, 34, 0, 0.5);
+  text-transform: uppercase;
+}
+
+#calibration-offset {
+  position: absolute;
+  top: 30px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: monospace;
 }
 
 /* ----------------------------------------------------

@@ -40,4 +40,5 @@
 ## 6. General Constraints
 - **CRITICAL: DO NOT EVER WRITE UNIT TESTS.**
 - **NO AUTO-COMMITS**: NEVER run `git commit` automatically. Always leave modified files uncommitted in the working tree so Fab can see and review all diffs in VS Code.
+- **ALWAYS DELETE TEST FILES AND TEMPORARY SCRIPTS**: Any python scripts, bash scripts, or other temporary files created during the debugging process (e.g. `test_ws_loud.py`, `test_rms.py`, `run.sh`) must be explicitly deleted before finishing the task. Do not leave them behind in the workspace!
 

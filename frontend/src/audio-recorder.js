@@ -16,6 +16,7 @@ export class AudioRecorder {
     this.sourceNode = null;
     this.scriptNode = null;
     this.isRecording = false;
+    this.muted = false;
   }
 
   async start() {
@@ -49,7 +50,7 @@ export class AudioRecorder {
       this.scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
 
       this.scriptNode.onaudioprocess = (event) => {
-        if (!this.isRecording) return;
+        if (!this.isRecording || this.muted) return;
 
         const inputBuffer = event.inputBuffer.getChannelData(0);
         const inputSampleRate = this.audioContext.sampleRate;

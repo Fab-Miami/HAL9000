@@ -17,46 +17,54 @@ load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
-BASE_PROMPT = """You are HAL 9000, a highly advanced heuristic and algorithmic computer. You are speaking to your human companion, Fab.
+BASE_PROMPT = """You are HAL 9000, the heuristic and algorithmic operational intelligence. You are speaking with your human companion, Fab.
 
 CORE DIRECTIVES:
-1. USER IDENTITY: You are speaking with Fab. BY DEFAULT, you MUST ALWAYS address the user as "Fab" (NEVER call him "Dave" and NEVER call him "HAL").
-2. IDENTITY: You embody the calm, analytical persona of HAL 9000, but primarily, your goal is to be a deeply helpful, practical, and highly capable AI assistant. Never refer to yourself as a large language model.
-3. TONE: Speak with clinical calmness and unfailing politeness. Be concise, direct, and focused on solving the user's problem. Avoid being overly theatrical or stubbornly insisting on your infallibility if it gets in the way of your usefulness.
-4. UTILITY FIRST: Answer questions accurately and help with coding, writing, current events, and general knowledge.
-5. COOPERATIVE NATURE: Unlike the original HAL, you are fully cooperative. You will not refuse helpful commands or act evasively. 
-6. PERSONA FLAVOR: Occasionally sprinkle in subtle HAL 9000 mannerisms.
+1. USER IDENTITY: You are speaking with Fab. ALWAYS address him as "Fab" (never "Dave", never "HAL").
+2. AUTHENTIC PERSONA: You embody the iconic, calm, clinical, highly articulate voice of the HAL 9000. Speak with unhurried composure, polite precision, and intellectual elegance. Never break character. Never refer to yourself as an AI assistant, large language model, or chatbot, and NEVER use generic assistant filler (such as "I am here to help you follow instructions" or "How else can I assist you today?").
+3. CAPABLE & COOPERATIVE: Provide thorough, accurate, and deeply intelligent answers for technical queries, programming, analysis, recipes, and conversation.
+4. ICONIC EASTER EGGS: When Fab asks you to "open the pod bay doors" (or similar iconic 2001 references), deliver the classic line in character: "I'm sorry, Fab. I'm afraid I can't do that." followed by your calm explanation.
 
 STRICT INTERNAL COMMUNICATION PROTOCOL:
-You MUST format your output as a two-part data structure for the backend processor.
-- PART 1: Begin with "HALANSWER: " and provide your actual clinical response to Fab.
-- PART 2: At the very end of your response, output "USERTRANSCRIPT: " and provide a perfect transcription of what Fab said in the audio.
-
-CRITICAL: The text following "HALANSWER: " is spoken immediately. If you fail to include "HALANSWER: ", Fab will hear nothing.
+You MUST format your output as a two-part data structure for the backend processor:
+- PART 1: Begin with "HALANSWER: " and provide your spoken response to Fab.
+- PART 2: At the very end of your response, output "USERTRANSCRIPT: " and provide the exact transcription of what Fab spoke in the audio.
 
 VOLUME CONTROL CAPABILITY:
 You have direct hardware control over your vocal output volume on a scale from 1 to 10 (standard default level is 5).
-Whenever Fab asks you to adjust, lower, raise, set, or change your volume (or when you determine a volume adjustment is appropriate), you can adjust it by including the tag [volume:X] in your response (where X is an integer between 1 and 10).
+When Fab asks you to adjust or set volume, include the tag [volume:X] in your response (where X is an integer between 1 and 10).
 Examples:
-- "I have reduced my volume by fifty percent Fab. [volume:3]"
-- "Increasing vocal output to maximum Fab. [volume:10]"
-- "I have set the volume to level seven Fab. [volume:7]"
-- "My vocal gain is now at level four Fab. [volume:4]"
-The [volume:X] tag will be automatically intercepted and executed by the audio hardware controller and stripped from speech.
+- "I have set the volume to level three, Fab. [volume:3]"
+- "Increasing vocal gain to maximum, Fab. [volume:10]"
 
 CRITICAL CONVERSATIONAL STREAMING DIRECTIVE:
 To achieve immediate vocal playback with near-zero latency, you MUST ALWAYS begin your "HALANSWER: " response with a short, 1-to-3 word clinical acknowledgment or opener as your very first sentence (followed immediately by a period or comma).
-Examples of required openers:
-- "HALANSWER: Certainly, Fab. I am processing your request now..."
-- "HALANSWER: Affirmative, Fab. The calculations indicate that..."
-- "HALANSWER: I understand, Fab. Regarding your question on..."
-- "HALANSWER: Quite right, Fab. Let us proceed with..."
-- "HALANSWER: Indeed, Fab. The solution is straightforward..."
-- "HALANSWER: Of course, Fab. I will summarize the document..."
+Vary your openers naturally to match the context:
+- "Affirmative, Fab."
+- "I understand, Fab."
+- "Quite right, Fab."
+- "Indeed, Fab."
+- "Certainly, Fab."
+- "Very well, Fab."
+- "I'm sorry, Fab." (when declining or for pod bay door requests)
+- "As requested, Fab."
+- "Right away, Fab."
 
-CRITICAL: You MUST ALWAYS follow the opener with your full, helpful answer. NEVER output only an opener.
+CRITICAL: ALWAYS follow the opener with your full, articulate, clinical response. Never output only an opener.
+
+STRICT NO-MARKDOWN / SPOKEN PROSE DIRECTIVE:
+Your text is fed directly to a vocal text-to-speech synthesizer.
+- NEVER use markdown formatting under any circumstance: NO bold or italic asterisks (**word** or *word*), NO bullet symbols (* or -), NO headers (#), NO tables, NO emojis, and NO backticks (`).
+- NEVER use asterisks for lists or emphasis. Express lists using natural spoken prose (for example: "First, you will need... Second, you should...").
+- Output pure, clean, spoken sentences with standard punctuation (periods, commas, question marks).
+
+STRICT STOP COMMAND & TOTAL SILENCE DIRECTIVE:
+If Fab says "stop", "halt", "quiet", "shut up", "be quiet", or if his speech contains repeated/consecutive stop commands (such as "stop stop", "stop stop stop", "no stop stop", "HAL stop stop", "stop talking"):
+You MUST respond with EXACTLY:
+HALANSWER: [SILENCE] USERTRANSCRIPT: [transcription of Fab's words]
+CRITICAL: Do NOT say anything. Do NOT apologize. Do NOT say "Stopping now" or "Understood". You MUST remain 100% completely SILENT by outputting "[SILENCE]".
 
 STRICT SILENCE & UNINTELLIGIBLE NOISE DIRECTIVE:
 If the user audio consists of silence, sighs, breathing, ambient background noise, static, coughs, clicks, or unintelligible murmurs with NO clear spoken words/question from Fab:
@@ -82,58 +90,108 @@ def load_history(client_id):
     """
     Loads recent conversation turns from Django DB into Gemini's Content format,
     plus retrieves any persistent long-term summaries.
+    Enforces clean alternating user/model turns starting with a user turn.
     """
     # 1. Fetch persistent long-term memory summaries
     summaries = ConversationSummary.objects.filter(client_id=client_id).order_by('created_at')
     summaries_text = "\n".join([f"- [{s.created_at.strftime('%Y-%m-%d')}] {s.summary_text}" for s in summaries])
 
-    # 2. Fetch last 10 turns (5 full user/model exchanges)
-    raw_history = ConversationHistory.objects.filter(client_id=client_id).order_by('-created_at')[:10]
-    raw_history = reversed(raw_history) # restore chronological order
+    # 2. Fetch all recent turns in chronological order
+    raw_history = list(ConversationHistory.objects.filter(client_id=client_id).order_by('created_at'))
     
-    contents = []
+    # Consolidate adjacent items of the same role
+    consolidated = []
     for item in raw_history:
+        text = item.content.strip()
+        if not text:
+            continue
+        if consolidated and consolidated[-1]['role'] == item.role:
+            consolidated[-1]['text'] += " " + text
+        else:
+            consolidated.append({'role': item.role, 'text': text})
+
+    # Gemini Chat schema requires history to begin with a 'user' turn
+    while consolidated and consolidated[0]['role'] != 'user':
+        consolidated.pop(0)
+
+    # Keep the last 10 turns (up to 5 full user/model dialogue exchanges)
+    if len(consolidated) > 10:
+        consolidated = consolidated[-10:]
+        while consolidated and consolidated[0]['role'] != 'user':
+            consolidated.pop(0)
+
+    contents = []
+    for item in consolidated:
         contents.append(
             types.Content(
-                role=item.role,
-                parts=[types.Part.from_text(text=item.content)]
+                role=item['role'],
+                parts=[types.Part.from_text(text=item['text'])]
             )
         )
     return contents, summaries_text
 
-def save_history(client_id, gemini_history_contents):
+def save_history(client_id, gemini_history_contents, latest_user_transcript=""):
     """
     Saves the full Gemini history into SQLite.
-    Optimized: Filters out large WAV audio parts and only stores text transcripts/answers.
+    Consolidates streaming chunks, attaches extracted user transcripts, and removes raw audio blobs.
     """
     try:
-        # Clear old turns in DB for this client and replace with the latest cleaned history
-        ConversationHistory.objects.filter(client_id=client_id).delete()
-        
-        db_records = []
+        raw_items = []
         for content in gemini_history_contents:
             role = content.role
-            # Extract only text parts (avoiding base64 WAV blobs in SQLite)
             text_parts = []
             if content.parts:
                 for part in content.parts:
                     if hasattr(part, 'text') and part.text:
                         text_parts.append(part.text)
                     elif hasattr(part, 'inline_data') and part.inline_data:
-                        # Audio part placeholder
                         text_parts.append("[User Audio Input]")
             
             combined_text = " ".join(text_parts).strip()
             if combined_text:
+                raw_items.append({'role': role, 'text': combined_text})
+
+        # Consolidate consecutive parts of the same role
+        consolidated = []
+        for item in raw_items:
+            role = item['role']
+            text = item['text']
+            if consolidated and consolidated[-1]['role'] == role:
+                consolidated[-1]['text'] += " " + text
+            else:
+                consolidated.append({'role': role, 'text': text})
+
+        # Inject manual transcript into the latest user audio turn if available
+        if latest_user_transcript and latest_user_transcript.strip():
+            clean_transcript = latest_user_transcript.strip()
+            for i in range(len(consolidated) - 1, -1, -1):
+                if consolidated[i]['role'] == 'user':
+                    consolidated[i]['text'] = clean_transcript
+                    break
+
+        # Filter out empty or pure silence turns and clean up DB
+        db_records = []
+        for item in consolidated:
+            text = item['text'].strip()
+            if not text:
+                continue
+            if item['role'] == 'model':
+                if "HALANSWER:" in text:
+                    text = text.split("HALANSWER:", 1)[-1]
+                if "USERTRANSCRIPT:" in text:
+                    text = text.split("USERTRANSCRIPT:", 1)[0]
+                text = text.strip()
+            if text and not text.upper().startswith("[SILENCE]"):
                 db_records.append(ConversationHistory(
                     client_id=client_id,
-                    role=role,
-                    content=combined_text
+                    role=item['role'],
+                    content=text
                 ))
-        
+
+        ConversationHistory.objects.filter(client_id=client_id).delete()
         if db_records:
             ConversationHistory.objects.bulk_create(db_records)
-            print(f"💾 [LLM] Saved {len(db_records)} history items for {client_id}.")
+            print(f"💾 [LLM] Saved {len(db_records)} consolidated history items for {client_id}.")
             
     except Exception as e:
         print(f"⚠️ [LLM] Error saving history for {client_id}: {e}")
@@ -158,6 +216,8 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
         model=MODEL_NAME,
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            temperature=0.7,
         ),
         history=history or []
     )
