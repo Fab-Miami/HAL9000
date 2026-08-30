@@ -622,13 +622,13 @@ body.sleep-mode {
 body.sleep-mode #hal-bezel,
 body.sleep-mode #hal-glow {
   opacity: 0 !important;
-  transition: opacity 1.5s ease-in-out !important;
+  transition: opacity 3.0s ease-in-out !important;
 }
 
 body.sleep-mode #hal-core {
   transform: translate(-50%, -50%) scale(0.15) !important;
-  opacity: 0.3 !important;
-  background: radial-gradient(circle, #880000 0%, #220000 100%) !important;
+  opacity: 1.0 !important;
+  background: radial-gradient(circle, #ff0000 0%, #770000 100%) !important;
   box-shadow: none !important;
-  transition: all 1.5s ease-in-out !important;
+  transition: all 3.0s ease-in-out !important;
 }

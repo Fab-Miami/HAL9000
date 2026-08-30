@@ -103,6 +103,8 @@ function setState(newState) {
 
 // Visual Glow & Core Modulation Logic
 function updateVisuals(intensity, isHalSpeech = false) {
+  if (currentState === State.SLEEPING) return;
+
   // Normalize intensity to 0.0 - 1.0 range
   const norm = Math.min(1.0, Math.max(0.0, intensity));
 
