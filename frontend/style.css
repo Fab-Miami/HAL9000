@@ -70,6 +70,7 @@ html, body {
   object-fit: contain;
   z-index: 1;
   pointer-events: none;
+  transition: opacity 0.5s ease-in-out;
 }
 
 /* Dynamic Inner Glow (The Intelligence) */
@@ -620,14 +621,14 @@ body.sleep-mode {
 
 body.sleep-mode #hal-bezel,
 body.sleep-mode #hal-glow {
-  opacity: 0;
-  transition: opacity 1s ease-in-out;
+  opacity: 0 !important;
+  transition: opacity 1.5s ease-in-out !important;
 }
 
 body.sleep-mode #hal-core {
-  transform: scale(0.15) !important;
+  transform: translate(-50%, -50%) scale(0.15) !important;
   opacity: 0.3 !important;
   background: radial-gradient(circle, #880000 0%, #220000 100%) !important;
   box-shadow: none !important;
-  transition: all 1s ease-in-out;
+  transition: all 1.5s ease-in-out !important;
 }
