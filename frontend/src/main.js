@@ -603,8 +603,18 @@ if (screen.orientation && screen.orientation.lock) {
 
 log('📱 Initialized HAL 9000 directly in ENCLOSURE MODE.');
 
-// Attempt to auto-initialize the system without requiring a tap
-setTimeout(() => {
-  log('Auto-initializing system...');
-  initializeSystem();
-}, 800);
+// Apple strictly blocks microphone/speaker pipelines without a physical screen tap.
+// Since the 'Initialize' button is hidden, we make the entire screen an invisible start button.
+let hasInitialized = false;
+const startOnTap = () => {
+  if (!hasInitialized) {
+    hasInitialized = true;
+    initializeSystem();
+    // Remove the listeners once activated
+    document.removeEventListener('touchstart', startOnTap);
+    document.removeEventListener('click', startOnTap);
+  }
+};
+
+document.addEventListener('touchstart', startOnTap, { passive: false });
+document.addEventListener('click', startOnTap);
