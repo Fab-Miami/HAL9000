@@ -15,5 +15,5 @@ ssh -t docdoc1@87.99.142.137 './deploy_hal9000.sh'
 *(If you just need to access the server shell, use: `ssh -t docdoc1@87.99.142.137 'exec bash -l'`)*
 
 **3. Access on iPhone:**
-Go to **`https://87.99.142.137:8000/`** 
-*(Must use `https://` or the microphone won't work)*
+Go to **`https://hal.tuning.net/`** 
+*(This uses a secure HTTPS connection served directly from Hefner. No Mac required!)*

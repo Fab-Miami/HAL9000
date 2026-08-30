@@ -12,7 +12,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/ws': {
-        target: 'http://127.0.0.1:8001',
+        target: 'http://87.99.142.137',
         ws: true,
         changeOrigin: true
       }
