@@ -610,3 +610,24 @@ body:not(.mode-enclosure) #hal-core {
   margin-top: 8px;
   cursor: pointer;
 }
+
+/* ----------------------------------------------------
+   Sleep Mode (OLED Power Saving)
+   ---------------------------------------------------- */
+body.sleep-mode {
+  background-color: #000000;
+}
+
+body.sleep-mode #hal-bezel,
+body.sleep-mode #hal-glow {
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+}
+
+body.sleep-mode #hal-core {
+  transform: scale(0.15) !important;
+  opacity: 0.3 !important;
+  background: radial-gradient(circle, #880000 0%, #220000 100%) !important;
+  box-shadow: none !important;
+  transition: all 1s ease-in-out;
+}

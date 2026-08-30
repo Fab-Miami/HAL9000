@@ -30,6 +30,7 @@ const State = {
   LISTENING: 'LISTENING',
   THINKING: 'THINKING',
   PROCESSING: 'PROCESSING',
+  SLEEPING: 'SLEEPING',
 };
 
 let currentState = State.IDLE;
@@ -38,6 +39,39 @@ let tapCount = 0;
 let tapTimer = null;
 let conversationInterval = null;
 let conversationTimeRemaining = 0;
+
+// Sleep Mode State
+let sleepTimer = null;
+const SLEEP_TIMEOUT_MS = 30000; // 30 seconds for fast testing
+
+function wakeUp() {
+  if (currentState !== State.SLEEPING) return;
+  
+  log('☀️ System awoken from Sleep Mode.');
+  document.body.classList.remove('sleep-mode');
+  if (audioRecorder) audioRecorder.sleeping = false;
+  setState(State.LISTENING);
+  resetSleepTimer();
+}
+
+function goToSleep() {
+  if (currentState === State.PROCESSING || currentState === State.THINKING) {
+    resetSleepTimer();
+    return;
+  }
+  
+  log('🌙 System entering Sleep Mode to conserve OLED power.');
+  document.body.classList.add('sleep-mode');
+  if (audioRecorder) audioRecorder.sleeping = true;
+  setState(State.SLEEPING);
+}
+
+function resetSleepTimer() {
+  clearTimeout(sleepTimer);
+  if (currentState !== State.SLEEPING) {
+    sleepTimer = setTimeout(goToSleep, SLEEP_TIMEOUT_MS);
+  }
+}
 
 // Logging with visual telemetry
 function log(msg) {
@@ -127,6 +161,10 @@ const audioRecorder = new AudioRecorder({
     if (currentState === State.PROCESSING) {
       triggerVoiceBargeIn();
     }
+    resetSleepTimer();
+  },
+  onWakeTrigger: () => {
+    wakeUp();
   },
   onLog: log,
 });
@@ -173,6 +211,7 @@ const wsClient = new WsClient({
 function stopInteraction() {
   setState(State.LISTENING);
   log('💬 Audio response finished. Resuming continuous listening.');
+  resetSleepTimer();
 
   try {
     audioRecorder.start();
@@ -269,6 +308,7 @@ async function initializeSystem() {
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
     await audioRecorder.start();
     setState(State.LISTENING);
+    resetSleepTimer();
 
     // 5. Request permanent Screen Wake Lock
     requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
@@ -281,10 +321,21 @@ async function initializeSystem() {
 }
 
 if (initOverlay) {
-  initOverlay.addEventListener('click', initializeSystem);
+  initOverlay.addEventListener('click', () => {
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    } else {
+      initializeSystem();
+    }
+  });
   initOverlay.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    initializeSystem();
+    if (currentState === State.SLEEPING) {
+      e.preventDefault();
+      wakeUp();
+    } else {
+      e.preventDefault();
+      initializeSystem();
+    }
   });
 }
 

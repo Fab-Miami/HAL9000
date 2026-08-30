@@ -5,10 +5,11 @@
  */
 
 export class AudioRecorder {
-  constructor({ onAudioData, onAudioLevel, onSpeechDetected, onLog }) {
+  constructor({ onAudioData, onAudioLevel, onSpeechDetected, onWakeTrigger, onLog }) {
     this.onAudioData = onAudioData || (() => {});
     this.onAudioLevel = onAudioLevel || (() => {});
     this.onSpeechDetected = onSpeechDetected || (() => {});
+    this.onWakeTrigger = onWakeTrigger || (() => {});
     this.onLog = onLog || console.log;
 
     this.audioContext = null;
@@ -17,6 +18,7 @@ export class AudioRecorder {
     this.scriptNode = null;
     this.isRecording = false;
     this.muted = false;
+    this.sleeping = false;
   }
 
   async start() {
@@ -76,6 +78,14 @@ export class AudioRecorder {
 
         if (intensity > 0.35) {
           this.onSpeechDetected();
+        }
+
+        // If sleeping, detect a loud BUNG (intensity > 0.9) to wake up, but DO NOT send audio to server.
+        if (this.sleeping) {
+          if (intensity > 0.9) {
+            this.onWakeTrigger();
+          }
+          return;
         }
 
         // Stream PCM chunk to WebSocket
