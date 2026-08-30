@@ -80,9 +80,9 @@ export class AudioRecorder {
           this.onSpeechDetected();
         }
 
-        // If sleeping, detect a loud BUNG (intensity > 0.9) to wake up, but DO NOT send audio to server.
+        // If sleeping, detect a loud BUNG (intensity > 0.7) to wake up, but DO NOT send audio to server.
         if (this.sleeping) {
-          if (intensity > 0.9) {
+          if (intensity > 0.7) {
             this.onWakeTrigger();
           }
           return;

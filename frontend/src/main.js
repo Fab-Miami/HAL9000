@@ -323,23 +323,25 @@ async function initializeSystem() {
 }
 
 if (initOverlay) {
-  initOverlay.addEventListener('click', () => {
-    if (currentState === State.SLEEPING) {
-      wakeUp();
-    } else {
-      initializeSystem();
-    }
-  });
+  initOverlay.addEventListener('click', initializeSystem);
   initOverlay.addEventListener('touchstart', (e) => {
-    if (currentState === State.SLEEPING) {
-      e.preventDefault();
-      wakeUp();
-    } else {
-      e.preventDefault();
-      initializeSystem();
-    }
+    e.preventDefault();
+    initializeSystem();
   });
 }
+
+// Allow waking up by tapping anywhere on the screen
+document.body.addEventListener('click', () => {
+  if (currentState === State.SLEEPING) {
+    wakeUp();
+  }
+});
+document.body.addEventListener('touchstart', (e) => {
+  if (currentState === State.SLEEPING) {
+    e.preventDefault();
+    wakeUp();
+  }
+});
 
 // Telemetry / Diagnostic HUD Controls (Tap status bar 3x)
 if (statusBar) {
