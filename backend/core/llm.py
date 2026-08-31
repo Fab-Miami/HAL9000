@@ -207,6 +207,9 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
     if summaries_text:
         full_instruction += f"\n\n--- LONG-TERM MEMORY ARCHIVE ---\n{summaries_text}"
         
+    current_time_str = timezone.localtime(timezone.now()).strftime("%A, %B %d, %Y at %I:%M %p %Z")
+    full_instruction += f"\n\nCURRENT CONTEXT:\nThe current date and time is {current_time_str}.\nYour current location is Miami Beach."
+    
     full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
     
     return client.aio.chats.create(
