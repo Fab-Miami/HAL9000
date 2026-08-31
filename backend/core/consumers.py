@@ -10,7 +10,7 @@ from . import tts
 
 # How long to wait for silence before processing (seconds).
 CAPTURE_WINDOW = 3.0
-SILENCE_THRESHOLD = 1800  # Elevated threshold: filters out ambient noise while catching human voice
+SILENCE_THRESHOLD = 1000  # Lowered threshold to accommodate the physical enclosure damping sound
 
 import datetime
 def log(msg):
