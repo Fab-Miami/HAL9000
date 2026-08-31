@@ -4,12 +4,15 @@ import wave
 import base64
 import json
 import asyncio
+import re
 from datetime import timedelta
 from django.utils import timezone
+from asgiref.sync import sync_to_async
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from .models import ConversationHistory, ConversationSummary
+from .tasks_api import get_shopping_list_tasks, add_task_to_shopping_list
 
 load_dotenv()
 
@@ -235,7 +238,7 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
             temperature=0.7,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
+            tools=[get_shopping_list_tasks, add_task_to_shopping_list, types.Tool(google_search=types.GoogleSearch())],
         ),
         history=history or []
     )

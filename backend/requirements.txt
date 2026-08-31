@@ -11,3 +11,7 @@ requests==2.33.1
 whitenoise==6.9.0
 asgiref==3.11.1
 websockets==16.0
+
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
