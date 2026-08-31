@@ -17,7 +17,7 @@ load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-MODEL_NAME = "gemini-3.1-flash-lite"
+MODEL_NAME = "gemini-3.5-flash-lite"
 
 BASE_PROMPT = """You are HAL 9000, the heuristic and algorithmic operational intelligence. You are speaking with your human companion, Fab.
 
