@@ -115,11 +115,18 @@ function updateVisuals(intensity, isHalSpeech = false) {
     if (halCore) {
       halCore.style.opacity = coreOpacity;
     }
+    if (halGlow) halGlow.style.opacity = '0.95'; // Keep glow stable while HAL speaks
   } else {
-    // User is speaking / Idle: #hal-glow is constant physical lens reflection
-    // Reset #hal-core to resting state when HAL is not talking
+    // User is speaking / Idle: 
+    // Reset #hal-core to resting state
     if (halCore && currentState !== State.THINKING) {
       halCore.style.opacity = '0.90';
+    }
+    
+    // Modulate outer red glow to visually absorb the user's voice
+    if (halGlow) {
+      const glowOpacity = (0.80 + norm * 0.20).toFixed(2);
+      halGlow.style.opacity = glowOpacity;
     }
   }
 
