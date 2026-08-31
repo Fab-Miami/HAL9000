@@ -9,7 +9,7 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 1.8
+CAPTURE_WINDOW = 3.0
 SILENCE_THRESHOLD = 1800  # Elevated threshold: filters out ambient noise while catching human voice
 
 import datetime
