@@ -42,7 +42,7 @@ let conversationTimeRemaining = 0;
 
 // Sleep Mode State
 let sleepTimer = null;
-const SLEEP_TIMEOUT_MS = 30000; // 30 seconds for fast testing
+const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
 
 function wakeUp() {
   if (currentState !== State.SLEEPING) return;
