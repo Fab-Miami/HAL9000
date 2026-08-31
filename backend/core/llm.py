@@ -211,7 +211,6 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
         model=MODEL_NAME,
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
             temperature=0.7,
         ),
         history=history or []
