@@ -122,16 +122,16 @@ function updateVisuals(intensity, isHalSpeech = false) {
       halCore.style.opacity = '0.90';
     }
     
-    // User speaking feedback: Smoothly modulate background glow based on mic intensity
+    // User speaking feedback: Smoothly modulate background glow opacity based on mic intensity
+    // HARD NOTE: The central red glow is a physical LED in the movie.
+    // DO NOT change the scale/size of any optical elements (#hal-core or #hal-glow).
+    // The ONLY things we can modulate are opacity and color.
     if (halGlow) {
       // Base opacity 0.85, peaks at 1.0 based on user speech volume
       const glowOpacity = (0.85 + norm * 0.15).toFixed(2);
       
-      // Add a very subtle scale pulse for smooth, organic feedback
-      const glowScale = (1.0 + norm * 0.05).toFixed(3); 
-      
       halGlow.style.opacity = glowOpacity;
-      halGlow.style.transform = `translate(-50%, -50%) scale(${glowScale})`;
+      halGlow.style.transform = `translate(-50%, -50%)`; // Explicitly locked to prevent size changes
     }
   }
 

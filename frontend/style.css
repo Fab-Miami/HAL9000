@@ -82,7 +82,8 @@ html, body {
   border-radius: 50%;
   pointer-events: none;
   z-index: 2;
-  transition: opacity 0.15s ease-out, transform 0.1s ease-out;
+  /* HARD NOTE: DO NOT animate transform/scale. The LED is physical. Modulate opacity/color only. */
+  transition: opacity 0.15s ease-out;
   opacity: 0.95;
 
   /* Smooth cinematic fade into deep pitch black */
