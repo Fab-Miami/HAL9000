@@ -115,22 +115,23 @@ function updateVisuals(intensity, isHalSpeech = false) {
     if (halCore) {
       halCore.style.opacity = coreOpacity;
     }
-    if (halGlow) {
-      halGlow.style.opacity = '0.95'; 
-      halGlow.style.transform = 'translate(-50%, -50%) scale(1.0)';
-    }
   } else {
-    // User is speaking / Idle: 
-    // Reset #hal-core to resting state
+    // User is speaking / Idle: #hal-glow provides visual feedback
+    // Reset #hal-core to resting state when HAL is not talking
     if (halCore && currentState !== State.THINKING) {
       halCore.style.opacity = '0.90';
     }
     
-    // Modulate outer red glow gently by scaling it to visually absorb user voice
+    // User speaking feedback: Smoothly modulate background glow based on mic intensity
     if (halGlow) {
-      const scale = (1.0 + norm * 0.03).toFixed(3);
-      halGlow.style.transform = `translate(-50%, -50%) scale(${scale})`;
-      halGlow.style.opacity = '0.95';
+      // Base opacity 0.85, peaks at 1.0 based on user speech volume
+      const glowOpacity = (0.85 + norm * 0.15).toFixed(2);
+      
+      // Add a very subtle scale pulse for smooth, organic feedback
+      const glowScale = (1.0 + norm * 0.05).toFixed(3); 
+      
+      halGlow.style.opacity = glowOpacity;
+      halGlow.style.transform = `translate(-50%, -50%) scale(${glowScale})`;
     }
   }
 
