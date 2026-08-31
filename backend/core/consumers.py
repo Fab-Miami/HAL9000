@@ -318,13 +318,13 @@ class HalConsumer(AsyncWebsocketConsumer):
                                     break
 
                                 # Intercept and process any embedded volume tag
-                                vol_match = re.search(r'\[volume:\s*(\d+)\]', complete_sentence, re.IGNORECASE)
+                                vol_match = re.search(r'\[?volume:\s*(\d+)\]?', complete_sentence, re.IGNORECASE)
                                 if vol_match:
                                     new_vol = max(1, min(10, int(vol_match.group(1))))
                                     self.current_volume = new_vol
                                     log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
                                     await self.send(text_data=f"VOLUME:{new_vol}")
-                                    complete_sentence = re.sub(r'\[volume:\s*\d+\]', '', complete_sentence, flags=re.IGNORECASE).strip()
+                                    complete_sentence = re.sub(r'\[?volume:\s*\d+\]?', '', complete_sentence, flags=re.IGNORECASE).strip()
 
                                 if complete_sentence:
                                     full_response_text += complete_sentence + " "
@@ -336,13 +336,13 @@ class HalConsumer(AsyncWebsocketConsumer):
             if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
                 clean_tail = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', accumulated_text).strip()
                 if not clean_tail.upper().startswith("[SILENCE]"):
-                    vol_match = re.search(r'\[volume:\s*(\d+)\]', clean_tail, re.IGNORECASE)
+                    vol_match = re.search(r'\[?volume:\s*(\d+)\]?', clean_tail, re.IGNORECASE)
                     if vol_match:
                         new_vol = max(1, min(10, int(vol_match.group(1))))
                         self.current_volume = new_vol
                         log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
                         await self.send(text_data=f"VOLUME:{new_vol}")
-                        clean_tail = re.sub(r'\[volume:\s*\d+\]', '', clean_tail, flags=re.IGNORECASE).strip()
+                        clean_tail = re.sub(r'\[?volume:\s*\d+\]?', '', clean_tail, flags=re.IGNORECASE).strip()
 
                     if clean_tail:
                         full_response_text += clean_tail
