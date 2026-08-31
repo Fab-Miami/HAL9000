@@ -67,7 +67,7 @@ Do NOT produce any greeting, do NOT comment on background noise, do NOT say "I h
 
 Examples of Complete Response Format:
 HALANSWER: Acknowledged. I am retrieving the telemetry for the high gain antenna now. USERTRANSCRIPT: HAL, check the telemetry for the high gain antenna.
-HALANSWER: Of course, Fab. The weather in Miami is currently 85 degrees and sunny. USERTRANSCRIPT: What's the weather look like today?
+HALANSWER: Of course, Fab. The orbital velocity required for a low Earth orbit is approximately 7.8 kilometers per second. USERTRANSCRIPT: What is the velocity needed for low Earth orbit?
 HALANSWER: Right. I can certainly help you debug that Python script. USERTRANSCRIPT: I need some help with some code.
 """
 
