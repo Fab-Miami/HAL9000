@@ -295,8 +295,17 @@ class HalConsumer(AsyncWebsocketConsumer):
                         # Process any remaining sentences in the HAL part
                         clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
                         if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
-                            full_response_text += clean_hal + " "
-                            await sentence_queue.put(clean_hal)
+                            vol_match = re.search(r'\[?volume:\s*(\d+)\]?', clean_hal, re.IGNORECASE)
+                            if vol_match:
+                                new_vol = max(1, min(10, int(vol_match.group(1))))
+                                self.current_volume = new_vol
+                                log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+                                await self.send(text_data=f"VOLUME:{new_vol}")
+                                clean_hal = re.sub(r'\[?volume:\s*\d+\]?', '', clean_hal, flags=re.IGNORECASE).strip()
+                            
+                            if clean_hal:
+                                full_response_text += clean_hal + " "
+                                await sentence_queue.put(clean_hal)
                         accumulated_text = ""
                     else:
                         # Extract complete sentences from HAL's answer
