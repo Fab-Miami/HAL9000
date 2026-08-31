@@ -61,3 +61,24 @@ def add_task_to_shopping_list(item_name: str):
         
     except Exception as e:
         return f"Error adding item to shopping list: {str(e)}"
+
+def remove_task_from_shopping_list(item_name: str):
+    """Removes an item from the Shopping list if it exists."""
+    try:
+        service = get_tasks_service()
+        list_id = get_or_create_shopping_list(service)
+        
+        # Get uncompleted tasks
+        results = service.tasks().list(tasklist=list_id, showCompleted=False).execute()
+        items = results.get('items', [])
+        
+        for item in items:
+            if item['title'].lower() == item_name.lower():
+                service.tasks().delete(tasklist=list_id, task=item['id']).execute()
+                return f"Successfully removed {item_name} from the shopping list."
+                
+        return f"Could not find {item_name} on the shopping list."
+        
+    except Exception as e:
+        return f"Error removing item from shopping list: {str(e)}"
+
