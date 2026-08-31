@@ -293,7 +293,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                             break
 
                         # Process any remaining sentences in the HAL part
-                        clean_hal = hal_part.replace("HALANSWER:", "").strip()
+                        clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
                         if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
                             full_response_text += clean_hal + " "
                             await sentence_queue.put(clean_hal)
@@ -302,8 +302,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                         # Extract complete sentences from HAL's answer
                         while True:
                             # Strip "HALANSWER: " prefix if present at start of stream
-                            if accumulated_text.startswith("HALANSWER:"):
-                                accumulated_text = accumulated_text[len("HALANSWER:"):].lstrip()
+                            accumulated_text = re.sub(r'(?i)^\s*\*?\*?HALANSWER\*?\*?\s*:\s*', '', accumulated_text)
                                 
                             match = sentence_pattern.search(accumulated_text)
                             if not match:
@@ -335,7 +334,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             # If the stream finished without encountering USERTRANSCRIPT:, flush remaining text
             if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
-                clean_tail = accumulated_text.replace("HALANSWER:", "").strip()
+                clean_tail = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', accumulated_text).strip()
                 if not clean_tail.upper().startswith("[SILENCE]"):
                     vol_match = re.search(r'\[volume:\s*(\d+)\]', clean_tail, re.IGNORECASE)
                     if vol_match:
