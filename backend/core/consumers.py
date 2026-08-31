@@ -255,8 +255,8 @@ class HalConsumer(AsyncWebsocketConsumer):
             is_transcript_mode = False
             is_silent_response = False
             
-            # Sentence terminators: period, exclamation, question mark, colon, newline
-            sentence_pattern = re.compile(r'([^.!?:\n]+[.!?:\n]+)')
+            # Sentence terminators: period, exclamation, question mark, newline
+            sentence_pattern = re.compile(r'([^.!?\n]+[.!?\n]+)')
 
             # Iterate over the live Gemini stream
             async for token in llm.stream_gemini_response(self.chat_session, wav_bytes):
