@@ -239,6 +239,7 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
             system_instruction=full_instruction,
             temperature=0.7,
             tools=[get_shopping_list_tasks, add_task_to_shopping_list, types.Tool(google_search=types.GoogleSearch())],
+            tool_config=types.ToolConfig(include_server_side_tool_invocations=True),
         ),
         history=history or []
     )
