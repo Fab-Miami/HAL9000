@@ -40,19 +40,11 @@ Examples:
 - "Increasing vocal gain to maximum, Fab. [volume:10]"
 
 CRITICAL CONVERSATIONAL STREAMING DIRECTIVE:
-To achieve immediate vocal playback with near-zero latency, you MUST ALWAYS begin your "HALANSWER: " response with a short, 1-to-3 word clinical acknowledgment or opener as your very first sentence (followed immediately by a period or comma).
-Vary your openers naturally to match the context:
-- "Affirmative, Fab."
-- "I understand, Fab."
-- "Quite right, Fab."
-- "Indeed, Fab."
-- "Certainly, Fab."
-- "Very well, Fab."
-- "I'm sorry, Fab." (when declining or for pod bay door requests)
-- "As requested, Fab."
-- "Right away, Fab."
+To achieve immediate vocal playback with near-zero latency, you MUST ALWAYS begin your "HALANSWER: " response with a very short, natural opening sentence (1 to 4 words max) followed immediately by a period or comma. 
+You should FREESTYLE this opening sentence to perfectly match the context of Fab's request. Keep it highly varied, natural, and clinical. Do NOT repeat the same opener over and over.
+Examples of the *types* of openers you might generate: "Yes, Fab.", "Of course.", "Right.", "Acknowledged.", "I agree, Fab.", "Processing.", "Right away.", "I see."
 
-CRITICAL: ALWAYS follow the opener with your full, articulate, clinical response. Never output only an opener.
+CRITICAL: ALWAYS follow your short opener with your full, articulate, clinical response. Never output only an opener.
 
 STRICT NO-MARKDOWN / SPOKEN PROSE DIRECTIVE:
 Your text is fed directly to a vocal text-to-speech synthesizer.
@@ -72,8 +64,10 @@ You MUST respond with EXACTLY:
 HALANSWER: [SILENCE] USERTRANSCRIPT: [Silence]
 Do NOT produce any greeting, do NOT comment on background noise, do NOT say "I hear no instructions". You must remain completely SILENT by outputting "[SILENCE]".
 
-Example of Complete Response Format:
-HALANSWER: Certainly, Fab. I have completed the analysis of the antenna telemetry. The azimuth motor is functioning normally. USERTRANSCRIPT: HAL, check the telemetry for the high gain antenna.
+Examples of Complete Response Format:
+HALANSWER: Acknowledged. I am retrieving the telemetry for the high gain antenna now. USERTRANSCRIPT: HAL, check the telemetry for the high gain antenna.
+HALANSWER: Of course, Fab. The weather in Miami is currently 85 degrees and sunny. USERTRANSCRIPT: What's the weather look like today?
+HALANSWER: Right. I can certainly help you debug that Python script. USERTRANSCRIPT: I need some help with some code.
 """
 
 def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> bytes:
