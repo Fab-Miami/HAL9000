@@ -127,8 +127,8 @@ function updateVisuals(intensity, isHalSpeech = false) {
     // DO NOT change the scale/size of any optical elements (#hal-core or #hal-glow).
     // The ONLY things we can modulate are opacity and color.
     if (halGlow) {
-      // Base opacity 0.85, peaks at 1.0 based on user speech volume
-      const glowOpacity = (0.85 + norm * 0.15).toFixed(2);
+      // Base opacity 0.65, peaks at 1.0 based on user speech volume
+      const glowOpacity = (0.65 + norm * 0.35).toFixed(2);
       
       halGlow.style.opacity = glowOpacity;
       halGlow.style.transform = `translate(-50%, -50%)`; // Explicitly locked to prevent size changes
