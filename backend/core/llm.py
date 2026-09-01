@@ -231,11 +231,7 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
     if summaries_text:
         full_instruction += f"\n\n--- LONG-TERM MEMORY ARCHIVE ---\n{summaries_text}"
         
-    from datetime import datetime
-    import zoneinfo
-    miami_tz = zoneinfo.ZoneInfo("America/New_York")
-    current_time_str = datetime.now(miami_tz).strftime("%A, %B %d, %Y at %I:%M %p %Z")
-    full_instruction += f"\n\nCURRENT CONTEXT:\nThe current date and time is {current_time_str}.\nYour current location is Miami Beach."
+    full_instruction += f"\n\nCURRENT CONTEXT:\nYour current location is Miami Beach."
     
     full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
     
@@ -311,8 +307,15 @@ async def stream_gemini_response(chat_session, wav_bytes: bytes):
             mime_type="audio/wav"
         )
         
-        # Send message to Gemini Async Chat Session with streaming enabled
-        response_stream = await chat_session.send_message_stream(audio_part)
+        # Dynamically inject the exact current time into every single turn
+        from datetime import datetime
+        import zoneinfo
+        miami_tz = zoneinfo.ZoneInfo("America/New_York")
+        current_time_str = datetime.now(miami_tz).strftime("%I:%M %p on %A, %B %d, %Y %Z")
+        time_context = f"[SYSTEM NOTIFICATION: The current exact time in Miami is {current_time_str}]"
+        
+        # Send message to Gemini Async Chat Session with streaming enabled (Text + Audio)
+        response_stream = await chat_session.send_message_stream([time_context, audio_part])
         
         async for chunk in response_stream:
             if chunk.text:
