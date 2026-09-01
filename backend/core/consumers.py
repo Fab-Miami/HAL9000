@@ -303,6 +303,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                                 await self.send(text_data=f"VOLUME:{new_vol}")
                                 clean_hal = re.sub(r'\[?volume:\s*\d+\]?', '', clean_hal, flags=re.IGNORECASE).strip()
                             
+                            if "[SLEEP]" in clean_hal.upper():
+                                log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
+                                await self.send(text_data="SLEEP")
+                                clean_hal = re.sub(r'\[?SLEEP\]?', '', clean_hal, flags=re.IGNORECASE).strip()
+                            
                             if clean_hal:
                                 full_response_text += clean_hal + " "
                                 await sentence_queue.put(clean_hal)
@@ -335,6 +340,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                                     await self.send(text_data=f"VOLUME:{new_vol}")
                                     complete_sentence = re.sub(r'\[?volume:\s*\d+\]?', '', complete_sentence, flags=re.IGNORECASE).strip()
 
+                                if "[SLEEP]" in complete_sentence.upper():
+                                    log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
+                                    await self.send(text_data="SLEEP")
+                                    complete_sentence = re.sub(r'\[?SLEEP\]?', '', complete_sentence, flags=re.IGNORECASE).strip()
+
                                 if complete_sentence:
                                     full_response_text += complete_sentence + " "
                                     await sentence_queue.put(complete_sentence)
@@ -352,6 +362,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                         log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
                         await self.send(text_data=f"VOLUME:{new_vol}")
                         clean_tail = re.sub(r'\[?volume:\s*\d+\]?', '', clean_tail, flags=re.IGNORECASE).strip()
+
+                    if "[SLEEP]" in clean_tail.upper():
+                        log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
+                        await self.send(text_data="SLEEP")
+                        clean_tail = re.sub(r'\[?SLEEP\]?', '', clean_tail, flags=re.IGNORECASE).strip()
 
                     if clean_tail:
                         full_response_text += clean_tail

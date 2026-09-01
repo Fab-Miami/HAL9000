@@ -200,6 +200,9 @@ const wsClient = new WsClient({
     } else if (text === 'THINKING') {
       log('🤔 Received THINKING signal from server.');
       setState(State.THINKING);
+    } else if (text === 'SLEEP') {
+      log('🌙 Received SLEEP signal from server.');
+      goToSleep();
     } else if (text === 'DONE') {
       log('🏁 Received DONE signal from server.');
       audioPlayer.finishStream();
