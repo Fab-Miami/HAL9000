@@ -42,6 +42,7 @@ let conversationTimeRemaining = 0;
 
 // Sleep Mode State
 let sleepTimer = null;
+let pendingSleepCommand = false;
 const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
 
 function wakeUp() {
@@ -201,8 +202,8 @@ const wsClient = new WsClient({
       log('🤔 Received THINKING signal from server.');
       setState(State.THINKING);
     } else if (text === 'SLEEP') {
-      log('🌙 Received SLEEP signal from server.');
-      goToSleep();
+      log('🌙 Received SLEEP signal from server. Queueing sleep mode for after voice playback.');
+      pendingSleepCommand = true;
     } else if (text === 'DONE') {
       log('🏁 Received DONE signal from server.');
       audioPlayer.finishStream();
@@ -228,7 +229,13 @@ const wsClient = new WsClient({
 function stopInteraction() {
   setState(State.LISTENING);
   log('💬 Audio response finished. Resuming continuous listening.');
-  resetSleepTimer();
+  
+  if (pendingSleepCommand) {
+    pendingSleepCommand = false;
+    goToSleep();
+  } else {
+    resetSleepTimer();
+  }
 
   try {
     audioRecorder.start();
