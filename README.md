@@ -13,10 +13,8 @@
 
 <br>
 
-[![Status: Critical](https://img.shields.io/badge/STATUS-CRITICAL-red.svg?style=for-the-badge&logo=github)]()
-[![Development: Active](https://img.shields.io/badge/DEVELOPMENT-HEAVY_ACTIVE-orange.svg?style=for-the-badge&logo=gear)]()
-
-*This repository is currently under heavy active development. The codebase is a work in progress and the system is not yet fully operational. Proceed with caution.*
+[![Status: Operational](https://img.shields.io/badge/STATUS-OPERATIONAL-green.svg?style=for-the-badge&logo=github)]()
+[![Deployment: Live](https://img.shields.io/badge/DEPLOYMENT-LIVE-blue.svg?style=for-the-badge&logo=server)]()
 
 </div>
 
@@ -26,13 +24,13 @@
 
 **HAL 9000** is an engineering project aimed at bringing the iconic AI from *2001: A Space Odyssey* into physical reality. 
 
-Built on a completely decentralized **"Sensory Node / Mainframe"** architecture, the project utilizes an iPhone acting merely as a dumb terminal (microphone, speaker, and UI), while a local Django server handles the heavy algorithmic lifting, LLM routing, and cinematic Text-to-Speech generation with **zero perceived latency**.
+Initially designed as a localized Swift application, the architecture has evolved into a highly robust, universally accessible **Web Application and Remote Mainframe** model. Any device with a modern browser (primarily an iPhone inside a 3D-printed enclosure) serves as the Sensory Node (microphone, speaker, and UI), while a remote production server handles the heavy algorithmic lifting, LLM routing, memory management, and cinematic Text-to-Speech generation with **near-zero perceived latency**.
 
 ---
 
 <h2 align="center">⚙️ The Architecture</h2>
 
-The system is designed for **aerospace-grade speed**. By utilizing persistent WebSockets and raw PCM audio chunking, we bypass standard API bottlenecks to create a real-time conversational flow.
+The system is designed for **aerospace-grade speed**. By utilizing persistent WebSockets and raw PCM audio chunking, we bypass standard API bottlenecks to create a fluid, real-time conversational flow.
 
 ```mermaid
 graph TD
@@ -40,24 +38,24 @@ graph TD
     classDef backend fill:#092E20,stroke:#4CAF50,stroke-width:2px,color:#fff;
     classDef ai fill:#003366,stroke:#4285F4,stroke-width:2px,color:#fff;
 
-    subgraph "📱 The Sensory Node (iPhone / Swift)"
-        WW(SFSpeechRecognizer<br>Wake Word) -->|Triggers| MIC
-        MIC(AVAudioEngine<br>16kHz PCM Tap) -->|Raw Bytes| WS_OUT
-        WS_IN -->|Binary Audio| SPK(Speaker Node)
-        SPK -->|Amplitude Data| UI[SwiftUI<br>Reactive Red Eye]
+    subgraph "📱 Sensory Node (Vite / Browser)"
+        MIC(Web Audio API<br>16kHz PCM Tap) -->|Raw Bytes| WS_OUT
+        WS_IN -->|Binary Audio| SPK(AudioContext)
+        SPK -->|Amplitude Data| UI[CSS/DOM<br>Reactive Red Eye]
     end
 
-    subgraph "🧠 The Mainframe (Local Django Server)"
-        WS_OUT(WebSocket Client) ==>|WebSocket| WS_IN_SRV(Django Channels)
+    subgraph "🧠 The Mainframe (Hetzner Remote Server)"
+        WS_OUT(WebSocket Client) ==>|WebSocket| WS_IN_SRV(Django + Daphne ASGI)
         WS_IN_SRV --> BUF(In-Memory WAV Buffer)
-        BUF --> GEM(Gemini 3 Flash API)
-        GEM -->|Text Stream| KOKO(KokoClone TTS Pipeline)
+        BUF --> GEM(Gemini 3.5 Flash Lite)
+        GEM -->|AFC / Tools| DB[(Long-Term Memory <br> & Google Tasks)]
+        GEM -->|Text Stream| KOKO(Kokoro ONNX TTS)
         KOKO -->|Synthesized Audio| WS_OUT_SRV(Django Channels)
         WS_OUT_SRV ==>|WebSocket| WS_IN(WebSocket Client)
     end
 
-    class WW,MIC,SPK,UI,WS_OUT,WS_IN frontend;
-    class WS_IN_SRV,BUF,KOKO,WS_OUT_SRV backend;
+    class MIC,SPK,UI,WS_OUT,WS_IN frontend;
+    class WS_IN_SRV,BUF,KOKO,WS_OUT_SRV,DB backend;
     class GEM ai;
 ```
 
@@ -65,28 +63,27 @@ graph TD
 
 <h2 align="center">🛠️ System Components</h2>
 
-> **1. The Client (iOS / Swift)**
+> **1. The Client (Vite Web App)**
 > 
-> The iPhone runs a lightweight SwiftUI application that does zero natural language processing.
-> - **Native Wake Word:** Uses Apple's on-device `SFSpeechRecognizer` continuously listening for the trigger.
-> - **Audio Tap:** Uses `AVAudioEngine` to intercept raw 16kHz microphone data.
-> - **Reactive UI:** The iconic red eye scales in brightness and radius based precisely on the amplitude of the incoming audio buffer.
+> A lightweight, highly optimized web application designed to run permanently in a browser environment (with Screen WakeLock) mimicking a native app.
+> - **Continuous Listening:** Captures audio and streams raw 16kHz PCM data.
+> - **Reactive UI:** The iconic red eye scales in brightness and radius based precisely on the amplitude of the incoming user and HAL audio buffers.
+> - **Enclosure Mode:** Includes a hidden diagnostic UI and specific touchscreen calibration features for mounting inside a physical 3D-printed prop.
+> - **Hardware Sleep Mode:** Dynamically dims the OLED screen to conserve power when commanded.
 
 > **2. The Bridge (WebSockets)**
 > 
-> A persistent, bidirectional `URLSessionWebSocketTask` streams raw audio bytes to the server and receives generated audio chunks back, cutting out the HTTP request/response overhead.
+> A persistent, bidirectional WebSocket connection streams raw audio bytes to the remote server and receives synthesized audio chunks back, entirely cutting out standard HTTP polling overhead.
 
 > **3. The Brain (Django & Gemini)**
 > 
-> The local server runs **Django Channels** and **Daphne** to handle the asynchronous WebSockets.
-> - Incoming raw audio bytes are wrapped into a WAV format entirely in-memory.
-> - The audio is piped directly into the **Google Gemini 3 Flash** multimodal model to handle transcription and response generation simultaneously.
+> The remote production server (`hal.tuning.net`) runs **Django Channels** and the **Daphne** ASGI server to handle thousands of asynchronous WebSocket frames.
+> - **Automatic Function Calling (AFC):** Powered by **Google Gemini 3.5 Flash Lite**, HAL natively interfaces with the real world, including adding and removing items from Google Tasks (Shopping Lists) and dynamically injecting exact local time on every interaction.
+> - **Long-Term Memory:** Background threads continuously summarize conversation history and consolidate it into a persistent database to grant HAL infinite contextual recall.
 
-> **4. The Voice (KokoClone)**
+> **4. The Voice (Kokoro ONNX)**
 > 
-> To achieve the haunting, mid-Atlantic calmness of Douglas Rain's performance, the system bypasses standard TTS APIs. It utilizes the **KokoClone** open-source pipeline:
-> - **Kokoro-ONNX:** Generates the raw speech structure at blazing speeds.
-> - **Kanade Voice Conversion:** Instantly filters the generated speech through a zero-shot voice clone of HAL 9000, creating cinematic audio that streams immediately back to the iPhone.
+> To achieve the haunting, mid-Atlantic calmness of Douglas Rain's performance with minimal latency, the system utilizes the **Kokoro ONNX** engine running directly on the backend. Text tokens are instantly streamed into the TTS engine, generating cinematic audio chunks that are immediately fired back down the WebSocket.
 
 ---
 
@@ -94,18 +91,19 @@ graph TD
 
 | Phase | Module | Status |
 | :---: | :--- | :---: |
-| **01** | iOS Project Foundation & Native Wake Word Gatekeeper | 🟢 Done |
-| **02** | AVAudioEngine PCM tap & WebSocket chunking | 🟢 Done |
-| **03a** | Django Channels ASGI server setup & bi-directional mock loop | 🟢 Done |
-| **03b** | Gemini 3 Flash native audio ingestion & prompt engineering | 🟢 Done |
-| **04** | KokoClone TTS Integration & Voice Cloning | 🟢 Done |
-| **05** | Hardware mounting & UI polish | 🟡 In Progress |
+| **01** | Initial iOS Prototype & Wake Word | 🔴 Abandoned |
+| **02** | Pivot to Vite Web App & Audio Pipeline | 🟢 Done |
+| **03** | Django Channels ASGI server setup & bi-directional loop | 🟢 Done |
+| **04** | Gemini 3.5 Flash Lite integration & Kokoro TTS | 🟢 Done |
+| **05** | Long-Term Memory & Google Tasks Automation | 🟢 Done |
+| **06** | Enclosure Calibration, Time-sync, & Sleep mode | 🟢 Done |
+| **07** | Proactive System Interventions (Battery Bridge) | 🟡 In Progress |
 
 <br>
 <br>
 
 <div align="center">
 
-> *"I'm sorry, Dave. I'm afraid I can't do that."*
+> *"I'm sorry, Fab. I'm afraid I can't do that."*
 
 </div>
