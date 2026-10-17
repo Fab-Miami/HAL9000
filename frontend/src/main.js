@@ -640,19 +640,22 @@ let calibTapTimer = null;
 const CALIBRATION_TIMEOUT_MS = 5000;
 let calibInactivityTimer = null;
 
+// Wipe legacy offset storage keys on load
+try {
+  localStorage.removeItem('hal_eye_offset_y');
+  localStorage.removeItem('hal_eye_offset_y_v2');
+} catch (e) {}
+
 // Load saved offset from localStorage
 function loadCalibrationOffset() {
-  const saved = localStorage.getItem('hal_eye_offset_y');
-  if (saved !== null && !isNaN(parseInt(saved, 10))) {
-    const val = parseInt(saved, 10);
-    // Auto-migrate previous defaults to -136
-    if (val === -144 || val === -132 || val === -156) {
-      eyeOffsetY = DEFAULT_OFFSET_Y;
-      saveCalibrationOffset();
+  try {
+    const saved = localStorage.getItem('hal_calibrated_offset');
+    if (saved !== null && !isNaN(parseInt(saved, 10))) {
+      eyeOffsetY = parseInt(saved, 10);
     } else {
-      eyeOffsetY = val;
+      eyeOffsetY = DEFAULT_OFFSET_Y;
     }
-  } else {
+  } catch (e) {
     eyeOffsetY = DEFAULT_OFFSET_Y;
   }
 }
@@ -660,13 +663,15 @@ function loadCalibrationOffset() {
 // Apply the current offset to the eye container
 function applyEyeOffset() {
   if (halContainer) {
-    halContainer.style.transform = eyeOffsetY !== 0 ? `translateY(${eyeOffsetY}px)` : '';
+    halContainer.style.transform = `translateY(${eyeOffsetY}px)`;
   }
 }
 
 // Save offset to localStorage
 function saveCalibrationOffset() {
-  localStorage.setItem('hal_eye_offset_y', eyeOffsetY.toString());
+  try {
+    localStorage.setItem('hal_calibrated_offset', eyeOffsetY.toString());
+  } catch (e) {}
 }
 
 // Update the HUD readout (display flipped: upward shows positive)
