@@ -16,7 +16,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   
-  <link rel="manifest" href="/manifest.json?v=2026.10.17.2" />
+  <link rel="manifest" href="/manifest.json?v=2026.10.17.4" />
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png?v=3" />
@@ -30,86 +30,19 @@
   <div id="app">
     <!-- Transparent Interaction Layer (Forces iOS Safari to register tap and unlock AudioContext) -->
     <div id="init-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999; cursor:pointer; -webkit-tap-highlight-color:transparent;"></div>
+    
     <!-- Main Optical Faceplate (Centered behind 3D printed bezel) -->
     <div id="hal-stage">
       <div id="hal-container">
         <!-- HAL 2026 3D Multi-Layer Optical Assembly -->
         <div id="hal-2026-assembly">
-          <img id="layer-chassis" class="hal2026-layer" src="/hal2026/hal2026_chassis_base.png" alt="HAL 2026 Chassis" draggable="false" />
-          <img id="layer-ring" class="hal2026-layer" src="/hal2026/hal2026_acoustic_ring.png" alt="Acoustic Ring" draggable="false" />
-          <img id="layer-center" class="hal2026-layer" src="/hal2026/hal2026_center_core.png" alt="Vocal Center Core" draggable="false" />
-          <img id="layer-dots-soft" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_soft.png" alt="Auxiliary Dots Soft" draggable="false" />
-          <img id="layer-dots-bright" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_bright.png" alt="Auxiliary Dots Bright" draggable="false" />
-          <img id="layer-mask" class="hal2026-layer" src="/hal2026/hal2026_outer_mask.png" alt="Outer Mask" draggable="false" />
+          <img id="layer-chassis" class="hal2026-layer" src="/hal2026/hal2026_chassis_base.png" alt="" draggable="false" />
+          <img id="layer-ring" class="hal2026-layer" src="/hal2026/hal2026_acoustic_ring.png" alt="" draggable="false" />
+          <img id="layer-center" class="hal2026-layer" src="/hal2026/hal2026_center_core.png" alt="" draggable="false" />
+          <img id="layer-dots-soft" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_soft.png" alt="" draggable="false" />
+          <img id="layer-dots-bright" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_bright.png" alt="" draggable="false" />
+          <img id="layer-mask" class="hal2026-layer" src="/hal2026/hal2026_outer_mask.png" alt="" draggable="false" />
         </div>
-      </div>
-    </div>
-
-    <!-- Status indicator and controls -->
-    <header id="status-bar">
-      <div id="status-dot"></div>
-      <span id="status-text">OFFLINE</span>
-    </header>
-
-    <!-- 3-Second Long Press Mode Switcher Progress Ring -->
-    <div id="long-press-ring-container" class="hidden">
-      <svg id="long-press-svg" viewBox="0 0 160 160">
-        <circle class="ring-bg" cx="80" cy="80" r="70"></circle>
-        <circle id="long-press-circle" class="ring-progress" cx="80" cy="80" r="70"></circle>
-      </svg>
-    </div>
-
-    <!-- Tap & Hold manual talk overlay (Optional fallback to voice VAD) -->
-    <div id="hold-indicator">
-      <span>LISTENING...</span>
-    </div>
-
-    <!-- Calibration Mode Overlay (Triple-tap in enclosure mode) -->
-    <div id="calibration-overlay" class="hidden">
-      <div id="calibration-zone-up" class="calibration-zone"></div>
-      <div id="calibration-hud">
-        <div id="calibration-guide"></div>
-        <span id="calibration-label">CALIBRATION</span>
-        <span id="calibration-offset">0px</span>
-      </div>
-      <div id="calibration-zone-down" class="calibration-zone"></div>
-    </div>
-
-    <!-- Real-time Diagnostic & Connection Overlay -->
-    <div id="diag-panel" class="hidden">
-      <div class="diag-header">
-        <h3>SYSTEM TELEMETRY</h3>
-        <button id="btn-close-diag">✕</button>
-      </div>
-      <div class="diag-body">
-        <div class="diag-row">
-          <span>PIPELINE STATE:</span>
-          <strong id="diag-state">IDLE</strong>
-        </div>
-        <div class="diag-row">
-          <span>WS LINK:</span>
-          <strong id="diag-ws">DISCONNECTED</strong>
-        </div>
-        <div class="diag-row">
-          <span>HOST:</span>
-          <input type="text" id="diag-host-input" />
-          <button id="btn-save-host">SET</button>
-        </div>
-        <div class="diag-row">
-          <span>AUDIO LEVEL:</span>
-          <div class="meter-bar">
-            <div id="diag-intensity" class="meter-fill"></div>
-          </div>
-        </div>
-        <div class="diag-row">
-          <span>WAKE LOCK:</span>
-          <strong id="diag-wakelock">INACTIVE</strong>
-        </div>
-        <div class="diag-row">
-          <span>CONVERSATION TIMER:</span>
-          <strong id="diag-conv-timer">INACTIVE</strong>
-        </div>
-        <button id="btn-reconnect" class="diag-action-btn">RECONNECT WEBSOCKET</button>
       </div>
     </div>
   </div>
