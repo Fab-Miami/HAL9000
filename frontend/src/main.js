@@ -7,8 +7,12 @@ import { MotionDetector } from './motion-detector.js';
 // DOM Elements
 const appEl = document.getElementById('app');
 const halStage = document.getElementById('hal-stage');
-const halGlow = document.getElementById('hal-glow');
-const halCore = document.getElementById('hal-core');
+const layerChassis = document.getElementById('layer-chassis');
+const layerRing = document.getElementById('layer-ring');
+const layerCenter = document.getElementById('layer-center');
+const layerDotsSoft = document.getElementById('layer-dots-soft');
+const layerDotsBright = document.getElementById('layer-dots-bright');
+const layerMask = document.getElementById('layer-mask');
 const initOverlay = document.getElementById('init-overlay');
 const btnInit = document.getElementById('btn-init');
 const holdIndicator = document.getElementById('hold-indicator');
@@ -106,7 +110,54 @@ function setState(newState) {
   log(`🔄 State Transition -> ${newState}`);
 }
 
-// Visual Glow & Core Modulation Logic
+// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite Dots & Emotion Controller
+let dotFlashTimer = null;
+function flashDots(mode = 'bright', durationMs = 220) {
+  clearTimeout(dotFlashTimer);
+
+  if (mode === 'double') {
+    if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
+    setTimeout(() => {
+      if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+      setTimeout(() => {
+        if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
+        setTimeout(() => {
+          if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+        }, 120);
+      }, 70);
+    }, 120);
+    return;
+  }
+
+  if (mode === 'bright') {
+    if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
+    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
+  } else if (mode === 'soft') {
+    if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.85';
+  }
+
+  dotFlashTimer = setTimeout(() => {
+    if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
+  }, durationMs);
+}
+
+function handleEmotionTag(tag) {
+  log(`💡 [HAL Emotion Tag] Received: ${tag}`);
+  const t = (tag || '').toUpperCase();
+  if (t === 'ALERT' || t === 'ANGER' || t === 'WARN') {
+    flashDots('double', 400);
+  } else if (t === 'SURPRISE' || t === 'EMOTION') {
+    flashDots('bright', 650);
+  } else if (t === 'THINKING' || t === 'PONDER') {
+    flashDots('soft', 900);
+  } else {
+    flashDots('bright', 350);
+  }
+}
+
+// Visual Modulation: HAL 2026 3-Level Optical Architecture
 function updateVisuals(intensity, isHalSpeech = false) {
   if (currentState === State.SLEEPING) return;
 
@@ -114,29 +165,26 @@ function updateVisuals(intensity, isHalSpeech = false) {
   const norm = Math.min(1.0, Math.max(0.0, intensity));
 
   if (isHalSpeech) {
-    // HAL is speaking: LED physical diameter is strictly LOCKED at scale(1.0)
-    // Modulate ONLY opacity (pure GPU compositing without WebKit box-shadow scanlines)
-    const coreOpacity = (0.80 + norm * 0.20).toFixed(2);
-    if (halCore) {
-      halCore.style.opacity = coreOpacity;
+    // HAL is speaking: Center core illuminates and modulates dynamically with Kokoro TTS audio
+    const centerOpacity = (0.35 + norm * 0.65).toFixed(2);
+    if (layerCenter) {
+      layerCenter.style.opacity = centerOpacity;
+    }
+    // Acoustic ring stays dim/resting while HAL speaks
+    if (layerRing) {
+      layerRing.style.opacity = '0.06';
     }
   } else {
-    // User is speaking / Idle: #hal-glow provides visual feedback
-    // Reset #hal-core to resting state when HAL is not talking
-    if (halCore && currentState !== State.THINKING) {
-      halCore.style.opacity = '0.90';
+    // HAL is NOT speaking:
+    // Center vocal core is strictly OFF (0.0 opacity)
+    if (layerCenter) {
+      layerCenter.style.opacity = '0.0';
     }
-    
-    // User speaking feedback: Smoothly modulate background glow opacity based on mic intensity
-    // HARD NOTE: The central red glow is a physical LED in the movie.
-    // DO NOT change the scale/size of any optical elements (#hal-core or #hal-glow).
-    // The ONLY things we can modulate are opacity and color.
-    if (halGlow) {
-      // Base opacity 0.65, peaks at 1.0 based on user speech volume
-      const glowOpacity = (0.65 + norm * 0.35).toFixed(2);
-      
-      halGlow.style.opacity = glowOpacity;
-      halGlow.style.transform = `translate(-50%, -50%)`; // Explicitly locked to prevent size changes
+    // Acoustic ring modulates with user voice / microphone intensity
+    if (layerRing && currentState !== State.THINKING) {
+      // Base resting opacity 0.15, peaks with user speech volume up to 1.0
+      const ringOpacity = (0.15 + norm * 0.85).toFixed(2);
+      layerRing.style.opacity = ringOpacity;
     }
   }
 
@@ -156,12 +204,14 @@ const audioPlayer = new AudioPlayer({
     } else {
       if (audioRecorder) audioRecorder.muted = false;
       if (speechRecognizer) speechRecognizer.resume();
+      if (layerCenter) layerCenter.style.opacity = '0.0';
+      if (layerRing) layerRing.style.opacity = '0.15';
       stopInteraction();
     }
   },
   onAudioLevel: (intensity) => {
     if (currentState === State.PROCESSING) {
-      updateVisuals(intensity, true); // HAL Voice Modulates #hal-core
+      updateVisuals(intensity, true); // HAL Voice Modulates Center Core
     }
   },
   onLog: log,
@@ -189,6 +239,9 @@ const motionDetector = new MotionDetector({
   threshold: 12.0,
   onKnock: (magnitude) => {
     log(`💥 Enclosure knock detected (${magnitude.toFixed(1)} m/s²)!`);
+    // Physical tap blinks the 3 auxiliary dots immediately!
+    flashDots('bright', 220);
+
     if (currentState === State.SLEEPING) {
       wakeUp();
     } else if (currentState === State.PROCESSING || currentState === State.THINKING) {
@@ -209,7 +262,7 @@ const audioRecorder = new AudioRecorder({
   },
   onAudioLevel: (intensity) => {
     if (currentState !== State.PROCESSING) {
-      updateVisuals(intensity, false); // User Voice Modulates #hal-glow
+      updateVisuals(intensity, false); // User Voice Modulates Acoustic Ring
     }
   },
   onSpeechDetected: () => {
@@ -238,6 +291,9 @@ const wsClient = new WsClient({
         audioPlayer.setVolumeLevel(vol);
         log(`🔊 HAL adjusted vocal volume to: ${vol}/10`);
       }
+    } else if (text.startsWith('TAG:')) {
+      const tag = text.substring(4).trim();
+      handleEmotionTag(tag);
     } else if (text === 'THINKING') {
       log('🤔 Received THINKING signal from server.');
       setState(State.THINKING);

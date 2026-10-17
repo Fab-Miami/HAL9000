@@ -39,7 +39,7 @@ html, body {
 }
 
 /* ----------------------------------------------------
-   HAL 9000 Optical Stage & Sizing Modes
+   HAL 2026 Multi-Layer Optical Assembly & Sizing
    ---------------------------------------------------- */
 #hal-stage {
   width: 100%;
@@ -58,169 +58,109 @@ html, body {
   justify-content: center;
   align-items: center;
   width: 100vw;
-  height: 100vw;
-  max-width: 100vh;
-  max-height: 100vh;
+  height: 100vh;
 }
 
-/* Static Lens Bezel Image */
-#hal-bezel {
+#hal-2026-assembly {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(84vw, 52vh);
+  height: min(84vw, 52vh);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+.hal2026-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  pointer-events: none;
+  will-change: opacity;
+  transform: translateZ(0);
+}
+
+#layer-chassis {
   z-index: 1;
-  pointer-events: none;
-  transition: opacity 0.5s ease-in-out;
+  opacity: 1.0;
 }
 
-/* Dynamic Inner Glow (The Intelligence) */
-#hal-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  pointer-events: none;
+#layer-ring {
   z-index: 2;
-  /* HARD NOTE: DO NOT animate transform/scale. The LED is physical. Modulate opacity/color only. */
-  transition: opacity 0.15s ease-out;
-  opacity: 0.95;
-
-  /* Smooth cinematic fade into deep pitch black */
-  background: radial-gradient(
-    circle closest-side,
-    rgba(235, 20, 0, 0.95) 0%,
-    rgba(220, 10, 0, 0.85) 30%,
-    rgba(180, 0, 0, 0.58) 55%,
-    rgba(110, 0, 0, 0.28) 75%,
-    rgba(40, 0, 0, 0.08) 90%,
-    rgba(0, 0, 0, 0) 100%
-  );
+  opacity: 0.15;
+  transition: opacity 0.12s ease-out;
 }
 
-/* Central LED Diode (Modulated strictly by HAL Speech Voice Activity) */
-#hal-core {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  pointer-events: none;
+#layer-center {
   z-index: 3;
+  opacity: 0.0;
   transition: opacity 0.08s ease-out;
-  background: radial-gradient(
-    circle closest-side,
-    #ffffff 0%,
-    #ffff88 20%,
-    #ffcc00 48%,
-    #ff4400 78%,
-    rgba(255, 68, 0, 0) 100%
-  );
-  opacity: 0.90;
 }
 
-/* ----------------------------------------------------
-   Desk Mode (Standalone iPhone on desk): Full bezel visible
-   ---------------------------------------------------- */
-body.mode-desk #hal-container {
-  width: 90vw;
-  height: 90vw;
-  max-width: 90vh;
-  max-height: 90vh;
+#layer-dots-soft {
+  z-index: 4;
+  opacity: 0.0;
+  transition: opacity 0.2s ease-out;
 }
 
-body.mode-desk #hal-bezel {
-  display: block;
+#layer-dots-bright {
+  z-index: 5;
+  opacity: 0.0;
+  transition: opacity 0.15s ease-out;
 }
 
-body.mode-desk #hal-glow {
-  width: 58%;
-  height: 58%;
+#layer-mask {
+  z-index: 6;
+  opacity: 1.0;
 }
 
-body.mode-desk #hal-core {
-  width: 20px;
-  height: 20px;
+/* Ambient Subtle Ring Respiration when Idle/Listening */
+.state-listening #layer-ring {
+  animation: hal-ring-breathe 4.5s infinite ease-in-out;
 }
 
-/* ----------------------------------------------------
-   3D Mode (Mounted behind 3D printed bezel):
-   Bezel is hidden; red optical lens gradient is 128vw (80% of 160vw),
-   and central LED diode is 96px.
-   ---------------------------------------------------- */
-body.mode-enclosure #hal-bezel {
-  display: none !important;
+@keyframes hal-ring-breathe {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.28; }
 }
 
+/* Thinking Pulse: Soft auxiliary dots gently pulse during cognition */
+.state-thinking #layer-ring {
+  animation: hal-ring-breathe 1.5s infinite ease-in-out;
+}
+
+.state-thinking #layer-dots-soft {
+  animation: hal-dots-thinking 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes hal-dots-thinking {
+  0% { opacity: 0.20; }
+  100% { opacity: 0.85; }
+}
+
+/* Enclosure Mode Overrides */
 body.mode-enclosure #status-bar {
   display: none !important;
 }
 
 body.mode-enclosure #hal-container,
-body.mode-enclosure #hal-glow,
-body.mode-enclosure #hal-core,
+body.mode-enclosure #hal-2026-assembly,
 body.mode-enclosure #hal-stage {
   border: none !important;
   outline: none !important;
   box-shadow: none;
 }
 
-body.mode-enclosure #hal-container {
-  width: 100vw;
-  height: 100vh;
-}
-
-body.mode-enclosure #hal-glow {
-  width: 160vmax;
-  height: 160vmax;
-  max-width: none;
-  max-height: none;
-}
-
-body.mode-enclosure #hal-core {
-  width: 96px;
-  height: 96px;
-}
-
-/* Default Mode: Desk Mode (Full lens bezel visible) */
-body:not(.mode-enclosure) #hal-container {
-  width: 90vw;
-  height: 90vw;
-  max-width: 90vh;
-  max-height: 90vh;
-}
-
-body:not(.mode-enclosure) #hal-bezel {
-  display: block;
-}
-
-body:not(.mode-enclosure) #hal-glow {
-  width: 58%;
-  height: 58%;
-}
-
-body:not(.mode-enclosure) #hal-core {
-  width: 20px;
-  height: 20px;
-}
-
-/* ----------------------------------------------------
-   LED Diode Visual Feedback Animations by System State
-   (Physical LED diameter is locked; modulates only subtle luminous bloom)
-   ---------------------------------------------------- */
-.state-thinking #hal-core {
-  animation: hal-led-thinking 0.8s infinite alternate ease-in-out;
-}
-
-@keyframes hal-led-thinking {
-  0% {
-    transform: translate(-50%, -50%) scale(1.0);
-    opacity: 0.70;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.0);
-    opacity: 1.0;
-  }
+/* Sleep Mode: Complete dark stealth with dormant chassis */
+body.sleep-mode #hal-2026-assembly {
+  opacity: 0.05;
+  transition: opacity 1.2s ease-out;
 }
 
 /* ----------------------------------------------------
@@ -620,15 +560,16 @@ body.sleep-mode {
   background-color: #000000;
 }
 
-body.sleep-mode #hal-bezel,
-body.sleep-mode #hal-glow {
+body.sleep-mode #layer-center,
+body.sleep-mode #layer-ring,
+body.sleep-mode #layer-dots-soft,
+body.sleep-mode #layer-dots-bright,
+body.sleep-mode #layer-mask {
   opacity: 0 !important;
-  transition: opacity 3.0s ease-in-out !important;
+  transition: opacity 2.5s ease-in-out !important;
 }
 
-body.sleep-mode #hal-core {
-  transform: translate(-50%, -50%) scale(0.15) !important;
-  opacity: 0.8 !important;
-  box-shadow: none !important;
-  transition: all 3.0s ease-in-out !important;
+body.sleep-mode #layer-chassis {
+  opacity: 0.15 !important;
+  transition: opacity 2.5s ease-in-out !important;
 }

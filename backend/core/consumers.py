@@ -244,6 +244,36 @@ class HalConsumer(AsyncWebsocketConsumer):
             self.is_recording = False
             self.speech_detected = False
 
+    async def _process_hardware_directives(self, text: str) -> str:
+        """Parses and dispatches hardware tags (volume, sleep, optical emotion tags) via WebSocket."""
+        if not text:
+            return ""
+
+        # 1. Volume tags: [volume: 5]
+        vol_match = re.search(r'\[?volume:\s*(\d+)\]?', text, re.IGNORECASE)
+        if vol_match:
+            new_vol = max(1, min(10, int(vol_match.group(1))))
+            self.current_volume = new_vol
+            log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+            await self.send(text_data=f"VOLUME:{new_vol}")
+            text = re.sub(r'\[?volume:\s*\d+\]?', '', text, flags=re.IGNORECASE).strip()
+
+        # 2. Sleep tags: [SLEEP]
+        if "[SLEEP]" in text.upper():
+            log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
+            await self.send(text_data="SLEEP")
+            text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
+
+        # 3. Optical Emotion tags: [tag: alert], [mood: surprise], [ALERT], etc.
+        tag_match = re.search(r'\[?(?:tag|mood|emotion):\s*([a-zA-Z0-9_\-]+)\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', text, re.IGNORECASE)
+        if tag_match:
+            tag_name = (tag_match.group(1) or tag_match.group(2)).upper()
+            log(f"💡 [HalConsumer] Optical tag parsed from HAL text: {tag_name}")
+            await self.send(text_data=f"TAG:{tag_name}")
+            text = re.sub(r'\[?(?:tag|mood|emotion):\s*[a-zA-Z0-9_\-]+\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', '', text, flags=re.IGNORECASE).strip()
+
+        return text
+
     async def _execute_generation(self, user_input, is_text_mode=False, initial_transcript=""):
         """Core generation loop: streams LLM response, segments sentences, and feeds Kokoro TTS."""
         try:
@@ -334,19 +364,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                         # Process any remaining sentences in the HAL part
                         clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
                         if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
-                            vol_match = re.search(r'\[?volume:\s*(\d+)\]?', clean_hal, re.IGNORECASE)
-                            if vol_match:
-                                new_vol = max(1, min(10, int(vol_match.group(1))))
-                                self.current_volume = new_vol
-                                log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
-                                await self.send(text_data=f"VOLUME:{new_vol}")
-                                clean_hal = re.sub(r'\[?volume:\s*\d+\]?', '', clean_hal, flags=re.IGNORECASE).strip()
-                            
-                            if "[SLEEP]" in clean_hal.upper():
-                                log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
-                                await self.send(text_data="SLEEP")
-                                clean_hal = re.sub(r'\[?SLEEP\]?', '', clean_hal, flags=re.IGNORECASE).strip()
-                            
+                            clean_hal = await self._process_hardware_directives(clean_hal)
                             if clean_hal:
                                 full_response_text += clean_hal + " "
                                 await sentence_queue.put(clean_hal)
@@ -370,20 +388,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                                     is_silent_response = True
                                     break
 
-                                # Intercept and process any embedded volume tag
-                                vol_match = re.search(r'\[?volume:\s*(\d+)\]?', complete_sentence, re.IGNORECASE)
-                                if vol_match:
-                                    new_vol = max(1, min(10, int(vol_match.group(1))))
-                                    self.current_volume = new_vol
-                                    log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
-                                    await self.send(text_data=f"VOLUME:{new_vol}")
-                                    complete_sentence = re.sub(r'\[?volume:\s*\d+\]?', '', complete_sentence, flags=re.IGNORECASE).strip()
-
-                                if "[SLEEP]" in complete_sentence.upper():
-                                    log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
-                                    await self.send(text_data="SLEEP")
-                                    complete_sentence = re.sub(r'\[?SLEEP\]?', '', complete_sentence, flags=re.IGNORECASE).strip()
-
+                                complete_sentence = await self._process_hardware_directives(complete_sentence)
                                 if complete_sentence:
                                     full_response_text += complete_sentence + " "
                                     await sentence_queue.put(complete_sentence)
@@ -394,19 +399,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
                 clean_tail = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', accumulated_text).strip()
                 if not clean_tail.upper().startswith("[SILENCE]"):
-                    vol_match = re.search(r'\[?volume:\s*(\d+)\]?', clean_tail, re.IGNORECASE)
-                    if vol_match:
-                        new_vol = max(1, min(10, int(vol_match.group(1))))
-                        self.current_volume = new_vol
-                        log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
-                        await self.send(text_data=f"VOLUME:{new_vol}")
-                        clean_tail = re.sub(r'\[?volume:\s*\d+\]?', '', clean_tail, flags=re.IGNORECASE).strip()
-
-                    if "[SLEEP]" in clean_tail.upper():
-                        log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
-                        await self.send(text_data="SLEEP")
-                        clean_tail = re.sub(r'\[?SLEEP\]?', '', clean_tail, flags=re.IGNORECASE).strip()
-
+                    clean_tail = await self._process_hardware_directives(clean_tail)
                     if clean_tail:
                         full_response_text += clean_tail
                         await sentence_queue.put(clean_tail)

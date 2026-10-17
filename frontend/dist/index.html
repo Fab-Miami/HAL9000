@@ -20,8 +20,8 @@
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png?v=3" />
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=3" />
 
-  <script type="module" crossorigin src="/assets/index-BfEzlII9.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-C1TIyNWk.css">
+  <script type="module" crossorigin src="/assets/index-CSFDUUmK.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-NYGknPR6.css">
 </head>
 <body>
   <div id="app">
@@ -30,14 +30,15 @@
     <!-- Main Optical Faceplate (Centered behind 3D printed bezel) -->
     <div id="hal-stage">
       <div id="hal-container">
-        <!-- Static Lens Ring Image -->
-        <img id="hal-bezel" src="/HAL9000.png" alt="HAL 9000 Lens" draggable="false" />
-
-        <!-- Dynamic Inner Glow (The Intelligence) -->
-        <div id="hal-glow"></div>
-
-        <!-- Center LED Diode (Vocal Core) -->
-        <div id="hal-core"></div>
+        <!-- HAL 2026 3D Multi-Layer Optical Assembly -->
+        <div id="hal-2026-assembly">
+          <img id="layer-chassis" class="hal2026-layer" src="/hal2026/hal2026_chassis_base.png" alt="HAL 2026 Chassis" draggable="false" />
+          <img id="layer-ring" class="hal2026-layer" src="/hal2026/hal2026_acoustic_ring.png" alt="Acoustic Ring" draggable="false" />
+          <img id="layer-center" class="hal2026-layer" src="/hal2026/hal2026_center_core.png" alt="Vocal Center Core" draggable="false" />
+          <img id="layer-dots-soft" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_soft.png" alt="Auxiliary Dots Soft" draggable="false" />
+          <img id="layer-dots-bright" class="hal2026-layer" src="/hal2026/hal2026_aux_dots_bright.png" alt="Auxiliary Dots Bright" draggable="false" />
+          <img id="layer-mask" class="hal2026-layer" src="/hal2026/hal2026_outer_mask.png" alt="Outer Mask" draggable="false" />
+        </div>
       </div>
     </div>
 
