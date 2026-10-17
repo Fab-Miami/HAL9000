@@ -107,10 +107,23 @@ function setState(newState) {
     statusDot.className = newState === State.PROCESSING ? 'processing' : (wsClient && wsClient.isConnected ? 'connected' : '');
   }
 
+  if (newState === State.LISTENING || newState === State.IDLE || newState === State.THINKING) {
+    resetToStandby();
+  }
+
   log(`🔄 State Transition -> ${newState}`);
 }
 
-// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite Dots & Emotion Controller
+// Standby State: Center dot strictly ON and STATIC; listening ring and aux dots strictly OFF
+function resetToStandby() {
+  if (currentState === State.SLEEPING) return;
+  if (layerCenter) layerCenter.style.opacity = '1.0';
+  if (layerRing) layerRing.style.opacity = '0.0';
+  if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+  if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
+}
+
+// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite Dots (Knock / TAG ONLY)
 let dotFlashTimer = null;
 function flashDots(mode = 'bright', durationMs = 220) {
   clearTimeout(dotFlashTimer);
@@ -150,14 +163,12 @@ function handleEmotionTag(tag) {
     flashDots('double', 400);
   } else if (t === 'SURPRISE' || t === 'EMOTION') {
     flashDots('bright', 650);
-  } else if (t === 'THINKING' || t === 'PONDER') {
-    flashDots('soft', 900);
   } else {
     flashDots('bright', 350);
   }
 }
 
-// Visual Modulation: HAL 2026 3-Level Optical Architecture
+// Visual Modulation: Authentic to 2001: A Space Odyssey
 function updateVisuals(intensity, isHalSpeech = false) {
   if (currentState === State.SLEEPING) return;
 
@@ -165,26 +176,37 @@ function updateVisuals(intensity, isHalSpeech = false) {
   const norm = Math.min(1.0, Math.max(0.0, intensity));
 
   if (isHalSpeech) {
-    // HAL is speaking: Center core illuminates and modulates dynamically with Kokoro TTS audio
-    const centerOpacity = (0.35 + norm * 0.65).toFixed(2);
-    if (layerCenter) {
-      layerCenter.style.opacity = centerOpacity;
-    }
-    // Acoustic ring stays dim/resting while HAL speaks
+    // When HAL speaks:
+    // 1. Listening ring is strictly OFF
     if (layerRing) {
-      layerRing.style.opacity = '0.06';
+      layerRing.style.opacity = '0.0';
+    }
+    // 2. Central dot slightly blinks with speech audio waveform
+    if (layerCenter) {
+      const halBlink = (0.72 + norm * 0.28).toFixed(2);
+      layerCenter.style.opacity = halBlink;
     }
   } else {
-    // HAL is NOT speaking:
-    // Center vocal core is strictly OFF (0.0 opacity)
-    if (layerCenter) {
-      layerCenter.style.opacity = '0.0';
-    }
-    // Acoustic ring modulates with user voice / microphone intensity
-    if (layerRing && currentState !== State.THINKING) {
-      // Base resting opacity 0.15, peaks with user speech volume up to 1.0
-      const ringOpacity = (0.15 + norm * 0.85).toFixed(2);
-      layerRing.style.opacity = ringOpacity;
+    // When User speaks or is in Standby:
+    if (norm > 0.04) {
+      // User is speaking:
+      // 1. Dim central dot to 75%
+      if (layerCenter) {
+        layerCenter.style.opacity = '0.75';
+      }
+      // 2. Animate (lighten) the outer ring with voice energy
+      if (layerRing) {
+        const ringLevel = Math.min(1.0, norm * 1.35).toFixed(2);
+        layerRing.style.opacity = ringLevel;
+      }
+    } else {
+      // Standby / silence between words: Center dot ON and STATIC, ring OFF
+      if (layerCenter) {
+        layerCenter.style.opacity = '1.0';
+      }
+      if (layerRing) {
+        layerRing.style.opacity = '0.0';
+      }
     }
   }
 
@@ -204,14 +226,13 @@ const audioPlayer = new AudioPlayer({
     } else {
       if (audioRecorder) audioRecorder.muted = false;
       if (speechRecognizer) speechRecognizer.resume();
-      if (layerCenter) layerCenter.style.opacity = '0.0';
-      if (layerRing) layerRing.style.opacity = '0.15';
+      resetToStandby();
       stopInteraction();
     }
   },
   onAudioLevel: (intensity) => {
     if (currentState === State.PROCESSING) {
-      updateVisuals(intensity, true); // HAL Voice Modulates Center Core
+      updateVisuals(intensity, true); // HAL Voice slightly blinks central dot
     }
   },
   onLog: log,

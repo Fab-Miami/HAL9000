@@ -93,13 +93,13 @@ html, body {
 
 #layer-ring {
   z-index: 2;
-  opacity: 0.15;
+  opacity: 0.0;
   transition: opacity 0.12s ease-out;
 }
 
 #layer-center {
   z-index: 3;
-  opacity: 0.0;
+  opacity: 1.0; /* Standby: Center dot is strictly ON and STATIC */
   transition: opacity 0.08s ease-out;
 }
 
@@ -118,30 +118,6 @@ html, body {
 #layer-mask {
   z-index: 6;
   opacity: 1.0;
-}
-
-/* Ambient Subtle Ring Respiration when Idle/Listening */
-.state-listening #layer-ring {
-  animation: hal-ring-breathe 4.5s infinite ease-in-out;
-}
-
-@keyframes hal-ring-breathe {
-  0%, 100% { opacity: 0.12; }
-  50% { opacity: 0.28; }
-}
-
-/* Thinking Pulse: Soft auxiliary dots gently pulse during cognition */
-.state-thinking #layer-ring {
-  animation: hal-ring-breathe 1.5s infinite ease-in-out;
-}
-
-.state-thinking #layer-dots-soft {
-  animation: hal-dots-thinking 1.2s infinite alternate ease-in-out;
-}
-
-@keyframes hal-dots-thinking {
-  0% { opacity: 0.20; }
-  100% { opacity: 0.85; }
 }
 
 /* Enclosure Mode Overrides */
