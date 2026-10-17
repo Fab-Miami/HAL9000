@@ -630,8 +630,8 @@ const calibrationOffsetLabel = document.getElementById('calibration-offset');
 const halContainer = document.getElementById('hal-container');
 
 let isCalibrating = false;
-let eyeOffsetY = -136;
-const DEFAULT_OFFSET_Y = -136;
+let eyeOffsetY = -146;
+const DEFAULT_OFFSET_Y = -146;
 const NUDGE_PX = 1;
 const NUDGE_INTERVAL_MS = 80;
 let nudgeTimer = null;
