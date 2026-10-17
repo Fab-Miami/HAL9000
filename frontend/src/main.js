@@ -2,6 +2,7 @@ import { AudioRecorder } from './audio-recorder.js';
 import { AudioPlayer } from './audio-player.js';
 import { WsClient } from './ws-client.js';
 import { SpeechRecognizer } from './speech-recognizer.js';
+import { MotionDetector } from './motion-detector.js';
 
 // DOM Elements
 const appEl = document.getElementById('app');
@@ -184,6 +185,22 @@ const speechRecognizer = new SpeechRecognizer({
   onLog: log,
 });
 
+const motionDetector = new MotionDetector({
+  threshold: 12.0,
+  onKnock: (magnitude) => {
+    log(`💥 Enclosure knock detected (${magnitude.toFixed(1)} m/s²)!`);
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    } else if (currentState === State.PROCESSING || currentState === State.THINKING) {
+      log('⚡ Intercepting HAL via physical enclosure knock.');
+      triggerVoiceBargeIn();
+    } else {
+      resetSleepTimer();
+    }
+  },
+  onLog: log,
+});
+
 const audioRecorder = new AudioRecorder({
   onAudioData: (pcmBuffer) => {
     if (wsClient && wsClient.isConnected) {
@@ -361,6 +378,9 @@ async function initializeSystem() {
 
     // 5. Request permanent Screen Wake Lock
     requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
+
+    // 6. Request accelerometer motion permission & begin knock detection
+    await motionDetector.initialize();
 
     log('✅ HAL 9000 fully operational and standing by.');
   } catch (err) {
