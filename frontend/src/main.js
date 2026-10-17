@@ -630,8 +630,8 @@ const calibrationOffsetLabel = document.getElementById('calibration-offset');
 const halContainer = document.getElementById('hal-container');
 
 let isCalibrating = false;
-let eyeOffsetY = -156;
-const DEFAULT_OFFSET_Y = -156;
+let eyeOffsetY = -136;
+const DEFAULT_OFFSET_Y = -136;
 const NUDGE_PX = 1;
 const NUDGE_INTERVAL_MS = 80;
 let nudgeTimer = null;
@@ -645,8 +645,8 @@ function loadCalibrationOffset() {
   const saved = localStorage.getItem('hal_eye_offset_y');
   if (saved !== null && !isNaN(parseInt(saved, 10))) {
     const val = parseInt(saved, 10);
-    // Auto-migrate previous defaults (-144 or -132) to -156
-    if (val === -144 || val === -132) {
+    // Auto-migrate previous defaults to -136
+    if (val === -144 || val === -132 || val === -156) {
       eyeOffsetY = DEFAULT_OFFSET_Y;
       saveCalibrationOffset();
     } else {
