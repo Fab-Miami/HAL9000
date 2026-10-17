@@ -59,7 +59,7 @@ html, body {
   align-items: center;
   width: 100vw;
   height: 100vh;
-  transform: translateY(-146px);
+  transform: translateY(-148px);
 }
 
 #hal-2026-assembly {
@@ -67,8 +67,8 @@ html, body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(92.4vw, 57.2vh);
-  height: min(92.4vw, 57.2vh);
+  width: min(91.48vw, 56.63vh);
+  height: min(91.48vw, 56.63vh);
   display: flex;
   justify-content: center;
   align-items: center;
