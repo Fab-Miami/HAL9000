@@ -9,8 +9,8 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 3.0
-SILENCE_THRESHOLD = 1000  # Lowered threshold to accommodate the physical enclosure damping sound
+CAPTURE_WINDOW = 1.0
+SILENCE_THRESHOLD = 1000  # Threshold accommodating the physical enclosure damping sound
 
 import datetime
 def log(msg):
@@ -112,14 +112,30 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             try:
                 msg = json.loads(text_data)
-                if isinstance(msg, dict) and 'volume' in msg:
-                    self.current_volume = max(1, min(10, int(msg['volume'])))
-                    log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
-                    self.chat_session = llm.create_chat_session(
-                        history=self.history, 
-                        summaries_text=self.summaries, 
-                        current_volume=self.current_volume
-                    )
+                if isinstance(msg, dict):
+                    if 'volume' in msg:
+                        self.current_volume = max(1, min(10, int(msg['volume'])))
+                        log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
+                        self.chat_session = llm.create_chat_session(
+                            history=self.history, 
+                            summaries_text=self.summaries, 
+                            current_volume=self.current_volume
+                        )
+                    # Immediate text response from Web Speech API
+                    if msg.get('type') == 'user_text' and msg.get('text'):
+                        user_text = msg['text'].strip()
+                        if user_text:
+                            log(f"⚡ [HalConsumer] Received Web Speech transcript: \"{user_text}\"")
+                            # Cancel any pending audio capture task
+                            if self.processing_task and not self.processing_task.done():
+                                self.processing_task.cancel()
+                            self.audio_buffer = bytearray()
+                            self.pre_roll_buffer = bytearray()
+                            self.is_recording = False
+                            self.speech_detected = False
+                            
+                            self.processing_task = asyncio.create_task(self._process_text_pipeline(user_text))
+                            return
             except Exception as e:
                 log(f"⚠️ [HalConsumer] JSON message parse error: {e}")
 
@@ -152,7 +168,16 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if len(self.pre_roll_buffer) > 16000:
                         self.pre_roll_buffer = self.pre_roll_buffer[-16000:]
 
+    async def _process_text_pipeline(self, user_text: str):
+        """Processes text input directly from Web Speech API with zero silence-window delay."""
+        if is_stop_command(user_text):
+            log(f"🛑 [HalConsumer] Stop command received via text (\"{user_text}\"). Remaining silent.")
+            await self.send(text_data="DONE")
+            return
+        await self._execute_generation(user_text, is_text_mode=True, initial_transcript=user_text)
+
     async def _process_pipeline(self):
+        """Fallback audio pipeline: waits for silence, then packages WAV and invokes generation."""
         try:
             # Wait for the capture window of silence to accumulate audio
             while time.time() - self.last_speech_time < CAPTURE_WINDOW:
@@ -203,19 +228,31 @@ class HalConsumer(AsyncWebsocketConsumer):
                 await self.send(text_data="DONE")
                 return
 
+            log("📦 [HalConsumer] Packaging to WAV...")
+            wav_bytes = llm.pcm_to_wav(pcm_bytes)
+            await self._execute_generation(wav_bytes, is_text_mode=False)
+
+        except asyncio.CancelledError:
+            log("🛑 [HalConsumer] Pipeline task cancelled (User barge-in, text switch, or disconnect).")
+        except Exception as e:
+            log(f"❌ [HalConsumer] Error in audio pipeline: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.audio_buffer = bytearray()
+            self.pre_roll_buffer = bytearray()
+            self.is_recording = False
+            self.speech_detected = False
+
+    async def _execute_generation(self, user_input, is_text_mode=False, initial_transcript=""):
+        """Core generation loop: streams LLM response, segments sentences, and feeds Kokoro TTS."""
+        try:
             # Inform the client that we are now thinking
             await self.send(text_data="THINKING")
             start_time = time.time()
             
-            if not pcm_bytes:
-                self.is_recording = False
-                self.speech_detected = False
-                return
-                
-            log("📦 [HalConsumer] Packaging to WAV...")
-            wav_bytes = llm.pcm_to_wav(pcm_bytes)
-            
-            log("🧠 [HalConsumer] Sending audio to Gemini (streaming)...")
+            input_label = f"text: \"{user_input}\"" if is_text_mode else "audio"
+            log(f"🧠 [HalConsumer] Sending {input_label} to Gemini (streaming)...")
             gemini_start = time.time()
             
             # Set up the Queue for TTS
@@ -227,7 +264,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 while True:
                     sentence = await sentence_queue.get()
                     if sentence is None:
-                        break # Poison pill received
+                        break  # Poison pill received
                     
                     speech_text = clean_speech_text(sentence)
                     if not speech_text:
@@ -238,7 +275,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
                     
-                    # Stream Kokoro TTS audio chunks back to iOS
+                    # Stream Kokoro TTS audio chunks back to client
                     async for audio_chunk in tts.text_to_speech_stream(speech_text):
                         await self.send(bytes_data=audio_chunk)
                     
@@ -250,16 +287,16 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Text accumulation and sentence boundary detection
             accumulated_text = ""
             full_response_text = ""
-            manual_transcript = ""
+            manual_transcript = initial_transcript
             first_token_time = None
             is_transcript_mode = False
             is_silent_response = False
             
-            # Sentence terminators: period, exclamation, question mark, newline, OR a colon (as long as it's not preceded by 'volume')
-            sentence_pattern = re.compile(r'(.*?(?:[.!?\n]|(?<![vV][oO][lL][uU][mM][eE]):)+)')
+            # Natural sentence terminators: period, exclamation, question mark, newline (preserves numbers with colons like 8:06 PM)
+            sentence_pattern = re.compile(r'(.*?[.!?\n]+)')
 
             # Iterate over the live Gemini stream
-            async for token in llm.stream_gemini_response(self.chat_session, wav_bytes):
+            async for token in llm.stream_gemini_response(self.chat_session, user_input):
                 if first_token_time is None:
                     first_token_time = time.time()
                     log(f"⚡ [HalConsumer] Gemini first token in {first_token_time - gemini_start:.2f}s")
@@ -278,7 +315,9 @@ class HalConsumer(AsyncWebsocketConsumer):
                         is_transcript_mode = True
                         parts = accumulated_text.split("USERTRANSCRIPT:")
                         hal_part = parts[0]
-                        manual_transcript = parts[1] if len(parts) > 1 else ""
+                        extracted_tr = parts[1].strip() if len(parts) > 1 else ""
+                        if extracted_tr:
+                            manual_transcript = extracted_tr
                         
                         # Stop command check: if user said "stop" or consecutive stops, remain completely silent
                         if is_stop_command(manual_transcript):
@@ -399,8 +438,8 @@ class HalConsumer(AsyncWebsocketConsumer):
             except Exception as hist_err:
                 log(f"⚠️ [HalConsumer] History persistence note: {hist_err}")
 
-            # Signal iOS client that audio generation is complete
-            log("🏁 [HalConsumer] Sending DONE signal to iOS...")
+            # Signal client that audio generation is complete
+            log("🏁 [HalConsumer] Sending DONE signal to client...")
             await self.send(text_data="DONE")
             log(f"⏱️ [HalConsumer] Pipeline complete in {time.time() - start_time:.2f}s.")
 
@@ -411,7 +450,6 @@ class HalConsumer(AsyncWebsocketConsumer):
             import traceback
             traceback.print_exc()
         finally:
-            # Always reset state so HAL is ready for next speech turn
             log("♻️ [HalConsumer] Resetting state for next interaction.")
             self.audio_buffer = bytearray()
             self.pre_roll_buffer = bytearray()

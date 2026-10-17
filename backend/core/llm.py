@@ -295,18 +295,12 @@ def summarize_old_conversations(client_id):
     except Exception as e:
         print(f"⚠️ [Memory] Error during background summarization: {e}")
 
-async def stream_gemini_response(chat_session, wav_bytes: bytes):
+async def stream_gemini_response(chat_session, user_input):
     """
     Streams the response from Gemini using the modern non-blocking google-genai async SDK.
-    Accepts raw WAV bytes and yields text chunks as they arrive from the model.
+    Accepts raw WAV bytes or a text string, and yields text chunks as they arrive from the model.
     """
     try:
-        # Wrap WAV bytes into Part inline_data
-        audio_part = types.Part.from_bytes(
-            data=wav_bytes,
-            mime_type="audio/wav"
-        )
-        
         # Dynamically inject the exact current time into every single turn
         from datetime import datetime
         import zoneinfo
@@ -314,8 +308,18 @@ async def stream_gemini_response(chat_session, wav_bytes: bytes):
         current_time_str = datetime.now(miami_tz).strftime("%I:%M %p on %A, %B %d, %Y %Z")
         time_context = f"[SYSTEM NOTIFICATION: The current exact time in Miami is {current_time_str}]"
         
-        # Send message to Gemini Async Chat Session with streaming enabled (Text + Audio)
-        response_stream = await chat_session.send_message_stream([time_context, audio_part])
+        if isinstance(user_input, bytes):
+            # Audio input: wrap WAV bytes into Part inline_data
+            input_part = types.Part.from_bytes(
+                data=user_input,
+                mime_type="audio/wav"
+            )
+        else:
+            # Text input (from Web Speech API)
+            input_part = str(user_input)
+        
+        # Send message to Gemini Async Chat Session with streaming enabled
+        response_stream = await chat_session.send_message_stream([time_context, input_part])
         
         async for chunk in response_stream:
             if chunk.text:
@@ -323,4 +327,4 @@ async def stream_gemini_response(chat_session, wav_bytes: bytes):
                 
     except Exception as e:
         print(f"❌ [Gemini Error]: {e}")
-        yield "HALANSWER: I am experiencing an internal communication anomaly. USERTRANSCRIPT: [audio unavailable]"
+        yield "HALANSWER: I am experiencing an internal communication anomaly. USERTRANSCRIPT: [unavailable]"

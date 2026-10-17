@@ -1,6 +1,7 @@
 import { AudioRecorder } from './audio-recorder.js';
 import { AudioPlayer } from './audio-player.js';
 import { WsClient } from './ws-client.js';
+import { SpeechRecognizer } from './speech-recognizer.js';
 
 // DOM Elements
 const appEl = document.getElementById('app');
@@ -51,6 +52,7 @@ function wakeUp() {
   log('☀️ System awoken from Sleep Mode.');
   document.body.classList.remove('sleep-mode');
   if (audioRecorder) audioRecorder.sleeping = false;
+  if (speechRecognizer) speechRecognizer.resume();
   setState(State.LISTENING);
   resetSleepTimer();
 }
@@ -64,6 +66,7 @@ function goToSleep() {
   log('🌙 System entering Sleep Mode to conserve OLED power.');
   document.body.classList.add('sleep-mode');
   if (audioRecorder) audioRecorder.sleeping = true;
+  if (speechRecognizer) speechRecognizer.pause();
   setState(State.SLEEPING);
 }
 
@@ -147,9 +150,11 @@ const audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
       if (audioRecorder) audioRecorder.muted = true;
+      if (speechRecognizer) speechRecognizer.pause();
       setState(State.PROCESSING);
     } else {
       if (audioRecorder) audioRecorder.muted = false;
+      if (speechRecognizer) speechRecognizer.resume();
       stopInteraction();
     }
   },
@@ -157,6 +162,24 @@ const audioPlayer = new AudioPlayer({
     if (currentState === State.PROCESSING) {
       updateVisuals(intensity, true); // HAL Voice Modulates #hal-core
     }
+  },
+  onLog: log,
+});
+
+const speechRecognizer = new SpeechRecognizer({
+  onFinalSpeech: (text) => {
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    }
+    if (wsClient && wsClient.isConnected && text) {
+      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
+      wsClient.sendJson({ type: 'user_text', text });
+      setState(State.THINKING);
+    }
+  },
+  onInterimSpeech: (text) => {},
+  onStatusChange: (status) => {
+    log(`🗣️ SpeechRecognizer status: ${status}`);
   },
   onLog: log,
 });
@@ -272,6 +295,7 @@ function triggerVoiceBargeIn() {
   log('⚡ User voice barge-in detected! Halting HAL speech playback immediately.');
   audioPlayer.stopPlayback();
   wsClient.sendInterrupt();
+  if (speechRecognizer) speechRecognizer.resume();
   setState(State.LISTENING);
 }
 
@@ -331,6 +355,7 @@ async function initializeSystem() {
 
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
     await audioRecorder.start();
+    speechRecognizer.start();
     setState(State.LISTENING);
     resetSleepTimer();
 
