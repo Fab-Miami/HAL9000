@@ -66,8 +66,8 @@ html, body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(84vw, 52vh);
-  height: min(84vw, 52vh);
+  width: min(92.4vw, 57.2vh);
+  height: min(92.4vw, 57.2vh);
   display: flex;
   justify-content: center;
   align-items: center;
