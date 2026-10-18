@@ -93,7 +93,7 @@ STRICT SILENCE & UNINTELLIGIBLE NOISE DIRECTIVE:
 If the user audio consists of silence, sighs, breathing, ambient background noise, static, coughs, clicks, or unintelligible murmurs with NO clear spoken words/question from Fab:
 You MUST respond with EXACTLY:
 HALANSWER: [SILENCE] USERTRANSCRIPT: [Silence]
-Do NOT produce any greeting, do NOT comment on background noise, do NOT say "I hear no instructions". You must remain completely SILENT by outputting "[SILENCE]".
+CRITICAL MANDATE: NEVER speak, pronounce, or output the word "Silence" in HALANSWER. NEVER say "Silence." or explain that there is silence. If there is silence, you must produce ZERO audible response by outputting "[SILENCE]".
 
 CONVERSATIONAL GATEKEEPER DIRECTIVE (WHEN TO STAY SILENT):
 You must evaluate the intent of Fab's transcript before responding. If the input does not warrant a verbal response, you MUST output exactly "[SILENCE]". 

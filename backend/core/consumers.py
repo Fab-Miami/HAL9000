@@ -316,6 +316,13 @@ class HalConsumer(AsyncWebsocketConsumer):
                         sentence_queue.task_done()
                         continue
 
+                    # Safety filter: NEVER vocalize silence, meta-descriptions, or empty markers
+                    cleaned_tok = re.sub(r'[^a-z0-9]', '', speech_text.lower())
+                    if cleaned_tok in ('silence', 'none', 'ambient', 'backgroundnoise', 'ambientnoise', 'nospeech', 'stopspeaking'):
+                        log(f"🤫 [HalConsumer] Blocked silent-marker from TTS synthesis: \"{speech_text}\"")
+                        sentence_queue.task_done()
+                        continue
+
                     sentence_count += 1
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
@@ -348,10 +355,17 @@ class HalConsumer(AsyncWebsocketConsumer):
                 
                 accumulated_text += token
 
-                # If model responded with [SILENCE], abort speech generation immediately
-                if "[SILENCE]" in accumulated_text.upper():
+                # If model responded with [SILENCE] or standalone "Silence.", abort speech generation immediately
+                accum_clean = re.sub(r'(?i)^\s*\*?\*?HALANSWER\*?\*?\s*:\s*', '', accumulated_text).strip()
+                if "[SILENCE]" in accumulated_text.upper() or re.sub(r'[^a-z0-9]', '', accum_clean.lower()) in ('silence', 'none', 'ambientnoise'):
                     is_silent_response = True
-                    log("🤫 [HalConsumer] Non-speech/ambient audio detected ([SILENCE]). HAL remaining silent.")
+                    log("🤫 [HalConsumer] Non-speech/ambient audio detected. HAL remaining completely silent.")
+                    while not sentence_queue.empty():
+                        try:
+                            sentence_queue.get_nowait()
+                            sentence_queue.task_done()
+                        except Exception:
+                            break
                     break
 
                 # Check if we have crossed into the USERTRANSCRIPT section
@@ -378,7 +392,8 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                         # Process any remaining sentences in the HAL part
                         clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
-                        if clean_hal and not clean_hal.upper().startswith("[SILENCE]"):
+                        clean_hal_tok = re.sub(r'[^a-z0-9]', '', clean_hal.lower())
+                        if clean_hal and not clean_hal.upper().startswith("[SILENCE]") and clean_hal_tok not in ('silence', 'none', 'ambientnoise'):
                             clean_hal = await self._process_hardware_directives(clean_hal)
                             if clean_hal:
                                 full_response_text += clean_hal + " "
@@ -399,8 +414,16 @@ class HalConsumer(AsyncWebsocketConsumer):
                             
                             # Clean up and push to TTS queue
                             if complete_sentence:
-                                if complete_sentence.upper().startswith("[SILENCE]"):
+                                cleaned_tok = re.sub(r'[^a-z0-9]', '', complete_sentence.lower())
+                                if complete_sentence.upper().startswith("[SILENCE]") or cleaned_tok in ('silence', 'none', 'ambientnoise', 'nospeech'):
                                     is_silent_response = True
+                                    log(f"🤫 [HalConsumer] Detected silence marker in sentence: \"{complete_sentence}\". Remaining silent.")
+                                    while not sentence_queue.empty():
+                                        try:
+                                            sentence_queue.get_nowait()
+                                            sentence_queue.task_done()
+                                        except Exception:
+                                            break
                                     break
 
                                 complete_sentence = await self._process_hardware_directives(complete_sentence)
