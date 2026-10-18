@@ -654,23 +654,8 @@ if (initOverlay) {
   });
 }
 
-// Passive touch listener: Phone screen is physically sealed inside the enclosure behind the fisheye lens,
-// but keep this for external desktop browser debugging or bench testing.
-document.body.addEventListener('click', () => {
-  if (currentState === State.SLEEPING) {
-    wakeUp();
-  }
-  requestScreenWakeLock();
-  ensureKeepAwakeVideoPlaying();
-});
-document.body.addEventListener('touchstart', (e) => {
-  if (currentState === State.SLEEPING) {
-    e.preventDefault();
-    wakeUp();
-  }
-  requestScreenWakeLock();
-  ensureKeepAwakeVideoPlaying();
-});
+// Physical enclosure constraint: Phone is permanently sealed behind the glass fisheye lens.
+// The screen is physically inaccessible. Enclosure wake is handled strictly via MotionDetector (accelerometer).
 
 // Start directly in enclosure mode with calibrated vertical offset
 document.body.classList.remove('mode-desk');
