@@ -264,7 +264,8 @@ const motionDetector = new MotionDetector({
 
 const audioRecorder = new AudioRecorder({
   onAudioData: (pcmBuffer) => {
-    if (wsClient && wsClient.isConnected) {
+    // Single Input Pipeline: SpeechRecognizer is primary; only stream raw PCM as fallback if Web Speech is unsupported
+    if (!speechRecognizer.isSupported && wsClient && wsClient.isConnected) {
       wsClient.sendAudio(pcmBuffer);
     }
   },

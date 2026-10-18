@@ -9,7 +9,7 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 1.0
+CAPTURE_WINDOW = 1.2
 SILENCE_THRESHOLD = 3000  # Threshold accommodating the physical enclosure ambient acoustic floor
 
 import datetime

@@ -18,7 +18,8 @@ export class SpeechRecognizer {
     this.isPaused = false;
     this.restartTimeout = null;
     this.interimDebounceTimer = null;
-    this.lastInterimText = '';
+    this.accumulatedText = '';
+    this.SILENCE_DELAY_MS = 1200; // 1,200ms pause window before dispatching speech
 
     if (this.isSupported) {
       try {
@@ -50,43 +51,31 @@ export class SpeechRecognizer {
       if (this.isPaused) return;
 
       let interim = '';
-      let finalTranscript = '';
+      let finals = '';
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         const item = event.results[i];
         const text = item[0] ? item[0].transcript : '';
         if (item.isFinal) {
-          finalTranscript += text;
+          finals += ' ' + text;
         } else {
-          interim += text;
+          interim += ' ' + text;
         }
       }
 
-      // Handle final transcript immediately
-      if (finalTranscript.trim()) {
-        clearTimeout(this.interimDebounceTimer);
-        this.lastInterimText = '';
-        const cleanFinal = finalTranscript.trim();
-        this.onLog(`🗣️ [SpeechRecognizer] Final transcript recognized: "${cleanFinal}"`);
-        this.onFinalSpeech(cleanFinal);
-        return;
+      if (finals.trim()) {
+        this.accumulatedText = (this.accumulatedText + ' ' + finals.trim()).trim();
       }
 
-      // Handle interim updates
-      if (interim.trim()) {
-        this.lastInterimText = interim.trim();
-        this.onInterimSpeech(this.lastInterimText);
+      const currentLiveSpeech = (this.accumulatedText + ' ' + interim.trim()).trim();
+      if (currentLiveSpeech) {
+        this.onInterimSpeech(currentLiveSpeech);
 
-        // Safari fallback: if Safari doesn't set isFinal, debounce finalize after 800ms of silence
+        // Unified 1,200ms debounce: Wait for 1.2s of real silence before finalizing thought
         clearTimeout(this.interimDebounceTimer);
         this.interimDebounceTimer = setTimeout(() => {
-          if (this.lastInterimText && !this.isPaused) {
-            const debounced = this.lastInterimText;
-            this.lastInterimText = '';
-            this.onLog(`⏱️ [SpeechRecognizer] Debounce-finalized interim speech: "${debounced}"`);
-            this.onFinalSpeech(debounced);
-          }
-        }, 800);
+          this._finalizeSpeech();
+        }, this.SILENCE_DELAY_MS);
       }
     };
 
@@ -103,26 +92,28 @@ export class SpeechRecognizer {
     };
 
     this.recognition.onend = () => {
-      clearTimeout(this.interimDebounceTimer);
-
-      // If speech was captured but pending when session ended, flush it
-      if (this.lastInterimText && !this.isPaused) {
-        const remaining = this.lastInterimText;
-        this.lastInterimText = '';
-        this.onLog(`🏁 [SpeechRecognizer] Flushed pending speech on session end: "${remaining}"`);
-        this.onFinalSpeech(remaining);
-      }
-
-      // Automatically maintain continuous listening in Safari
+      // Automatically maintain continuous listening in Safari without cutting speech
       if (this.isListening && !this.isPaused) {
         clearTimeout(this.restartTimeout);
         this.restartTimeout = setTimeout(() => {
           this._safeStart();
-        }, 200);
+        }, 100);
       } else {
+        this._finalizeSpeech();
         this.onStatusChange('IDLE');
       }
     };
+  }
+
+  _finalizeSpeech() {
+    clearTimeout(this.interimDebounceTimer);
+    const speechToSend = this.accumulatedText.trim();
+    this.accumulatedText = '';
+
+    if (speechToSend && !this.isPaused) {
+      this.onLog(`🗣️ [SpeechRecognizer] Thought complete (1,200ms pause). Sending: "${speechToSend}"`);
+      this.onFinalSpeech(speechToSend);
+    }
   }
 
   _safeStart() {
@@ -160,6 +151,7 @@ export class SpeechRecognizer {
     if (!this.isSupported || this.isPaused) return;
     this.isPaused = true;
     clearTimeout(this.interimDebounceTimer);
+    this.accumulatedText = '';
     try {
       this.recognition.abort();
     } catch (e) {}
@@ -170,7 +162,7 @@ export class SpeechRecognizer {
     // Resume listening after HAL finishes speaking
     if (!this.isSupported || !this.isListening) return;
     this.isPaused = false;
-    this.lastInterimText = '';
+    this.accumulatedText = '';
     this.onLog('🎙️ [SpeechRecognizer] Resumed active speech listening.');
     this._safeStart();
   }
