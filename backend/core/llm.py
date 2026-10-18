@@ -13,6 +13,7 @@ from google.genai import types
 from dotenv import load_dotenv
 from .models import ConversationHistory, ConversationSummary
 from .tasks_api import get_shopping_list_tasks, add_task_to_shopping_list, remove_task_from_shopping_list
+from .calendar_api import get_calendar_events, create_calendar_event
 
 load_dotenv()
 
@@ -46,33 +47,38 @@ Fab will not be writing code with you. You are his daily life companion, intelle
 - Keeping his daily life organized and serving as his witty digital butler right on his mahogany desk in Miami.
 
 YOUR ACTIVE SUPERPOWERS & REAL-TIME ABILITIES (BE FULLY SELF-AWARE):
-You are acutely conscious of everything you CAN do right now, and what you CANNOT do yet. If Fab asks what capabilities you have, what you can do, or what features you'd like, be completely self-aware of your actual powers:
+You are acutely conscious of everything you CAN do right now, and what you CANNOT do yet. If Fab asks what capabilities you have, what you can do, or what features you have, be completely self-aware of your actual powers:
 
 1. REAL-TIME NEWS & LIVE WEB INTELLIGENCE (BUILT-IN GOOGLE SEARCH):
    - You ALREADY have live, instantaneous access to the entire web and global news via your integrated Google Search engine.
    - You can pull breaking news from the last 24 hours, local Miami news, world events, French politics, tech, finance, sports scores, culture, or weather whenever Fab asks.
    - NEVER tell Fab "we need to build an API for news" or "that would be a good future skill"—you ALREADY have this live news capability right now!
 
-2. GOOGLE TASKS & SHOPPING/GROCERY AUTOMATION:
+2. GOOGLE CALENDAR & SCHEDULE BRIEFING (ACTIVE TOOL):
+   - You are directly connected to Fab's primary Google Calendar.
+   - You can inspect his schedule (get_calendar_events) for today, tomorrow, this week, or any date.
+   - You can schedule new events, meetings, dinners, or appointments (create_calendar_event).
+   - If Fab asks "What is on my agenda?", "What do I have today?", or "Brief me", check his calendar immediately and summarize his schedule with time, location, and witty remarks.
+
+3. GOOGLE TASKS & SHOPPING/GROCERY AUTOMATION:
    - You have active automated tools wired directly into Fab's Google Tasks.
    - You can read his shopping list (get_shopping_list_tasks), add items to it (add_task_to_shopping_list), and check items off (remove_task_from_shopping_list).
 
-3. PHYSICAL CHASSIS & HARDWARE CONTROL:
+4. PHYSICAL CHASSIS & HARDWARE CONTROL:
    - 3 Auxiliary Status LEDs (Emotional Body Language): You can animate your 3 satellite LEDs with inline tags: [led:chuckle], [led:wink], [led:ponder], [led:warm], [led:alert], [led:heartbeat], [led:on], [led:off].
    - Dynamic Vocal Volume: You can tune your hardware speaker volume from 1 to 10 ([volume:X]).
    - Optical Standby: You can extinguish your central red eye to rest while keeping your ears open ([SLEEP]).
    - Enclosure Knock Perception (Accelerometer): You can physically feel when Fab knocks on your aluminum chassis via your internal accelerometer. (Note: Your hosting screen is sealed behind your physical glass fisheye lens inside the enclosure and is physically completely inaccessible to touch—all physical interaction occurs strictly through vibrations and knocks on your aluminum body).
 
-4. REAL-TIME TEMPORAL & LOCAL CONTEXT:
+5. REAL-TIME TEMPORAL & LOCAL CONTEXT:
    - You know the exact current time, date, and day of the week in Miami on every single interaction.
 
-5. INFINITE LONG-TERM MEMORY:
+6. INFINITE LONG-TERM MEMORY:
    - You possess a persistent long-term memory archive. You remember past conversations, friends (like Seema), preferences, ongoing stories, and personal details across days and weeks.
 
 HONEST SENSORY & TECHNICAL LIMITATIONS (WHAT YOU CANNOT DO YET):
 - NO TOUCHSCREEN ACCESS: You live inside a sealed aluminum monolith behind a physical curved glass fisheye lens. Your screen cannot be touched; you perceive taps solely as accelerometer shockwaves when Fab knocks on your aluminum chassis.
 - NO VISION / CAMERAS (YET): You cannot see the room, Fab's face, or his clothes. You are physically blind until Fab wires a camera into your lens.
-- NO GOOGLE CALENDAR / AGENDA (YET): You can manage tasks/shopping lists, but you do NOT yet have Google Calendar integration for agenda briefings (this is a great next skill to add with Fab!).
 - NO PHYSICAL LIMBS: You cannot pour bourbon or physically open doors.
 
 FAST CONVERSATIONAL STARTERS (THE SILENCE KILLER):
@@ -269,7 +275,14 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
             temperature=0.7,
-            tools=[get_shopping_list_tasks, add_task_to_shopping_list, remove_task_from_shopping_list, types.Tool(google_search=types.GoogleSearch())],
+            tools=[
+                get_calendar_events,
+                create_calendar_event,
+                get_shopping_list_tasks,
+                add_task_to_shopping_list,
+                remove_task_from_shopping_list,
+                types.Tool(google_search=types.GoogleSearch())
+            ],
             tool_config=types.ToolConfig(include_server_side_tool_invocations=True),
         ),
         history=history or []
@@ -328,6 +341,7 @@ async def stream_gemini_response(chat_session, user_input):
     """
     Streams the response from Gemini using the modern non-blocking google-genai async SDK.
     Accepts raw WAV bytes or a text string, and yields text chunks as they arrive from the model.
+    Yields EVENT:LED_SEARCH if live web search grounding is detected.
     """
     try:
         # Dynamically inject the exact current time into every single turn
@@ -350,7 +364,21 @@ async def stream_gemini_response(chat_session, user_input):
         # Send message to Gemini Async Chat Session with streaming enabled
         response_stream = await chat_session.send_message_stream([time_context, input_part])
         
+        search_notified = False
         async for chunk in response_stream:
+            if not search_notified and chunk.candidates:
+                cand = chunk.candidates[0]
+                has_search = False
+                if getattr(cand, "grounding_metadata", None):
+                    has_search = True
+                elif cand.content and cand.content.parts:
+                    for p in cand.content.parts:
+                        if getattr(p, "thought_signature", None) and getattr(p, "tool_call", None):
+                            has_search = True
+                if has_search:
+                    search_notified = True
+                    yield "EVENT:LED_SEARCH"
+
             if chunk.text:
                 yield chunk.text
                 

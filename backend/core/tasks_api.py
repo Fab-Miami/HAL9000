@@ -1,8 +1,13 @@
 import os
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from .tool_events import notify_tool_execution
 
-SCOPES = ['https://www.googleapis.com/auth/tasks']
+SCOPES = [
+    'https://www.googleapis.com/auth/tasks',
+    'https://www.googleapis.com/auth/calendar'
+]
 
 def get_tasks_service():
     """Initializes and returns the Google Tasks API service."""
@@ -11,6 +16,13 @@ def get_tasks_service():
     
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, 'w') as token_file:
+                    token_file.write(creds.to_json())
+            except Exception as e:
+                print(f"⚠️ [TasksAPI] Token refresh warning: {e}")
     else:
         raise FileNotFoundError(f"token.json not found at {token_path}. Authentication required.")
         
@@ -32,6 +44,7 @@ def get_or_create_shopping_list(service):
 
 def get_shopping_list_tasks():
     """Returns a list of uncompleted items on the Shopping list."""
+    notify_tool_execution("tasks")
     try:
         service = get_tasks_service()
         list_id = get_or_create_shopping_list(service)
@@ -51,6 +64,7 @@ def get_shopping_list_tasks():
 
 def add_task_to_shopping_list(item_name: str):
     """Adds a new item to the Shopping list."""
+    notify_tool_execution("tasks")
     try:
         service = get_tasks_service()
         list_id = get_or_create_shopping_list(service)
@@ -64,6 +78,7 @@ def add_task_to_shopping_list(item_name: str):
 
 def remove_task_from_shopping_list(item_name: str):
     """Removes an item from the Shopping list if it exists."""
+    notify_tool_execution("tasks")
     try:
         service = get_tasks_service()
         list_id = get_or_create_shopping_list(service)

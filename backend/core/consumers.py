@@ -93,10 +93,25 @@ class HalConsumer(AsyncWebsocketConsumer):
         # Trigger background summarization for any other old chats this client might have
         asyncio.create_task(asyncio.to_thread(llm.summarize_old_conversations, self.client_id))
 
+        # Register for tool callback events (LED:API trigger)
+        from .tool_events import register_tool_callback
+        self._tool_callback = self._on_tool_invoked
+        register_tool_callback(self._tool_callback)
+
     async def disconnect(self, close_code):
         log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
+        from .tool_events import unregister_tool_callback
+        if hasattr(self, '_tool_callback'):
+            unregister_tool_callback(self._tool_callback)
         if self.processing_task and not self.processing_task.done():
             self.processing_task.cancel()
+
+    async def _on_tool_invoked(self, tool_name):
+        log(f"⚡ [HalConsumer] Tool API execution event: {tool_name} -> Sending LED:API")
+        try:
+            await self.send(text_data="LED:API")
+        except Exception:
+            pass
 
     async def receive(self, text_data=None, bytes_data=None):
         if text_data:
@@ -349,6 +364,11 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             # Iterate over the live Gemini stream
             async for token in llm.stream_gemini_response(self.chat_session, user_input):
+                if token == "EVENT:LED_SEARCH":
+                    log("🔍 [HalConsumer] Live Web/News Search active -> Sending LED:SEARCH")
+                    await self.send(text_data="LED:SEARCH")
+                    continue
+
                 if first_token_time is None:
                     first_token_time = time.time()
                     log(f"⚡ [HalConsumer] Gemini first token in {first_token_time - gemini_start:.2f}s")

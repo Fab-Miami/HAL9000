@@ -125,6 +125,46 @@ html, body {
   animation: anim-led-heartbeat 0.9s ease-out forwards;
 }
 
+/* System Hardware Feedback Animations */
+#layer-3-led-on.led-anim-listen-done {
+  animation: anim-led-listen-done 0.4s ease-out forwards;
+}
+
+#layer-3-led-on.led-anim-search {
+  animation: anim-led-search 1.6s ease-in-out forwards;
+}
+
+#layer-3-led-on.led-anim-api {
+  animation: anim-led-api 0.55s ease-out forwards;
+}
+
+@keyframes anim-led-listen-done {
+  0% { opacity: 0; }
+  25% { opacity: 1.0; }
+  45% { opacity: 0.15; }
+  70% { opacity: 1.0; }
+  100% { opacity: var(--persistent-led, 0.0); }
+}
+
+@keyframes anim-led-search {
+  0% { opacity: 0.1; }
+  25% { opacity: 0.95; }
+  50% { opacity: 0.2; }
+  75% { opacity: 0.95; }
+  100% { opacity: var(--persistent-led, 0.0); }
+}
+
+@keyframes anim-led-api {
+  0% { opacity: 0; }
+  15% { opacity: 1.0; }
+  30% { opacity: 0.1; }
+  45% { opacity: 1.0; }
+  60% { opacity: 0.1; }
+  75% { opacity: 1.0; }
+  90% { opacity: 0.1; }
+  100% { opacity: var(--persistent-led, 0.0); }
+}
+
 @keyframes anim-led-chuckle {
   0% { opacity: 0; }
   18% { opacity: 1.0; }

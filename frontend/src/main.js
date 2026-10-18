@@ -120,7 +120,10 @@ function clearLedAnimations() {
     'led-anim-breathe',
     'led-anim-warm',
     'led-anim-alert',
-    'led-anim-heartbeat'
+    'led-anim-heartbeat',
+    'led-anim-listen-done',
+    'led-anim-search',
+    'led-anim-api'
   );
 }
 
@@ -172,6 +175,12 @@ function handleEmotionTag(tag) {
     triggerLedExpression('alert', 550);
   } else if (t === 'heartbeat' || t === 'love' || t === 'emotion') {
     triggerLedExpression('heartbeat', 950);
+  } else if (t === 'search' || t === 'internet' || t === 'web') {
+    triggerLedExpression('search', 1600);
+  } else if (t === 'api' || t === 'task' || t === 'calendar') {
+    triggerLedExpression('api', 600);
+  } else if (t === 'listen-done' || t === 'ack' || t === 'received') {
+    triggerLedExpression('listen-done', 400);
   } else {
     // Default expressive blink
     triggerLedExpression('wink', 450);
@@ -247,6 +256,10 @@ const speechRecognizer = new SpeechRecognizer({
     }
     if (persistentLedOn) {
       setPersistentLed(false);
+    }
+    if (text) {
+      // Instantaneous hardware feedback: End of listening mode acknowledged
+      triggerLedExpression('listen-done', 400);
     }
     if (wsClient && wsClient.isConnected && text) {
       log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
@@ -338,6 +351,15 @@ const wsClient = new WsClient({
         setPersistentLed(true);
       } else if (state === 'OFF') {
         setPersistentLed(false);
+      } else if (state === 'SEARCH') {
+        log('🔍 [HAL Hardware] Live Search active -> triggering LED:SEARCH animation.');
+        triggerLedExpression('search', 1600);
+      } else if (state === 'API') {
+        log('⚡ [HAL Hardware] API Tool execution -> triggering LED:API animation.');
+        triggerLedExpression('api', 600);
+      } else if (state === 'LISTEN_DONE' || state === 'ACK') {
+        log('👂 [HAL Hardware] End of listening -> triggering LED:LISTEN-DONE animation.');
+        triggerLedExpression('listen-done', 400);
       }
     } else if (text.startsWith('TAG:')) {
       const tag = text.substring(4).trim();
