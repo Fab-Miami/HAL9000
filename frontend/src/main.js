@@ -217,6 +217,12 @@ function handleEmotionTag(tag) {
 }
 
 // Visual Modulation: Authentic to 2001: A Space Odyssey
+// =========================================================================================
+// CRITICAL HARDWARE & UI REQUIREMENT - DO NOT REMOVE OR BREAK:
+// The outer acoustic ring (#layer-ring-on / hal2026_ring_on.png) MUST visibly blink and
+// pulse with the user's voice intensity whenever the user is speaking in State.LISTENING.
+// This provides immediate visual confirmation to the user that HAL is hearing their message!
+// =========================================================================================
 function updateVisuals(intensity, isHalSpeech = false) {
   if (currentState === State.SLEEPING) return;
 
@@ -241,10 +247,10 @@ function updateVisuals(intensity, isHalSpeech = false) {
       layerCenterOn.style.opacity = '1.0';
     }
 
-    if (norm > 0.05) {
+    if (norm > 0.012) {
       // User is speaking: visibly animate (blink/pulse) the outer ring with voice energy
       if (layerRingOn) {
-        const ringLevel = Math.min(1.0, 0.45 + norm * 1.8).toFixed(2);
+        const ringLevel = Math.min(1.0, 0.40 + (norm - 0.012) * 3.2).toFixed(2);
         layerRingOn.style.opacity = ringLevel;
       }
     } else {
@@ -378,6 +384,19 @@ speechRecognizer = new SpeechRecognizer({
     resetSleepTimer();
     if (persistentLedOn && text && text.trim()) {
       setPersistentLed(false);
+    }
+    // CRITICAL HARDWARE FEEDBACK: Outer ring (#layer-ring-on) blinks to visually acknowledge user speech
+    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING && text && text.trim()) {
+      if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') < 0.6) {
+        layerRingOn.style.opacity = '0.85';
+        setTimeout(() => {
+          if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
+            if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') === 0.85) {
+              layerRingOn.style.opacity = '0.25';
+            }
+          }
+        }, 120);
+      }
     }
   },
   onStatusChange: (status) => {

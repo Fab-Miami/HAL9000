@@ -89,10 +89,15 @@ export class AudioRecorder {
           }
         }
 
-        // Voice delta: energy above background acoustic noise floor
-        const noiseGate = Math.max(0.04, this.noiseFloor * 1.5 + 0.02);
+        // =========================================================================================
+        // CRITICAL NOTE: CALIBRATED ACOUSTIC SENSITIVITY FOR USER SPEECH FEEDBACK (hal2026_ring_on.png)
+        // Do NOT set noiseGate too high (> 0.015)! An iPhone inside an aluminum enclosure and behind
+        // glass absorbs acoustic energy; normal human speech produces an RMS between 0.012 and 0.050.
+        // Clamping noiseGate at 0.04 completely kills voice detection and stops the outer ring from blinking.
+        // =========================================================================================
+        const noiseGate = Math.max(0.005, this.noiseFloor * 1.25 + 0.003);
         const voiceDelta = rms - noiseGate;
-        const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 6.5) : 0.0;
+        const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 18.0) : 0.0;
         this.onAudioLevel(intensity);
 
         // Acoustic Tap Detection when sleeping:
