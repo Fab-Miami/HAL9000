@@ -255,13 +255,61 @@ const audioPlayer = new AudioPlayer({
   onLog: log,
 });
 
+/**
+ * Strict wake-word validator.
+ * In sleep mode, HAL ONLY wakes on:
+ * 1. An isolated "HAL" (e.g. "HAL", "Hey HAL", "OK HAL", "HAL?", "HAL wake up")
+ * 2. A direct command addressed to HAL (e.g. "HAL, what is on my calendar")
+ * Strictly rejects words containing "hal" (e.g. "hallucinant", "halibut", "shallow")
+ * and general ambient conversation.
+ */
+function isHalWakeWord(text) {
+  if (!text) return false;
+  const clean = text.trim().toLowerCase();
+
+  // 1. Strict boundary check: must contain \bhal\b as an independent whole word
+  if (!/\bhal\b/i.test(clean)) {
+    return false;
+  }
+
+  // 2. Isolated wake phrases: "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal"
+  const isolatedWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal[,\.!\?]*$/i;
+  if (isolatedWakeRegex.test(clean)) {
+    return true;
+  }
+
+  // 3. Short wake phrases: e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake"
+  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|listen|up)[,\.!\?]*$/i;
+  if (shortWakeRegex.test(clean)) {
+    return true;
+  }
+  const reverseWakeRegex = /^(?:wake\s*up\s+)?hal[,\.!\?]*$/i;
+  if (reverseWakeRegex.test(clean)) {
+    return true;
+  }
+
+  // 4. Direct command starting with HAL as the addressed subject:
+  // e.g. "hal, what time is it", "hey hal, what is on my calendar"
+  if (/^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b[,\s]+/i.test(clean)) {
+    return true;
+  }
+
+  return false;
+}
+
 const speechRecognizer = new SpeechRecognizer({
   onFinalSpeech: (text) => {
     if (currentState === State.SLEEPING) {
+      if (!isHalWakeWord(text)) {
+        log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
+        return;
+      }
+      log(`☀️ [Sleeping] Isolated HAL wake word verified: "${text}"! Waking up HAL.`);
       wakeUp();
     } else {
       resetSleepTimer();
     }
+
     if (persistentLedOn) {
       setPersistentLed(false);
     }
@@ -276,6 +324,13 @@ const speechRecognizer = new SpeechRecognizer({
     }
   },
   onInterimSpeech: (text) => {
+    if (currentState === State.SLEEPING) {
+      if (isHalWakeWord(text)) {
+        log(`☀️ [Sleeping] Interim HAL wake word detected: "${text}"! Waking up HAL.`);
+        wakeUp();
+      }
+      return;
+    }
     resetSleepTimer();
     if (persistentLedOn && text && text.trim()) {
       setPersistentLed(false);
@@ -288,13 +343,14 @@ const speechRecognizer = new SpeechRecognizer({
 });
 
 const motionDetector = new MotionDetector({
-  threshold: 12.0,
+  threshold: 10.0,
   onKnock: (magnitude) => {
     log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
     // Physical tap blinks the 3 auxiliary dots immediately!
     triggerLedExpression('wink', 400);
 
     if (currentState === State.SLEEPING) {
+      log('☀️ [Sleeping] Enclosure knock detected! Waking up HAL.');
       wakeUp();
     } else if (currentState === State.PROCESSING || currentState === State.THINKING) {
       log('⚡ Intercepting HAL via physical enclosure knock.');
@@ -330,7 +386,7 @@ const audioRecorder = new AudioRecorder({
     // Room ambience / noise floor fluctuates continuously and must NOT reset the sleep timer.
   },
   onWakeTrigger: () => {
-    wakeUp();
+    // Volume wake-up disabled; only accelerometer knock and isolated 'HAL' wake word can wake HAL.
   },
   onLog: log,
 });

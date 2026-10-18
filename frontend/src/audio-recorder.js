@@ -91,11 +91,8 @@ export class AudioRecorder {
         const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 6.5) : 0.0;
         this.onAudioLevel(intensity);
 
-        // If sleeping, only wake on an intentional loud sound (intensity > 0.8), ignore ambient noise
+        // When sleeping, do not wake on generic audio loudness; wake-up is strictly by isolated 'HAL' or enclosure knock
         if (this.sleeping) {
-          if (intensity > 0.8) {
-            this.onWakeTrigger();
-          }
           return;
         }
 
