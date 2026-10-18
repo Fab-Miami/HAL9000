@@ -268,7 +268,7 @@ const speechRecognizer = new SpeechRecognizer({
 const motionDetector = new MotionDetector({
   threshold: 12.0,
   onKnock: (magnitude) => {
-    log(`💥 Enclosure knock detected (${magnitude.toFixed(1)} m/s²)!`);
+    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
     // Physical tap blinks the 3 auxiliary dots immediately!
     triggerLedExpression('wink', 400);
 
@@ -280,6 +280,8 @@ const motionDetector = new MotionDetector({
     } else {
       resetSleepTimer();
     }
+    requestScreenWakeLock();
+    ensureKeepAwakeVideoPlaying();
   },
   onLog: log,
 });
@@ -307,6 +309,8 @@ const audioRecorder = new AudioRecorder({
       setPersistentLed(false);
     }
     resetSleepTimer();
+    requestScreenWakeLock();
+    ensureKeepAwakeVideoPlaying();
   },
   onWakeTrigger: () => {
     wakeUp();
@@ -568,7 +572,8 @@ if (initOverlay) {
   });
 }
 
-// Allow waking up by tapping anywhere on the screen
+// Passive touch listener: Phone screen is physically sealed inside the enclosure behind the fisheye lens,
+// but keep this for external desktop browser debugging or bench testing.
 document.body.addEventListener('click', () => {
   if (currentState === State.SLEEPING) {
     wakeUp();
