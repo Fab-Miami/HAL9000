@@ -73,10 +73,25 @@ export class AudioRecorder {
         }
 
         const rms = Math.sqrt(sum / downsampled.length);
-        const intensity = Math.min(1.0, rms * 10.0);
+
+        // Track ambient noise floor dynamically (smooth EMA)
+        if (this.noiseFloor === undefined) {
+          this.noiseFloor = rms;
+        } else {
+          if (rms < this.noiseFloor) {
+            this.noiseFloor = this.noiseFloor * 0.95 + rms * 0.05;
+          } else {
+            this.noiseFloor = this.noiseFloor * 0.995 + rms * 0.005;
+          }
+        }
+
+        // Voice delta: energy above background acoustic noise floor
+        const noiseGate = Math.max(0.04, this.noiseFloor * 1.5 + 0.02);
+        const voiceDelta = rms - noiseGate;
+        const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 6.5) : 0.0;
         this.onAudioLevel(intensity);
 
-        if (intensity > 0.40) {
+        if (intensity > 0.45) {
           this.onSpeechDetected();
         }
 
