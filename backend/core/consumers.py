@@ -264,12 +264,27 @@ class HalConsumer(AsyncWebsocketConsumer):
             await self.send(text_data="SLEEP")
             text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
 
-        # 3. Optical Emotion tags: [tag: alert], [mood: surprise], [ALERT], etc.
+        # 3. Direct LED Hardware commands: [LED: ON], [LED: OFF], [LED_ON], [LED_OFF], [LIGHTS: ON], [LIGHTS: OFF]
+        led_match = re.search(r'\[?(?:led|lights):\s*(on|off)\]?|\[LED[_\-\s]*(ON|OFF)\]|\[LIGHTS[_\-\s]*(ON|OFF)\]', text, re.IGNORECASE)
+        if led_match:
+            led_state = (led_match.group(1) or led_match.group(2) or led_match.group(3)).upper()
+            log(f"💡 [HalConsumer] LED hardware command parsed from HAL text: {led_state}")
+            await self.send(text_data=f"LED:{led_state}")
+            text = re.sub(r'\[?(?:led|lights):\s*(?:on|off)\]?|\[LED[_\-\s]*(?:ON|OFF)\]|\[LIGHTS[_\-\s]*(?:ON|OFF)\]', '', text, flags=re.IGNORECASE).strip()
+
+        # 4. Optical Emotion tags: [tag: alert], [mood: surprise], [ALERT], etc.
         tag_match = re.search(r'\[?(?:tag|mood|emotion):\s*([a-zA-Z0-9_\-]+)\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', text, re.IGNORECASE)
         if tag_match:
             tag_name = (tag_match.group(1) or tag_match.group(2)).upper()
-            log(f"💡 [HalConsumer] Optical tag parsed from HAL text: {tag_name}")
-            await self.send(text_data=f"TAG:{tag_name}")
+            if tag_name in ('LED_ON', 'LIGHTS_ON', 'ON'):
+                log(f"💡 [HalConsumer] Optical LED ON command parsed: {tag_name}")
+                await self.send(text_data="LED:ON")
+            elif tag_name in ('LED_OFF', 'LIGHTS_OFF', 'OFF'):
+                log(f"💡 [HalConsumer] Optical LED OFF command parsed: {tag_name}")
+                await self.send(text_data="LED:OFF")
+            else:
+                log(f"💡 [HalConsumer] Optical tag parsed from HAL text: {tag_name}")
+                await self.send(text_data=f"TAG:{tag_name}")
             text = re.sub(r'\[?(?:tag|mood|emotion):\s*[a-zA-Z0-9_\-]+\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', '', text, flags=re.IGNORECASE).strip()
 
         return text

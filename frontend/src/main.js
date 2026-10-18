@@ -52,6 +52,7 @@ function goToSleep() {
   }
   
   log('🌙 System entering Sleep Mode to conserve OLED power.');
+  if (persistentLedOn) setPersistentLed(false);
   document.body.classList.add('sleep-mode');
   if (audioRecorder) audioRecorder.sleeping = true;
   if (speechRecognizer) speechRecognizer.pause();
@@ -83,12 +84,23 @@ function setState(newState) {
   log(`🔄 State Transition -> ${newState}`);
 }
 
-// Standby State: Center dot strictly ON and STATIC; listening ring and 3 LEDs strictly OFF
+// Persistent LED State: stays ON until next prompt or explicit OFF command
+let persistentLedOn = false;
+
+function setPersistentLed(on) {
+  persistentLedOn = on;
+  if (layer3LedOn) {
+    layer3LedOn.style.opacity = on ? '1.0' : '0.0';
+  }
+  log(`💡 [HAL Hardware] 3 Auxiliary LEDs ${on ? 'LOCKED ON (will stay on until next prompt)' : 'TURNED OFF'}.`);
+}
+
+// Standby State: Center dot strictly ON and STATIC; listening ring OFF; LEDs follow persistent state
 function resetToStandby() {
   if (currentState === State.SLEEPING) return;
   if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
   if (layerRingOn) layerRingOn.style.opacity = '0.0';
-  if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+  if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
 }
 
 // HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Knock / TAG ONLY)
@@ -104,7 +116,7 @@ function flashDots(mode = 'bright', durationMs = 220) {
       setTimeout(() => {
         if (layer3LedOn) layer3LedOn.style.opacity = '1.0';
         setTimeout(() => {
-          if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+          if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
         }, 120);
       }, 70);
     }, 120);
@@ -118,13 +130,21 @@ function flashDots(mode = 'bright', durationMs = 220) {
   }
 
   dotFlashTimer = setTimeout(() => {
-    if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+    if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
   }, durationMs);
 }
 
 function handleEmotionTag(tag) {
   log(`💡 [HAL Emotion Tag] Received: ${tag}`);
   const t = (tag || '').toUpperCase();
+  if (t === 'ON' || t === 'LED_ON' || t === 'LIGHTS_ON') {
+    setPersistentLed(true);
+    return;
+  }
+  if (t === 'OFF' || t === 'LED_OFF' || t === 'LIGHTS_OFF') {
+    setPersistentLed(false);
+    return;
+  }
   if (t === 'ALERT' || t === 'ANGER' || t === 'WARN') {
     flashDots('double', 400);
   } else if (t === 'SURPRISE' || t === 'EMOTION') {
@@ -206,13 +226,20 @@ const speechRecognizer = new SpeechRecognizer({
     if (currentState === State.SLEEPING) {
       wakeUp();
     }
+    if (persistentLedOn) {
+      setPersistentLed(false);
+    }
     if (wsClient && wsClient.isConnected && text) {
       log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
       wsClient.sendJson({ type: 'user_text', text });
       setState(State.THINKING);
     }
   },
-  onInterimSpeech: (text) => {},
+  onInterimSpeech: (text) => {
+    if (persistentLedOn && text && text.trim()) {
+      setPersistentLed(false);
+    }
+  },
   onStatusChange: (status) => {
     log(`🗣️ SpeechRecognizer status: ${status}`);
   },
@@ -253,6 +280,9 @@ const audioRecorder = new AudioRecorder({
     if (currentState === State.PROCESSING) {
       triggerVoiceBargeIn();
     }
+    if (persistentLedOn) {
+      setPersistentLed(false);
+    }
     resetSleepTimer();
   },
   onWakeTrigger: () => {
@@ -274,6 +304,13 @@ const wsClient = new WsClient({
       if (!isNaN(vol)) {
         audioPlayer.setVolumeLevel(vol);
         log(`🔊 HAL adjusted vocal volume to: ${vol}/10`);
+      }
+    } else if (text.startsWith('LED:')) {
+      const state = text.substring(4).trim().toUpperCase();
+      if (state === 'ON') {
+        setPersistentLed(true);
+      } else if (state === 'OFF') {
+        setPersistentLed(false);
       }
     } else if (text.startsWith('TAG:')) {
       const tag = text.substring(4).trim();
