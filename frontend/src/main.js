@@ -175,23 +175,20 @@ function updateVisuals(intensity, isHalSpeech = false) {
       layerCenterOn.style.opacity = halBlink;
     }
   } else {
-    // When User speaks or is in Standby:
+    // When HAL is in listen mode (user speaks or standby):
+    // Central light is kept illuminated in a static way (never animated/dimmed)
+    if (layerCenterOn && layerCenterOn.style.opacity !== '1.0') {
+      layerCenterOn.style.opacity = '1.0';
+    }
+
     if (norm > 0.04) {
-      // User is speaking:
-      // 1. Dim central dot to 75%
-      if (layerCenterOn) {
-        layerCenterOn.style.opacity = '0.75';
-      }
-      // 2. Animate (lighten) the outer ring with voice energy
+      // User is speaking: animate (lighten) the outer ring with voice energy
       if (layerRingOn) {
         const ringLevel = Math.min(1.0, norm * 1.35).toFixed(2);
         layerRingOn.style.opacity = ringLevel;
       }
     } else {
-      // Standby / silence between words: Center dot ON and STATIC, ring OFF
-      if (layerCenterOn) {
-        layerCenterOn.style.opacity = '1.0';
-      }
+      // Standby / silence between words: ring OFF
       if (layerRingOn) {
         layerRingOn.style.opacity = '0.0';
       }
