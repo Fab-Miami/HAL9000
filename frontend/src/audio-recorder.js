@@ -73,10 +73,10 @@ export class AudioRecorder {
         }
 
         const rms = Math.sqrt(sum / downsampled.length);
-        const intensity = Math.min(1.0, rms * 5.0);
+        const intensity = Math.min(1.0, rms * 10.0);
         this.onAudioLevel(intensity);
 
-        if (intensity > 0.35) {
+        if (intensity > 0.40) {
           this.onSpeechDetected();
         }
 

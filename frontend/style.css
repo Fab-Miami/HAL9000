@@ -107,7 +107,7 @@ html, body {
 #layer-ring-on {
   z-index: 4;
   opacity: 0.0;
-  transition: opacity 0.12s ease-out;
+  transition: opacity 0.08s ease-out;
 }
 
 /* Enclosure Mode Overrides */

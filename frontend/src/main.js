@@ -181,15 +181,15 @@ function updateVisuals(intensity, isHalSpeech = false) {
       layerCenterOn.style.opacity = '1.0';
     }
 
-    if (norm > 0.04) {
-      // User is speaking: animate (lighten) the outer ring with voice energy
+    if (norm > 0.02) {
+      // User is speaking: visibly animate (blink/pulse) the outer ring with voice energy
       if (layerRingOn) {
-        const ringLevel = Math.min(1.0, norm * 1.35).toFixed(2);
+        const ringLevel = Math.min(1.0, 0.40 + (norm - 0.02) * 2.5).toFixed(2);
         layerRingOn.style.opacity = ringLevel;
       }
     } else {
       // Standby / silence between words: ring OFF
-      if (layerRingOn) {
+      if (layerRingOn && layerRingOn.style.opacity !== '0.0') {
         layerRingOn.style.opacity = '0.0';
       }
     }
@@ -235,6 +235,9 @@ const speechRecognizer = new SpeechRecognizer({
   onInterimSpeech: (text) => {
     if (persistentLedOn && text && text.trim()) {
       setPersistentLed(false);
+    }
+    if (currentState !== State.PROCESSING && text && text.trim()) {
+      updateVisuals(0.20, false);
     }
   },
   onStatusChange: (status) => {
