@@ -182,13 +182,21 @@ def load_history(client_id):
     try:
         core_obj = CoreMemoryProfile.objects.filter(client_id=client_id).first()
         if not core_obj:
-            # Check legacy ConversationSummary for auto-migration
-            legacy = ConversationSummary.objects.filter(client_id=client_id).order_by('-created_at').first()
-            if legacy and legacy.summary_text:
+            # Check if any existing CoreMemoryProfile exists across any client
+            any_core = CoreMemoryProfile.objects.order_by('-updated_at').first()
+            if any_core:
                 core_obj = CoreMemoryProfile.objects.create(
                     client_id=client_id,
-                    profile_markdown=legacy.summary_text.strip()
+                    profile_markdown=any_core.profile_markdown
                 )
+            else:
+                # Check legacy ConversationSummary for auto-migration
+                legacy = ConversationSummary.objects.order_by('-created_at').first()
+                if legacy and legacy.summary_text:
+                    core_obj = CoreMemoryProfile.objects.create(
+                        client_id=client_id,
+                        profile_markdown=legacy.summary_text.strip()
+                    )
         if core_obj and core_obj.profile_markdown:
             core_profile = core_obj.profile_markdown.strip()
     except Exception as e:
