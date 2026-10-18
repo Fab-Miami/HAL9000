@@ -24,6 +24,7 @@ const State = {
 
 let currentState = State.IDLE;
 let wakeLockSentinel = null;
+let wakeLockFailedLogged = false;
 let tapCount = 0;
 let tapTimer = null;
 let conversationInterval = null;
@@ -619,7 +620,10 @@ async function requestScreenWakeLock() {
         }, 1000);
       });
     } catch (err) {
-      log(`⚠️ Wake Lock request note: ${err.name}, ${err.message}`);
+      if (!wakeLockFailedLogged) {
+        console.log(`⚠️ Wake Lock request note: ${err.name}, ${err.message} (Keep-Awake video maintains screen ON)`);
+        wakeLockFailedLogged = true;
+      }
       wakeLockSentinel = null;
     } finally {
       isAcquiringWakeLock = false;
