@@ -33,16 +33,17 @@ let conversationTimeRemaining = 0;
 let sleepTimer = null;
 let pendingSleepCommand = false;
 const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
-
+ 
 function wakeUp() {
   if (currentState !== State.SLEEPING) return;
   
-  log('☀️ System awoken from Sleep Mode.');
+  log('☀️ HAL waking up from Standby (Central eye illuminated).');
   document.body.classList.remove('sleep-mode');
-  if (audioRecorder) audioRecorder.sleeping = false;
-  if (speechRecognizer) speechRecognizer.resume();
+  if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
   setState(State.LISTENING);
   resetSleepTimer();
+  requestScreenWakeLock();
+  ensureKeepAwakeVideoPlaying();
 }
 
 function goToSleep() {
@@ -51,11 +52,13 @@ function goToSleep() {
     return;
   }
   
-  log('🌙 System entering Sleep Mode to conserve OLED power.');
+  log('🌙 HAL entering Standby (Central eye unlit, faceplate remains 100% lit, listening for speech/knock/tap).');
   if (persistentLedOn) setPersistentLed(false);
   document.body.classList.add('sleep-mode');
-  if (audioRecorder) audioRecorder.sleeping = true;
-  if (speechRecognizer) speechRecognizer.pause();
+  // Standby mode: ONLY central LED turns off. Faceplate stays 100% visible at all times!
+  if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
+  if (layerRingOn) layerRingOn.style.opacity = '0.0';
+  if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   setState(State.SLEEPING);
 }
 
@@ -294,6 +297,9 @@ const audioRecorder = new AudioRecorder({
     }
   },
   onSpeechDetected: () => {
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    }
     if (currentState === State.PROCESSING) {
       triggerVoiceBargeIn();
     }
@@ -400,29 +406,113 @@ function triggerVoiceBargeIn() {
   setState(State.LISTENING);
 }
 
-// Screen Wake Lock
-async function requestScreenWakeLock() {
-  if ('wakeLock' in navigator) {
-    try {
-      wakeLockSentinel = await navigator.wakeLock.request('screen');
-      log('🔒 Screen Wake Lock active (Display will stay ON).');
+// ==========================================================================
+// PERMANENT SCREEN WAKE LOCK & KEEP-AWAKE SUBSYSTEM
+// HARD ARCHITECTURAL REQUIREMENT:
+// The hosting iPhone is permanently mounted inside the physical aluminum 
+// desktop monolith on Fab's desk in Miami and permanently plugged into continuous 
+// wall power.
+// - NEVER turn the screen black or dim the faceplate artwork.
+// - Battery saving logic is STRICTLY FORBIDDEN.
+// - The faceplate (#layer-everything-off) must remain 100% visible (opacity: 1.0) 24/7.
+// - Standby mode is expressed EXCLUSIVELY by extinguishing the central red LED.
+// ==========================================================================
 
-      wakeLockSentinel.addEventListener('release', () => {
-        log('🔓 Screen Wake Lock was released.');
-      });
-    } catch (err) {
-      log(`⚠️ Wake Lock error: ${err.name}, ${err.message}`);
+const SILENT_KEEP_AWAKE_MP4 = 'data:video/mp4;base64,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';
+
+let keepAwakeVideo = null;
+
+function initKeepAwakeVideo() {
+  if (keepAwakeVideo) {
+    ensureKeepAwakeVideoPlaying();
+    return;
+  }
+  try {
+    keepAwakeVideo = document.createElement('video');
+    keepAwakeVideo.setAttribute('playsinline', '');
+    keepAwakeVideo.setAttribute('webkit-playsinline', '');
+    keepAwakeVideo.setAttribute('muted', '');
+    keepAwakeVideo.muted = true;
+    keepAwakeVideo.loop = true;
+    keepAwakeVideo.style.position = 'fixed';
+    keepAwakeVideo.style.top = '0';
+    keepAwakeVideo.style.left = '0';
+    keepAwakeVideo.style.width = '1px';
+    keepAwakeVideo.style.height = '1px';
+    keepAwakeVideo.style.opacity = '0.001';
+    keepAwakeVideo.style.pointerEvents = 'none';
+    keepAwakeVideo.style.zIndex = '-999';
+    keepAwakeVideo.src = SILENT_KEEP_AWAKE_MP4;
+    document.body.appendChild(keepAwakeVideo);
+
+    const playPromise = keepAwakeVideo.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => log('📺 Silent Keep-Awake video active (Prevents iOS screen dimming & auto-lock).'))
+        .catch((err) => log(`Note: Keep-Awake video play pending user gesture: ${err.message}`));
     }
-  } else {
-    log('⚠️ Screen Wake Lock API not supported on this browser.');
+  } catch (err) {
+    log(`Keep-Awake video init note: ${err.message}`);
   }
 }
 
+function ensureKeepAwakeVideoPlaying() {
+  if (keepAwakeVideo && keepAwakeVideo.paused) {
+    keepAwakeVideo.play().catch(() => {});
+  }
+}
+
+let isAcquiringWakeLock = false;
+
+async function requestScreenWakeLock() {
+  if (isAcquiringWakeLock) return;
+  if ('wakeLock' in navigator) {
+    try {
+      if (wakeLockSentinel && !wakeLockSentinel.released) {
+        return;
+      }
+      isAcquiringWakeLock = true;
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      log('🔒 Screen Wake Lock active (Display will stay ON permanently).');
+
+      wakeLockSentinel.addEventListener('release', () => {
+        log('🔓 Screen Wake Lock was released by system. Scheduling re-acquisition...');
+        wakeLockSentinel = null;
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            requestScreenWakeLock();
+          }
+        }, 1000);
+      });
+    } catch (err) {
+      log(`⚠️ Wake Lock request note: ${err.name}, ${err.message}`);
+      wakeLockSentinel = null;
+    } finally {
+      isAcquiringWakeLock = false;
+    }
+  } else {
+    log('⚠️ Screen Wake Lock API not supported natively; relying on Keep-Awake video.');
+  }
+  ensureKeepAwakeVideoPlaying();
+}
+
 document.addEventListener('visibilitychange', async () => {
-  if (wakeLockSentinel !== null && document.visibilityState === 'visible') {
+  if (document.visibilityState === 'visible') {
+    log('📱 App visible: re-asserting Screen Wake Lock and Keep-Awake video.');
     await requestScreenWakeLock();
+    ensureKeepAwakeVideoPlaying();
   }
 });
+
+// Periodic heartbeat: Re-check every 15s to guarantee the display never sleeps
+setInterval(() => {
+  if (document.visibilityState === 'visible') {
+    if (!wakeLockSentinel || wakeLockSentinel.released) {
+      requestScreenWakeLock();
+    }
+    ensureKeepAwakeVideoPlaying();
+  }
+}, 15000);
 
 // Master Initialization (Triggered by one tap on INITIALIZE SYSTEM)
 async function initializeSystem() {
@@ -456,7 +546,8 @@ async function initializeSystem() {
     setState(State.LISTENING);
     resetSleepTimer();
 
-    // 5. Request permanent Screen Wake Lock
+    // 5. Request permanent Screen Wake Lock & start keep-awake video
+    initKeepAwakeVideo();
     requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
 
     // 6. Request accelerometer motion permission & begin knock detection
@@ -482,12 +573,16 @@ document.body.addEventListener('click', () => {
   if (currentState === State.SLEEPING) {
     wakeUp();
   }
+  requestScreenWakeLock();
+  ensureKeepAwakeVideoPlaying();
 });
 document.body.addEventListener('touchstart', (e) => {
   if (currentState === State.SLEEPING) {
     e.preventDefault();
     wakeUp();
   }
+  requestScreenWakeLock();
+  ensureKeepAwakeVideoPlaying();
 });
 
 // Start directly in enclosure mode with calibrated vertical offset

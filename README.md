@@ -68,8 +68,7 @@ graph TD
 > A lightweight, highly optimized web application designed to run permanently in a browser environment (with Screen WakeLock) mimicking a native app.
 > - **Continuous Listening:** Captures audio and streams raw 16kHz PCM data.
 > - **Reactive UI:** The iconic red eye scales in brightness and radius based precisely on the amplitude of the incoming user and HAL audio buffers.
-> - **Enclosure Mode:** Includes a hidden diagnostic UI and specific touchscreen calibration features for mounting inside a physical 3D-printed prop.
-> - **Hardware Sleep Mode:** Dynamically dims the OLED screen to conserve power when commanded.
+> - **Optical Standby Mode:** The iPhone is permanently plugged into continuous power inside the physical aluminum desktop prop (never dim or black out the screen). Standby is expressed solely by extinguishing the central red LED, while the physical faceplate remains 100% visible 24/7 with continuous wake lock & keep-awake video loop. Continuous listening stays active to wake instantly on speech or knock.
 
 > **2. The Bridge (WebSockets)**
 > 

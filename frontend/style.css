@@ -215,20 +215,22 @@ body.mode-enclosure #hal-stage {
 
 
 /* ----------------------------------------------------
-   Sleep Mode (OLED Power Saving)
+   Standby Mode (Central Eye Unlit, Faceplate 100% Visible)
    ---------------------------------------------------- */
 body.sleep-mode {
   background-color: #000000;
 }
 
-body.sleep-mode #layer-center-on,
-body.sleep-mode #layer-ring-on,
-body.sleep-mode #layer-3-led-on {
+body.sleep-mode #layer-center-on {
   opacity: 0 !important;
-  transition: opacity 2.5s ease-in-out !important;
+  transition: opacity 1.2s ease-out !important;
+}
+
+body.sleep-mode #layer-ring-on {
+  opacity: 0 !important;
+  transition: opacity 0.2s ease-out !important;
 }
 
 body.sleep-mode #layer-everything-off {
-  opacity: 0.15 !important;
-  transition: opacity 2.5s ease-in-out !important;
+  opacity: 1.0 !important; /* Faceplate stays 100% visible at all times! Never black or broken */
 }

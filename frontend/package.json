@@ -10,5 +10,8 @@
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "nosleep.js": "^0.12.0"
   }
 }
