@@ -128,6 +128,9 @@ class HalConsumer(AsyncWebsocketConsumer):
             try:
                 msg = json.loads(text_data)
                 if isinstance(msg, dict):
+                    if msg.get('type') == 'telemetry':
+                        log(f"📱 [Client Telemetry] {msg.get('message')}")
+                        return
                     if 'volume' in msg:
                         self.current_volume = max(1, min(10, int(msg['volume'])))
                         log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")

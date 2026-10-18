@@ -19,6 +19,7 @@ export class AudioRecorder {
     this.isRecording = false;
     this.muted = false;
     this.sleeping = false;
+    this.lastAcousticTapTime = 0;
   }
 
   async start() {
@@ -66,8 +67,11 @@ export class AudioRecorder {
         const pcmView = new DataView(pcmBuffer);
 
         let sum = 0;
+        let maxPeak = 0;
         for (let i = 0; i < downsampled.length; i++) {
           const s = Math.max(-1, Math.min(1, downsampled[i]));
+          const absVal = Math.abs(s);
+          if (absVal > maxPeak) maxPeak = absVal;
           pcmView.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
           sum += s * s;
         }
@@ -91,8 +95,21 @@ export class AudioRecorder {
         const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 6.5) : 0.0;
         this.onAudioLevel(intensity);
 
-        // When sleeping, do not wake on generic audio loudness; wake-up is strictly by isolated 'HAL' or enclosure knock
+        // Acoustic Tap Detection when sleeping:
+        // Knocks and physical taps on the aluminum enclosure / phone body produce
+        // an instantaneous mechanical impulse: sharp peak, high crest factor, or a sudden
+        // energy spike relative to ambient noise floor.
         if (this.sleeping) {
+          const now = performance.now();
+          if (now - this.lastAcousticTapTime > 500) {
+            const crestFactor = maxPeak / (rms + 0.0001);
+            const isImpulseTap = (maxPeak > 0.25 && crestFactor > 3.0) || (maxPeak > 0.38 && (rms - this.noiseFloor) > 0.08);
+            if (isImpulseTap) {
+              this.lastAcousticTapTime = now;
+              this.onLog(`🥁 [AudioRecorder] Acoustic enclosure tap detected (Peak: ${maxPeak.toFixed(2)}, Crest: ${crestFactor.toFixed(1)}, RMS: ${rms.toFixed(2)})`);
+              this.onWakeTrigger('acoustic_tap');
+            }
+          }
           return;
         }
 

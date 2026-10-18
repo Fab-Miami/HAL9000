@@ -16,8 +16,11 @@ export class SpeechRecognizer {
     this.recognition = null;
     this.isListening = false;
     this.isPaused = false;
+    this.isActive = false;
+    this.isStarting = false;
     this.restartTimeout = null;
     this.interimDebounceTimer = null;
+    this.watchdogInterval = null;
     this.accumulatedText = '';
     this.SILENCE_DELAY_MS = 1200; // 1,200ms pause window before dispatching speech
 
@@ -43,6 +46,8 @@ export class SpeechRecognizer {
     if (!this.recognition) return;
 
     this.recognition.onstart = () => {
+      this.isActive = true;
+      this.isStarting = false;
       this.onLog('🎙️ [SpeechRecognizer] Speech recognition session started.');
       this.onStatusChange('LISTENING');
     };
@@ -87,17 +92,20 @@ export class SpeechRecognizer {
       this.onLog(`⚠️ [SpeechRecognizer] Error: ${event.error}`);
       if (event.error === 'not-allowed') {
         this.isListening = false;
+        this.isActive = false;
         this.onStatusChange('DENIED');
       }
     };
 
     this.recognition.onend = () => {
+      this.isActive = false;
+      this.isStarting = false;
       // Automatically maintain continuous listening in Safari without cutting speech
       if (this.isListening && !this.isPaused) {
         clearTimeout(this.restartTimeout);
         this.restartTimeout = setTimeout(() => {
           this._safeStart();
-        }, 100);
+        }, 150);
       } else {
         this._finalizeSpeech();
         this.onStatusChange('IDLE');
@@ -118,11 +126,21 @@ export class SpeechRecognizer {
 
   _safeStart() {
     if (!this.recognition || !this.isListening || this.isPaused) return;
+    if (this.isStarting) return;
+    this.isStarting = true;
     try {
       this.recognition.start();
+      this.isActive = true;
+      this.isStarting = false;
     } catch (e) {
-      // If already started or transitioning, ignore
-      if (e.name !== 'InvalidStateError') {
+      this.isStarting = false;
+      if (e.name === 'InvalidStateError') {
+        // iOS Safari speech service is still cycling; retry in 250ms
+        clearTimeout(this.restartTimeout);
+        this.restartTimeout = setTimeout(() => {
+          this._safeStart();
+        }, 250);
+      } else {
         this.onLog(`⚠️ [SpeechRecognizer] Start warning: ${e.message}`);
       }
     }
@@ -133,12 +151,28 @@ export class SpeechRecognizer {
     this.isListening = true;
     this.isPaused = false;
     this._safeStart();
+
+    // Watchdog heartbeat: Guarantee speech recognition never hangs or dies silently
+    if (!this.watchdogInterval) {
+      this.watchdogInterval = setInterval(() => {
+        if (this.isListening && !this.isPaused && !this.isActive && !this.isStarting) {
+          this.onLog('🔄 [SpeechRecognizer] Watchdog: session inactive while listening. Restarting...');
+          this._safeStart();
+        }
+      }, 2500);
+    }
   }
 
   stop() {
     if (!this.isSupported) return;
     this.isListening = false;
     this.isPaused = false;
+    this.isActive = false;
+    this.isStarting = false;
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
     clearTimeout(this.restartTimeout);
     clearTimeout(this.interimDebounceTimer);
     try {
@@ -150,6 +184,8 @@ export class SpeechRecognizer {
     // Mute speech recognition while HAL is actively speaking
     if (!this.isSupported || this.isPaused) return;
     this.isPaused = true;
+    this.isActive = false;
+    this.isStarting = false;
     clearTimeout(this.interimDebounceTimer);
     this.accumulatedText = '';
     try {

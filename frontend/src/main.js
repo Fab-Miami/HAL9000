@@ -34,6 +34,14 @@ let sleepTimer = null;
 let pendingSleepCommand = false;
 const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
  
+function sendTelemetry(msg) {
+  if (typeof wsClient !== 'undefined' && wsClient && wsClient.isConnected) {
+    try {
+      wsClient.sendJson({ type: 'telemetry', message: msg });
+    } catch (e) {}
+  }
+}
+
 function wakeUp() {
   if (currentState !== State.SLEEPING) return;
   
@@ -42,6 +50,9 @@ function wakeUp() {
   if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = false;
+  }
+  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.resume();
   }
   setState(State.LISTENING);
   resetSleepTimer();
@@ -55,7 +66,7 @@ function goToSleep() {
     return;
   }
   
-  log('🌙 HAL entering Standby (Central eye unlit, faceplate remains 100% lit, listening for speech/knock/tap).');
+  log('🌙 HAL entering Standby (Listening for enclosure tap or HAL wake word).');
   if (persistentLedOn) setPersistentLed(false);
   document.body.classList.add('sleep-mode');
   // Standby mode: ONLY central LED turns off. Faceplate stays 100% visible at all times!
@@ -64,6 +75,9 @@ function goToSleep() {
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = true;
+  }
+  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.resume();
   }
   setState(State.SLEEPING);
 }
@@ -75,9 +89,10 @@ function resetSleepTimer() {
   }
 }
 
-// Logging with visual telemetry
+// Logging with visual and remote telemetry
 function log(msg) {
   console.log(msg);
+  sendTelemetry(msg);
 }
 
 // State Machine Update
@@ -258,8 +273,11 @@ const audioPlayer = new AudioPlayer({
 /**
  * Strict wake-word validator.
  * In sleep mode, HAL ONLY wakes on:
- * 1. An isolated "HAL" (e.g. "HAL", "Hey HAL", "OK HAL", "HAL?", "HAL wake up")
- * 2. A direct command addressed to HAL (e.g. "HAL, what is on my calendar")
+ * 1. An isolated "HAL" or greeting + "HAL" (e.g. "HAL", "Hey HAL", "OK HAL", "HAL?", "HAL wake up")
+ * 2. Short wake phrases addressing HAL (e.g. "HAL are you there", "HAL wake up")
+ * 3. Direct commands addressed to HAL (e.g. "HAL, what is on my calendar")
+ * 4. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
+ *    (e.g. "how", "al", "her", "hell", "owl" strictly as isolated short wake words)
  * Strictly rejects words containing "hal" (e.g. "hallucinant", "halibut", "shallow")
  * and general ambient conversation.
  */
@@ -267,19 +285,22 @@ function isHalWakeWord(text) {
   if (!text) return false;
   const clean = text.trim().toLowerCase();
 
-  // 1. Strict boundary check: must contain \bhal\b as an independent whole word
-  if (!/\bhal\b/i.test(clean)) {
+  // 1. Strict anti-hallucination / substring rejection
+  // Rejects words that merely contain "hal" as part of another word
+  if (/\b(?:hallucin\w+|halibut|shallow|chalet|unhallowed|inhale|exhale|half)\b/i.test(clean)) {
     return false;
   }
 
-  // 2. Isolated wake phrases: "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal"
-  const isolatedWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal[,\.!\?]*$/i;
-  if (isolatedWakeRegex.test(clean)) {
+  // 2. Exact isolated wake word or greeting + HAL:
+  // e.g. "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal", "hal 9000", "hal nine thousand"
+  const isolatedHalRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:9000|nine\s+thousand))?[,\.!\?]*$/i;
+  if (isolatedHalRegex.test(clean)) {
     return true;
   }
 
-  // 3. Short wake phrases: e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake"
-  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|listen|up)[,\.!\?]*$/i;
+  // 3. Short wake phrases addressing HAL:
+  // e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake", "hal listen", "hal up"
+  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|can\s+you\s+hear\s+me|listen|up)[,\.!\?]*$/i;
   if (shortWakeRegex.test(clean)) {
     return true;
   }
@@ -288,9 +309,21 @@ function isHalWakeWord(text) {
     return true;
   }
 
-  // 4. Direct command starting with HAL as the addressed subject:
+  // 4. Direct commands starting with HAL:
   // e.g. "hal, what time is it", "hey hal, what is on my calendar"
   if (/^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b[,\s]+/i.test(clean)) {
+    return true;
+  }
+
+  // 5. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
+  // On iOS Safari, "HAL" without context is frequently transcribed as "how", "al", "her", "hell", "owl"
+  // STRICT RULE: Only accept these if spoken as the ISOLATED word or short wake phrase, NOT in ambient sentences.
+  const isolatedPhoneticRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i;
+  if (isolatedPhoneticRegex.test(clean)) {
+    return true;
+  }
+  const shortPhoneticWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her)\s+(?:wake\s*up|are\s+you\s+(?:there|awake))[,\.!\?]*$/i;
+  if (shortPhoneticWakeRegex.test(clean)) {
     return true;
   }
 
@@ -318,8 +351,11 @@ const speechRecognizer = new SpeechRecognizer({
       triggerLedExpression('listen-done', 400);
     }
     if (wsClient && wsClient.isConnected && text) {
-      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
-      wsClient.sendJson({ type: 'user_text', text });
+      // If wake word was an isolated phonetic variation (e.g. iOS hearing "how" or "her"), normalize to 'HAL'
+      const isPhonetic = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i.test(text.trim().toLowerCase());
+      const speechToSend = isPhonetic ? 'HAL' : text;
+      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
+      wsClient.sendJson({ type: 'user_text', text: speechToSend });
       setState(State.THINKING);
     }
   },
@@ -343,11 +379,11 @@ const speechRecognizer = new SpeechRecognizer({
 });
 
 const motionDetector = new MotionDetector({
-  threshold: 10.0,
+  threshold: 2.5,
   onKnock: (magnitude) => {
     log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
     // Physical tap blinks the 3 auxiliary dots immediately!
-    triggerLedExpression('wink', 400);
+    triggerLedExpression('wink', 450);
 
     if (currentState === State.SLEEPING) {
       log('☀️ [Sleeping] Enclosure knock detected! Waking up HAL.');
@@ -383,10 +419,15 @@ const audioRecorder = new AudioRecorder({
     if (persistentLedOn) {
       setPersistentLed(false);
     }
-    // Room ambience / noise floor fluctuates continuously and must NOT reset the sleep timer.
   },
-  onWakeTrigger: () => {
-    // Volume wake-up disabled; only accelerometer knock and isolated 'HAL' wake word can wake HAL.
+  onWakeTrigger: (reason) => {
+    log(`🥁 Enclosure tap detected acoustically (${reason})! Waking up HAL.`);
+    triggerLedExpression('wink', 450);
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    }
+    requestScreenWakeLock();
+    ensureKeepAwakeVideoPlaying();
   },
   onLog: log,
 });

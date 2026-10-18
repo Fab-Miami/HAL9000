@@ -6,8 +6,8 @@
  */
 
 export class MotionDetector {
-  constructor({ threshold = 12.0, cooldownMs = 600, onKnock, onLog } = {}) {
-    this.threshold = threshold; // Acceleration magnitude spike in m/s²
+  constructor({ threshold = 2.5, cooldownMs = 500, onKnock, onLog } = {}) {
+    this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for enclosure/desk finger taps)
     this.cooldownMs = cooldownMs; // Prevent duplicate knock triggers from ringing vibrations
     this.onKnock = onKnock || (() => {});
     this.onLog = onLog || console.log;
@@ -71,17 +71,18 @@ export class MotionDetector {
   }
 
   _handleMotion(event) {
-    let magnitude = 0;
-
+    let magLinear = 0;
     // Primary: Linear acceleration (gravity isolated by iOS hardware fusion)
     if (event.acceleration && event.acceleration.x !== null) {
       const ax = event.acceleration.x || 0;
       const ay = event.acceleration.y || 0;
       const az = event.acceleration.z || 0;
-      magnitude = Math.hypot(ax, ay, az);
-    } 
-    // Fallback: High-pass jerk filter on raw acceleration including gravity
-    else if (event.accelerationIncludingGravity) {
+      magLinear = Math.hypot(ax, ay, az);
+    }
+
+    let magJerk = 0;
+    // Secondary: High-pass jerk filter on raw acceleration including gravity
+    if (event.accelerationIncludingGravity) {
       const gx = event.accelerationIncludingGravity.x || 0;
       const gy = event.accelerationIncludingGravity.y || 0;
       const gz = event.accelerationIncludingGravity.z || 0;
@@ -90,7 +91,7 @@ export class MotionDetector {
         const dx = gx - this.lastX;
         const dy = gy - this.lastY;
         const dz = gz - this.lastZ;
-        magnitude = Math.hypot(dx, dy, dz);
+        magJerk = Math.hypot(dx, dy, dz);
       }
 
       this.lastX = gx;
@@ -98,6 +99,9 @@ export class MotionDetector {
       this.lastZ = gz;
       this.hasPreviousGravitySample = true;
     }
+
+    // Capture highest impulse between linear acceleration and jerk filter
+    const magnitude = Math.max(magLinear, magJerk);
 
     // Check if mechanical shockwave exceeds knock threshold
     if (magnitude > this.threshold) {
