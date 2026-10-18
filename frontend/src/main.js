@@ -103,56 +103,75 @@ function resetToStandby() {
   if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
 }
 
-// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Knock / TAG ONLY)
-let dotFlashTimer = null;
-function flashDots(mode = 'bright', durationMs = 220) {
-  clearTimeout(dotFlashTimer);
+// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Emotional Body Language)
+let ledAnimTimeout = null;
+
+function clearLedAnimations() {
+  clearTimeout(ledAnimTimeout);
   if (!layer3LedOn) return;
+  layer3LedOn.classList.remove(
+    'led-anim-chuckle',
+    'led-anim-laugh',
+    'led-anim-wink',
+    'led-anim-ponder',
+    'led-anim-breathe',
+    'led-anim-warm',
+    'led-anim-alert',
+    'led-anim-heartbeat'
+  );
+}
 
-  if (mode === 'double') {
-    layer3LedOn.style.opacity = '1.0';
-    setTimeout(() => {
-      if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-      setTimeout(() => {
-        if (layer3LedOn) layer3LedOn.style.opacity = '1.0';
-        setTimeout(() => {
-          if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
-        }, 120);
-      }, 70);
-    }, 120);
-    return;
-  }
+function triggerLedExpression(exprName, durationMs = 1000) {
+  if (!layer3LedOn) return;
+  clearLedAnimations();
 
-  if (mode === 'soft') {
-    layer3LedOn.style.opacity = '0.6';
-  } else {
-    layer3LedOn.style.opacity = '1.0';
-  }
+  // Set CSS variable for return opacity
+  layer3LedOn.style.setProperty('--persistent-led', persistentLedOn ? '1.0' : '0.0');
 
-  dotFlashTimer = setTimeout(() => {
-    if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+  // Trigger reflow to restart animation if repeated
+  void layer3LedOn.offsetWidth;
+
+  const className = `led-anim-${exprName.toLowerCase()}`;
+  layer3LedOn.classList.add(className);
+
+  ledAnimTimeout = setTimeout(() => {
+    clearLedAnimations();
+    if (layer3LedOn) {
+      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+    }
   }, durationMs);
 }
 
 function handleEmotionTag(tag) {
   log(`💡 [HAL Emotion Tag] Received: ${tag}`);
-  const t = (tag || '').toUpperCase();
-  if (t === 'ON' || t === 'LED_ON' || t === 'LIGHTS_ON') {
+  const t = (tag || '').toLowerCase().trim();
+  
+  if (t === 'on' || t === 'led_on' || t === 'lights_on') {
+    clearLedAnimations();
     setPersistentLed(true);
     return;
   }
-  if (t === 'OFF' || t === 'LED_OFF' || t === 'LIGHTS_OFF') {
+  if (t === 'off' || t === 'led_off' || t === 'lights_off') {
+    clearLedAnimations();
     setPersistentLed(false);
     return;
   }
-  if (t === 'ALERT' || t === 'ANGER' || t === 'WARN') {
-    flashDots('double', 400);
-  } else if (t === 'SURPRISE' || t === 'EMOTION') {
-    flashDots('bright', 650);
-  } else if (t === 'PONDER') {
-    flashDots('soft', 400);
+  
+  if (t === 'chuckle' || t === 'laugh' || t === 'amuse') {
+    triggerLedExpression('chuckle', 750);
+  } else if (t === 'wink' || t === 'cheeky' || t === 'tease') {
+    triggerLedExpression('wink', 450);
+  } else if (t === 'ponder' || t === 'breathe' || t === 'think') {
+    triggerLedExpression('breathe', 1900);
+  } else if (t === 'warm' || t === 'glow' || t === 'cozy') {
+    triggerLedExpression('warm', 2500);
+  } else if (t === 'alert' || t === 'danger' || t === 'warn' || t === 'shock') {
+    triggerLedExpression('alert', 550);
+  } else if (t === 'heartbeat' || t === 'love' || t === 'emotion') {
+    triggerLedExpression('heartbeat', 950);
   } else {
-    flashDots('bright', 350);
+    // Default expressive blink
+    triggerLedExpression('wink', 450);
   }
 }
 
@@ -248,7 +267,7 @@ const motionDetector = new MotionDetector({
   onKnock: (magnitude) => {
     log(`💥 Enclosure knock detected (${magnitude.toFixed(1)} m/s²)!`);
     // Physical tap blinks the 3 auxiliary dots immediately!
-    flashDots('bright', 220);
+    triggerLedExpression('wink', 400);
 
     if (currentState === State.SLEEPING) {
       wakeUp();

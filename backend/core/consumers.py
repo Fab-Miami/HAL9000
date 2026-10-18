@@ -272,8 +272,8 @@ class HalConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=f"LED:{led_state}")
             text = re.sub(r'\[?(?:led|lights):\s*(?:on|off)\]?|\[LED[_\-\s]*(?:ON|OFF)\]|\[LIGHTS[_\-\s]*(?:ON|OFF)\]', '', text, flags=re.IGNORECASE).strip()
 
-        # 4. Optical Emotion tags: [tag: alert], [mood: surprise], [ALERT], etc.
-        tag_match = re.search(r'\[?(?:tag|mood|emotion):\s*([a-zA-Z0-9_\-]+)\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', text, re.IGNORECASE)
+        # 4. Emotional LED Expressions & Optical Tags: [led: chuckle], [led: wink], [led: ponder], [led: breathe], [led: warm], [led: alert], [led: heartbeat], [tag: ...], [mood: ...]
+        tag_match = re.search(r'\[?(?:led|lights|tag|mood|emotion):\s*([a-zA-Z0-9_\-]+)\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER|CHUCKLE|LAUGH|WINK|BREATHE|WARM|HEARTBEAT)\]', text, re.IGNORECASE)
         if tag_match:
             tag_name = (tag_match.group(1) or tag_match.group(2)).upper()
             if tag_name in ('LED_ON', 'LIGHTS_ON', 'ON'):
@@ -283,9 +283,9 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"💡 [HalConsumer] Optical LED OFF command parsed: {tag_name}")
                 await self.send(text_data="LED:OFF")
             else:
-                log(f"💡 [HalConsumer] Optical tag parsed from HAL text: {tag_name}")
+                log(f"💡 [HalConsumer] Emotional LED tag parsed from HAL text: {tag_name}")
                 await self.send(text_data=f"TAG:{tag_name}")
-            text = re.sub(r'\[?(?:tag|mood|emotion):\s*[a-zA-Z0-9_\-]+\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER)\]', '', text, flags=re.IGNORECASE).strip()
+            text = re.sub(r'\[?(?:led|lights|tag|mood|emotion):\s*[a-zA-Z0-9_\-]+\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER|CHUCKLE|LAUGH|WINK|BREATHE|WARM|HEARTBEAT)\]', '', text, flags=re.IGNORECASE).strip()
 
         return text
 
