@@ -7,11 +7,10 @@ import { MotionDetector } from './motion-detector.js';
 // DOM Elements
 const appEl = document.getElementById('app');
 const halStage = document.getElementById('hal-stage');
-const layerChassis = document.getElementById('layer-chassis');
-const layerRing = document.getElementById('layer-ring');
-const layerCenter = document.getElementById('layer-center');
-const layerDots = document.getElementById('layer-dots');
-const layerMask = document.getElementById('layer-mask');
+const layerEverythingOff = document.getElementById('layer-everything-off');
+const layer3LedOn = document.getElementById('layer-3-led-on');
+const layerCenterOn = document.getElementById('layer-center-on');
+const layerRingOn = document.getElementById('layer-ring-on');
 const initOverlay = document.getElementById('init-overlay');
 
 // System States
@@ -84,28 +83,28 @@ function setState(newState) {
   log(`🔄 State Transition -> ${newState}`);
 }
 
-// Standby State: Center dot strictly ON and STATIC; listening ring and aux dots strictly OFF
+// Standby State: Center dot strictly ON and STATIC; listening ring and 3 LEDs strictly OFF
 function resetToStandby() {
   if (currentState === State.SLEEPING) return;
-  if (layerCenter) layerCenter.style.opacity = '1.0';
-  if (layerRing) layerRing.style.opacity = '0.0';
-  if (layerDots) layerDots.style.opacity = '0.0';
+  if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
+  if (layerRingOn) layerRingOn.style.opacity = '0.0';
+  if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
 }
 
 // HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Knock / TAG ONLY)
 let dotFlashTimer = null;
 function flashDots(mode = 'bright', durationMs = 220) {
   clearTimeout(dotFlashTimer);
-  if (!layerDots) return;
+  if (!layer3LedOn) return;
 
   if (mode === 'double') {
-    layerDots.style.opacity = '1.0';
+    layer3LedOn.style.opacity = '1.0';
     setTimeout(() => {
-      if (layerDots) layerDots.style.opacity = '0.0';
+      if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
       setTimeout(() => {
-        if (layerDots) layerDots.style.opacity = '1.0';
+        if (layer3LedOn) layer3LedOn.style.opacity = '1.0';
         setTimeout(() => {
-          if (layerDots) layerDots.style.opacity = '0.0';
+          if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
         }, 120);
       }, 70);
     }, 120);
@@ -113,13 +112,13 @@ function flashDots(mode = 'bright', durationMs = 220) {
   }
 
   if (mode === 'soft') {
-    layerDots.style.opacity = '0.6';
+    layer3LedOn.style.opacity = '0.6';
   } else {
-    layerDots.style.opacity = '1.0';
+    layer3LedOn.style.opacity = '1.0';
   }
 
   dotFlashTimer = setTimeout(() => {
-    if (layerDots) layerDots.style.opacity = '0.0';
+    if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   }, durationMs);
 }
 
@@ -147,34 +146,34 @@ function updateVisuals(intensity, isHalSpeech = false) {
   if (isHalSpeech) {
     // When HAL speaks:
     // 1. Listening ring is strictly OFF
-    if (layerRing) {
-      layerRing.style.opacity = '0.0';
+    if (layerRingOn) {
+      layerRingOn.style.opacity = '0.0';
     }
     // 2. Central dot slightly blinks with speech audio waveform
-    if (layerCenter) {
+    if (layerCenterOn) {
       const halBlink = (0.72 + norm * 0.28).toFixed(2);
-      layerCenter.style.opacity = halBlink;
+      layerCenterOn.style.opacity = halBlink;
     }
   } else {
     // When User speaks or is in Standby:
     if (norm > 0.04) {
       // User is speaking:
       // 1. Dim central dot to 75%
-      if (layerCenter) {
-        layerCenter.style.opacity = '0.75';
+      if (layerCenterOn) {
+        layerCenterOn.style.opacity = '0.75';
       }
       // 2. Animate (lighten) the outer ring with voice energy
-      if (layerRing) {
+      if (layerRingOn) {
         const ringLevel = Math.min(1.0, norm * 1.35).toFixed(2);
-        layerRing.style.opacity = ringLevel;
+        layerRingOn.style.opacity = ringLevel;
       }
     } else {
       // Standby / silence between words: Center dot ON and STATIC, ring OFF
-      if (layerCenter) {
-        layerCenter.style.opacity = '1.0';
+      if (layerCenterOn) {
+        layerCenterOn.style.opacity = '1.0';
       }
-      if (layerRing) {
-        layerRing.style.opacity = '0.0';
+      if (layerRingOn) {
+        layerRingOn.style.opacity = '0.0';
       }
     }
   }
