@@ -10,8 +10,7 @@ const halStage = document.getElementById('hal-stage');
 const layerChassis = document.getElementById('layer-chassis');
 const layerRing = document.getElementById('layer-ring');
 const layerCenter = document.getElementById('layer-center');
-const layerDotsSoft = document.getElementById('layer-dots-soft');
-const layerDotsBright = document.getElementById('layer-dots-bright');
+const layerDots = document.getElementById('layer-dots');
 const layerMask = document.getElementById('layer-mask');
 const initOverlay = document.getElementById('init-overlay');
 
@@ -90,40 +89,37 @@ function resetToStandby() {
   if (currentState === State.SLEEPING) return;
   if (layerCenter) layerCenter.style.opacity = '1.0';
   if (layerRing) layerRing.style.opacity = '0.0';
-  if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
-  if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
+  if (layerDots) layerDots.style.opacity = '0.0';
 }
 
-// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite Dots (Knock / TAG ONLY)
+// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Knock / TAG ONLY)
 let dotFlashTimer = null;
 function flashDots(mode = 'bright', durationMs = 220) {
   clearTimeout(dotFlashTimer);
+  if (!layerDots) return;
 
   if (mode === 'double') {
-    if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
+    layerDots.style.opacity = '1.0';
     setTimeout(() => {
-      if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+      if (layerDots) layerDots.style.opacity = '0.0';
       setTimeout(() => {
-        if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
+        if (layerDots) layerDots.style.opacity = '1.0';
         setTimeout(() => {
-          if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
+          if (layerDots) layerDots.style.opacity = '0.0';
         }, 120);
       }, 70);
     }, 120);
     return;
   }
 
-  if (mode === 'bright') {
-    if (layerDotsBright) layerDotsBright.style.opacity = '1.0';
-    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
-  } else if (mode === 'soft') {
-    if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
-    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.85';
+  if (mode === 'soft') {
+    layerDots.style.opacity = '0.6';
+  } else {
+    layerDots.style.opacity = '1.0';
   }
 
   dotFlashTimer = setTimeout(() => {
-    if (layerDotsBright) layerDotsBright.style.opacity = '0.0';
-    if (layerDotsSoft) layerDotsSoft.style.opacity = '0.0';
+    if (layerDots) layerDots.style.opacity = '0.0';
   }, durationMs);
 }
 
@@ -134,6 +130,8 @@ function handleEmotionTag(tag) {
     flashDots('double', 400);
   } else if (t === 'SURPRISE' || t === 'EMOTION') {
     flashDots('bright', 650);
+  } else if (t === 'PONDER') {
+    flashDots('soft', 400);
   } else {
     flashDots('bright', 350);
   }

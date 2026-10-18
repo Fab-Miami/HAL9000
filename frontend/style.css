@@ -104,14 +104,8 @@ html, body {
   transition: opacity 0.08s ease-out;
 }
 
-#layer-dots-soft {
+#layer-dots {
   z-index: 4;
-  opacity: 0.0;
-  transition: opacity 0.2s ease-out;
-}
-
-#layer-dots-bright {
-  z-index: 5;
   opacity: 0.0;
   transition: opacity 0.15s ease-out;
 }
@@ -159,8 +153,7 @@ body.sleep-mode {
 
 body.sleep-mode #layer-center,
 body.sleep-mode #layer-ring,
-body.sleep-mode #layer-dots-soft,
-body.sleep-mode #layer-dots-bright,
+body.sleep-mode #layer-dots,
 body.sleep-mode #layer-mask {
   opacity: 0 !important;
   transition: opacity 2.5s ease-in-out !important;
