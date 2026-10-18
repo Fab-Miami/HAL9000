@@ -5,13 +5,14 @@ import base64
 import json
 import asyncio
 import re
-from datetime import timedelta
+import zoneinfo
+from datetime import datetime, timedelta
 from django.utils import timezone
 from asgiref.sync import sync_to_async
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from .models import ConversationHistory, ConversationSummary
+from .models import ConversationHistory, DailySummary, CoreMemoryProfile, ConversationSummary
 from .tasks_api import get_shopping_list_tasks, add_task_to_shopping_list, remove_task_from_shopping_list
 from .calendar_api import get_calendar_events, create_calendar_event
 
@@ -139,22 +140,89 @@ def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1, sa
         wav_file.setnchannels(channels)
         wav_file.setsampwidth(sample_width)
         wav_file.setframerate(sample_rate)
-        wav_file.writeframes(pcm_bytes)
     return wav_io.getvalue()
+
+MIAMI_TZ = zoneinfo.ZoneInfo("America/New_York")
+
+def get_current_day_boundary(now_dt=None):
+    """
+    Returns (start_local, end_local, date_label, start_utc, end_utc).
+    Day cycle is strictly 04:00 AM to 04:00 AM next day (Miami local time).
+    """
+    if now_dt is None:
+        now_dt = datetime.now(MIAMI_TZ)
+    elif now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=MIAMI_TZ)
+    else:
+        now_dt = now_dt.astimezone(MIAMI_TZ)
+
+    cutoff_today = now_dt.replace(hour=4, minute=0, second=0, microsecond=0)
+    if now_dt >= cutoff_today:
+        start_local = cutoff_today
+        date_label = now_dt.strftime("%Y-%m-%d")
+    else:
+        start_local = cutoff_today - timedelta(days=1)
+        date_label = (now_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(zoneinfo.ZoneInfo("UTC"))
+    end_utc = end_local.astimezone(zoneinfo.ZoneInfo("UTC"))
+    return start_local, end_local, date_label, start_utc, end_utc
 
 def load_history(client_id):
     """
-    Loads recent conversation turns from Django DB into Gemini's Content format,
-    plus retrieves any persistent long-term summaries.
-    Enforces clean alternating user/model turns starting with a user turn.
+    Loads:
+    1. Tier 1: Core Long-Term Memory Profile (Evergreen background profile).
+    2. Tier 2: Recent Episodic Memory (up to 10 past DailySummaries with dates).
+    3. Tier 3: Full 24H active conversation turns since today's 4:00 AM Miami boundary.
+    Returns: (gemini_contents_for_tier3, formatted_memory_instruction_for_tier1_and_tier2)
     """
-    # 1. Fetch persistent long-term memory summaries
-    summaries = ConversationSummary.objects.filter(client_id=client_id).order_by('created_at')
-    summaries_text = "\n".join([f"- [{s.created_at.strftime('%Y-%m-%d')}] {s.summary_text}" for s in summaries])
+    # Tier 1: Core Long-Term Knowledge Profile
+    core_profile = ""
+    try:
+        core_obj = CoreMemoryProfile.objects.filter(client_id=client_id).first()
+        if not core_obj:
+            # Check legacy ConversationSummary for auto-migration
+            legacy = ConversationSummary.objects.filter(client_id=client_id).order_by('-created_at').first()
+            if legacy and legacy.summary_text:
+                core_obj = CoreMemoryProfile.objects.create(
+                    client_id=client_id,
+                    profile_markdown=legacy.summary_text.strip()
+                )
+        if core_obj and core_obj.profile_markdown:
+            core_profile = core_obj.profile_markdown.strip()
+    except Exception as e:
+        print(f"⚠️ [Memory] Error loading core profile: {e}")
 
-    # 2. Fetch all recent turns in chronological order
-    raw_history = list(ConversationHistory.objects.filter(client_id=client_id).order_by('created_at'))
-    
+    # Tier 2: Last 10 Daily Summaries (ordered chronologically)
+    daily_summaries_text = ""
+    try:
+        summaries = DailySummary.objects.filter(client_id=client_id).order_by('date')[:10]
+        summary_lines = []
+        for s in summaries:
+            summary_lines.append(f"### [{s.date.strftime('%Y-%m-%d')}]\n{s.summary_text.strip()}")
+        if summary_lines:
+            daily_summaries_text = "\n\n".join(summary_lines)
+    except Exception as e:
+        print(f"⚠️ [Memory] Error loading daily summaries: {e}")
+
+    # Format Memory Injection for System Prompt
+    memory_blocks = []
+    if core_profile:
+        memory_blocks.append(f"--- CORE LONG-TERM KNOWLEDGE ARCHIVE ---\n{core_profile}")
+    if daily_summaries_text:
+        memory_blocks.append(f"--- RECENT EPISODIC MEMORY (PAST 10 DAYS) ---\n{daily_summaries_text}")
+    combined_memory_text = "\n\n".join(memory_blocks)
+
+    # Tier 3: Full Current 24H Cycle (since 4:00 AM Miami boundary)
+    _, _, _, start_utc, _ = get_current_day_boundary()
+    raw_history = list(
+        ConversationHistory.objects.filter(
+            client_id=client_id,
+            created_at__gte=start_utc
+        ).order_by('created_at')
+    )
+
     # Consolidate adjacent items of the same role
     consolidated = []
     for item in raw_history:
@@ -170,12 +238,7 @@ def load_history(client_id):
     while consolidated and consolidated[0]['role'] != 'user':
         consolidated.pop(0)
 
-    # Keep the last 10 turns (up to 5 full user/model dialogue exchanges)
-    if len(consolidated) > 10:
-        consolidated = consolidated[-10:]
-        while consolidated and consolidated[0]['role'] != 'user':
-            consolidated.pop(0)
-
+    # Format into Gemini Content parts
     contents = []
     for item in consolidated:
         contents.append(
@@ -184,12 +247,12 @@ def load_history(client_id):
                 parts=[types.Part.from_text(text=item['text'])]
             )
         )
-    return contents, summaries_text
+    return contents, combined_memory_text
 
 def save_history(client_id, gemini_history_contents, latest_user_transcript=""):
     """
-    Saves the full Gemini history into SQLite.
-    Consolidates streaming chunks, attaches extracted user transcripts, and removes raw audio blobs.
+    Persists turns for the current active day (since 4:00 AM Miami) into SQLite.
+    Never wipes out previous days or historical raw data.
     """
     try:
         raw_items = []
@@ -225,7 +288,7 @@ def save_history(client_id, gemini_history_contents, latest_user_transcript=""):
                     consolidated[i]['text'] = clean_transcript
                     break
 
-        # Filter out empty or pure silence turns and clean up DB
+        # Filter out empty or pure silence turns
         db_records = []
         for item in consolidated:
             text = item['text'].strip()
@@ -244,10 +307,12 @@ def save_history(client_id, gemini_history_contents, latest_user_transcript=""):
                     content=text
                 ))
 
-        ConversationHistory.objects.filter(client_id=client_id).delete()
         if db_records:
+            _, _, _, start_utc, _ = get_current_day_boundary()
+            # Only update current day's slice in SQLite (never touch turns from previous days)
+            ConversationHistory.objects.filter(client_id=client_id, created_at__gte=start_utc).delete()
             ConversationHistory.objects.bulk_create(db_records)
-            print(f"💾 [LLM] Saved {len(db_records)} consolidated history items for {client_id}.")
+            print(f"💾 [LLM] Saved {len(db_records)} active day history items for {client_id}.")
             
     except Exception as e:
         print(f"⚠️ [LLM] Error saving history for {client_id}: {e}")
@@ -255,16 +320,15 @@ def save_history(client_id, gemini_history_contents, latest_user_transcript=""):
 def create_chat_session(history=None, summaries_text="", current_volume=5):
     """
     Initializes a new Gemini Async ChatSession with:
-    - Base HAL 9000 prompt + volume instructions + silence directive
-    - Current hardware volume state (1-10)
-    - Long-term memory summaries injected into the system instruction
-    - Pure conversational zero-overhead mode
-    - Recent conversation turn history
+    - Base HAL 9000 prompt
+    - Tier 1 Core Long-Term Memory Profile + Tier 2 Recent Episodic Summaries
+    - Hardware volume state (1-10)
+    - Full 24H active turn history (Tier 3)
     """
     full_instruction = BASE_PROMPT
     
     if summaries_text:
-        full_instruction += f"\n\n--- LONG-TERM MEMORY ARCHIVE ---\n{summaries_text}"
+        full_instruction += f"\n\n{summaries_text}"
         
     full_instruction += f"\n\nCURRENT CONTEXT:\nYour current location is Miami Beach."
     
@@ -290,52 +354,126 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
 
 def summarize_old_conversations(client_id):
     """
-    Finds conversations older than 7 days, summarizes them, and purges the raw history.
-    This should be called as an async background task.
+    Daily rollover and long-term memory synthesis:
+    1. Finds all conversation turns prior to today's 4:00 AM Miami boundary.
+    2. Groups them by their Miami 24H cycle date.
+    3. Aggressively distills each day into a DailySummary (discarding operational fluff/noise).
+    4. Purges summarized raw turns.
+    5. If more than 10 DailySummaries exist, consolidates oldest summaries into CoreMemoryProfile.
     """
     try:
-        one_week_ago = timezone.now() - timedelta(days=7)
-        old_items = ConversationHistory.objects.filter(
-            client_id=client_id,
-            created_at__lt=one_week_ago
-        ).order_by('created_at')
-        
-        if old_items.count() < 10:
-            return # Not enough content to summarize yet
-            
-        print(f"🧠 [Memory] Summarizing {old_items.count()} old conversation turns for {client_id}...")
-        
-        # Build text transcript for summarization
-        transcript = ""
-        for item in old_items:
-            transcript += f"{item.role.upper()}: {item.content}\n"
-            
-        summary_prompt = (
-            "You are HAL 9000's long-term memory consolidation system. "
-            "Analyze the following conversation history with Fab and produce a concise, factual bullet-point summary "
-            "of key facts, preferences, user habits, completed tasks, and recurring context. "
-            "Do not include conversational filler.\n\n"
-            f"{transcript}"
-        )
-        
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=summary_prompt
-        )
-        
-        if response and response.text:
-            # Save the new summary block
-            ConversationSummary.objects.create(
+        _, _, _, start_utc, _ = get_current_day_boundary()
+        old_turns = list(
+            ConversationHistory.objects.filter(
                 client_id=client_id,
-                summary_text=response.text.strip()
+                created_at__lt=start_utc
+            ).order_by('created_at')
+        )
+        
+        if not old_turns:
+            return  # No unsummarized turns prior to today's 4 AM
+            
+        print(f"🧠 [Memory] Found {len(old_turns)} turns prior to today's 4 AM boundary for {client_id}. Processing rollover...")
+
+        # Group turns by Miami 4AM-to-4AM day label
+        days_map = {}
+        for turn in old_turns:
+            local_time = turn.created_at.astimezone(MIAMI_TZ)
+            _, _, date_label, _, _ = get_current_day_boundary(local_time)
+            if date_label not in days_map:
+                days_map[date_label] = []
+            days_map[date_label].append(turn)
+
+        for date_label, turns in days_map.items():
+            day_date = datetime.strptime(date_label, "%Y-%m-%d").date()
+            if not DailySummary.objects.filter(client_id=client_id, date=day_date).exists():
+                transcript = ""
+                for t in turns:
+                    transcript += f"{t.role.upper()}: {t.content}\n"
+                
+                distill_prompt = f"""You are HAL 9000's cognitive memory consolidation system.
+Analyze the following conversation dialogue between Fab and HAL from {date_label}.
+
+STRICT DISTILLATION RULES:
+1. AGGRESSIVE FILTERING: Most everyday interactions (asking the time, adjusting volume, turning lights on/off, silence checks, greetings, test chatter) contain ZERO tangible knowledge.
+2. If this day's dialogue contains NO tangible facts, relationships, commitments, project details, or user preferences, reply strictly with: NO_RELEVANT_CONTEXT
+3. If there ARE tangible facts, extract ONLY high-value facts into 1-3 ultra-concise bullet points:
+   - Specific people mentioned and their relationship/relevance (e.g. friends visiting like Seema, colleagues).
+   - Concrete events, commitments, schedule items, or apartment/hardware changes.
+   - User preferences or personal facts explicitly shared by Fab.
+Do NOT include conversational filler, fluff, or meta commentary.
+
+DIALOGUE TRANSCRIPT:
+{transcript}
+"""
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=distill_prompt
+                )
+                
+                if response and response.text:
+                    cleaned_summary = response.text.strip()
+                    if cleaned_summary and "NO_RELEVANT_CONTEXT" not in cleaned_summary:
+                        DailySummary.objects.create(
+                            client_id=client_id,
+                            date=day_date,
+                            summary_text=cleaned_summary
+                        )
+                        print(f"✅ [Memory] Saved aggressive daily summary for {date_label}.")
+                    else:
+                        print(f"ℹ️ [Memory] No tangible context found for {date_label} (discarded as operational noise).")
+
+            # Purge summarized turns for this day
+            turn_ids = [t.id for t in turns]
+            ConversationHistory.objects.filter(id__in=turn_ids).delete()
+
+        # Tier 1 Synthesis: Consolidate older summaries if count > 10
+        all_summaries = list(DailySummary.objects.filter(client_id=client_id).order_by('date'))
+        if len(all_summaries) > 10:
+            excess_count = len(all_summaries) - 10
+            expiring = all_summaries[:excess_count]
+            expiring_text = "\n\n".join([f"[{s.date.strftime('%Y-%m-%d')}]:\n{s.summary_text}" for s in expiring])
+            
+            core_obj, _ = CoreMemoryProfile.objects.get_or_create(
+                client_id=client_id,
+                defaults={'profile_markdown': ''}
             )
             
-            # Delete the summarized old history items
-            old_items.delete()
-            print(f"✅ [Memory] Successfully consolidated long-term memory for {client_id}.")
-            
+            merge_prompt = f"""You are HAL 9000's cognitive memory consolidation system.
+You maintain the single, unique, evergreen CORE LONG-TERM KNOWLEDGE ARCHIVE for Fab.
+
+Current Core Memory Profile:
+{core_obj.profile_markdown or "(Empty profile)"}
+
+Expiring Daily Summaries to consolidate into permanent memory:
+{expiring_text}
+
+TASK:
+Synthesize the expiring daily facts into the Core Memory Profile.
+CRITICAL RULES:
+1. FOCUS ONLY ON BIG, PERMANENT, DURABLE INFORMATION:
+   - Core relationships (family, close friends, partners, key associates).
+   - Living context (apartment setup, hardware, lifestyle, location).
+   - Enduring preferences, core habits, principles.
+2. DISCARD ephemeral daily events that have passed and have no lasting significance.
+3. Keep the format as clean, structured, factual Markdown bullet points.
+4. Keep the total profile compact (under 300 words).
+"""
+            res = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=merge_prompt
+            )
+            if res and res.text:
+                core_obj.profile_markdown = res.text.strip()
+                core_obj.save()
+                print(f"🌟 [Memory] Consolidated {len(expiring)} expiring daily summaries into Core Memory Profile.")
+                
+            # Delete expiring DailySummaries
+            expiring_ids = [s.id for s in expiring]
+            DailySummary.objects.filter(id__in=expiring_ids).delete()
+
     except Exception as e:
-        print(f"⚠️ [Memory] Error during background summarization: {e}")
+        print(f"⚠️ [Memory] Error during rollover summarization: {e}")
 
 async def stream_gemini_response(chat_session, user_input):
     """

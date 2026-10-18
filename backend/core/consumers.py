@@ -131,8 +131,9 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if 'volume' in msg:
                         self.current_volume = max(1, min(10, int(msg['volume'])))
                         log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
+                        curr_hist = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
                         self.chat_session = llm.create_chat_session(
-                            history=self.history, 
+                            history=curr_hist or self.history, 
                             summaries_text=self.summaries, 
                             current_volume=self.current_volume
                         )
