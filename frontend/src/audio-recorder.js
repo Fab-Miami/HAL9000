@@ -91,16 +91,16 @@ export class AudioRecorder {
         const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 6.5) : 0.0;
         this.onAudioLevel(intensity);
 
-        if (intensity > 0.45) {
-          this.onSpeechDetected();
-        }
-
-        // If sleeping, detect a loud BUNG (intensity > 0.7) to wake up, but DO NOT send audio to server.
+        // If sleeping, only wake on an intentional loud sound (intensity > 0.8), ignore ambient noise
         if (this.sleeping) {
-          if (intensity > 0.7) {
+          if (intensity > 0.8) {
             this.onWakeTrigger();
           }
           return;
+        }
+
+        if (intensity > 0.45) {
+          this.onSpeechDetected();
         }
 
         // Stream PCM chunk to WebSocket

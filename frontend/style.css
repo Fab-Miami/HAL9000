@@ -255,10 +255,14 @@ body.mode-enclosure #hal-stage {
 
 
 /* ----------------------------------------------------
-   Standby Mode (Central Eye Unlit, Faceplate 100% Visible)
+   Standby Mode (Sleeping Mode: hal2026_everything_off.png)
    ---------------------------------------------------- */
 body.sleep-mode {
   background-color: #000000;
+}
+
+body.sleep-mode #layer-everything-off {
+  opacity: 1.0 !important; /* hal2026_everything_off.png: Active sleeping mode visual */
 }
 
 body.sleep-mode #layer-center-on {
@@ -271,6 +275,7 @@ body.sleep-mode #layer-ring-on {
   transition: opacity 0.2s ease-out !important;
 }
 
-body.sleep-mode #layer-everything-off {
-  opacity: 1.0 !important; /* Faceplate stays 100% visible at all times! Never black or broken */
+body.sleep-mode #layer-3-led-on {
+  opacity: 0 !important;
+  transition: opacity 0.2s ease-out !important;
 }
