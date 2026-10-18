@@ -40,6 +40,9 @@ function wakeUp() {
   log('☀️ HAL waking up from Standby (Central eye illuminated).');
   document.body.classList.remove('sleep-mode');
   if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
+  if (typeof audioRecorder !== 'undefined' && audioRecorder) {
+    audioRecorder.sleeping = false;
+  }
   setState(State.LISTENING);
   resetSleepTimer();
   requestScreenWakeLock();
@@ -59,6 +62,9 @@ function goToSleep() {
   if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
   if (layerRingOn) layerRingOn.style.opacity = '0.0';
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+  if (typeof audioRecorder !== 'undefined' && audioRecorder) {
+    audioRecorder.sleeping = true;
+  }
   setState(State.SLEEPING);
 }
 
@@ -253,6 +259,8 @@ const speechRecognizer = new SpeechRecognizer({
   onFinalSpeech: (text) => {
     if (currentState === State.SLEEPING) {
       wakeUp();
+    } else {
+      resetSleepTimer();
     }
     if (persistentLedOn) {
       setPersistentLed(false);
@@ -268,6 +276,7 @@ const speechRecognizer = new SpeechRecognizer({
     }
   },
   onInterimSpeech: (text) => {
+    resetSleepTimer();
     if (persistentLedOn && text && text.trim()) {
       setPersistentLed(false);
     }
@@ -307,23 +316,18 @@ const audioRecorder = new AudioRecorder({
     }
   },
   onAudioLevel: (intensity) => {
-    if (currentState !== State.PROCESSING) {
+    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
       updateVisuals(intensity, false); // User Voice Modulates Acoustic Ring
     }
   },
   onSpeechDetected: () => {
-    if (currentState === State.SLEEPING) {
-      wakeUp();
-    }
     if (currentState === State.PROCESSING) {
       triggerVoiceBargeIn();
     }
     if (persistentLedOn) {
       setPersistentLed(false);
     }
-    resetSleepTimer();
-    requestScreenWakeLock();
-    ensureKeepAwakeVideoPlaying();
+    // Room ambience / noise floor fluctuates continuously and must NOT reset the sleep timer.
   },
   onWakeTrigger: () => {
     wakeUp();
