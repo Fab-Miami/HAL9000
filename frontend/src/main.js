@@ -29,13 +29,20 @@ let tapTimer = null;
 let conversationInterval = null;
 let conversationTimeRemaining = 0;
 
+// Subsystems declared early so log/sendTelemetry does not trigger Temporal Dead Zone ReferenceError
+let wsClient = null;
+let audioPlayer = null;
+let audioRecorder = null;
+let speechRecognizer = null;
+let motionDetector = null;
+
 // Sleep Mode State
 let sleepTimer = null;
 let pendingSleepCommand = false;
 const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
  
 function sendTelemetry(msg) {
-  if (typeof wsClient !== 'undefined' && wsClient && wsClient.isConnected) {
+  if (wsClient && wsClient.isConnected) {
     try {
       wsClient.sendJson({ type: 'telemetry', message: msg });
     } catch (e) {}
@@ -249,7 +256,7 @@ function updateVisuals(intensity, isHalSpeech = false) {
 }
 
 // Instantiate Subsystems
-const audioPlayer = new AudioPlayer({
+audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
       if (audioRecorder) audioRecorder.muted = true;
@@ -330,7 +337,7 @@ function isHalWakeWord(text) {
   return false;
 }
 
-const speechRecognizer = new SpeechRecognizer({
+speechRecognizer = new SpeechRecognizer({
   onFinalSpeech: (text) => {
     if (currentState === State.SLEEPING) {
       if (!isHalWakeWord(text)) {
@@ -378,7 +385,7 @@ const speechRecognizer = new SpeechRecognizer({
   onLog: log,
 });
 
-const motionDetector = new MotionDetector({
+motionDetector = new MotionDetector({
   threshold: 2.5,
   onKnock: (magnitude) => {
     log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
@@ -400,7 +407,7 @@ const motionDetector = new MotionDetector({
   onLog: log,
 });
 
-const audioRecorder = new AudioRecorder({
+audioRecorder = new AudioRecorder({
   onAudioData: (pcmBuffer) => {
     // Single Input Pipeline: SpeechRecognizer is primary; only stream raw PCM as fallback if Web Speech is unsupported
     if (!speechRecognizer.isSupported && wsClient && wsClient.isConnected) {
@@ -432,7 +439,7 @@ const audioRecorder = new AudioRecorder({
   onLog: log,
 });
 
-const wsClient = new WsClient({
+wsClient = new WsClient({
   onAudioReceived: (arrayBuffer) => {
     if (currentState !== State.PROCESSING) {
       setState(State.PROCESSING);
