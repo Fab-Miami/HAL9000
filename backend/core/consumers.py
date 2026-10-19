@@ -82,6 +82,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.processing_task = None
         self.current_volume = 5
         self.is_client_sleeping = False
+        self.recent_hal_sentences = []
         
         # Load recent history and long-term summaries
         self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
@@ -195,10 +196,51 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if len(self.pre_roll_buffer) > 16000:
                         self.pre_roll_buffer = self.pre_roll_buffer[-16000:]
 
+    def _is_echo_of_hal(self, text: str) -> bool:
+        """Detects if incoming transcript is an acoustic echo of HAL's own synthesized speech."""
+        if not text or not self.recent_hal_sentences:
+            return False
+
+        def clean(s: str) -> str:
+            return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
+
+        u_clean = clean(text)
+        if not u_clean:
+            return False
+
+        u_words = set(u_clean.split())
+        if not u_words:
+            return False
+
+        for hal_sent in self.recent_hal_sentences:
+            h_clean = clean(hal_sent)
+            if not h_clean:
+                continue
+
+            # 1. Exact or substring match (e.g. user text is inside HAL sentence or HAL sentence is inside user text)
+            if len(u_clean) >= 6 and (u_clean in h_clean or h_clean in u_clean):
+                return True
+
+            # 2. High word overlap (captures partial / noisy transcriptions of HAL's voice)
+            h_words = set(h_clean.split())
+            if h_words:
+                overlap = len(u_words & h_words)
+                min_len = min(len(u_words), len(h_words))
+                if min_len >= 3 and (overlap / min_len) >= 0.60:
+                    return True
+
+        return False
+
     async def _process_text_pipeline(self, user_text: str):
         """Processes text input directly from Web Speech API with zero silence-window delay."""
         if is_stop_command(user_text):
             log(f"🛑 [HalConsumer] Stop command received via text (\"{user_text}\"). Remaining silent.")
+            await self.send(text_data="DONE")
+            return
+
+        # Enclosure acoustic feedback guard: Reject transcripts echoing HAL's own synthesized voice
+        if self._is_echo_of_hal(user_text):
+            log(f"🛑 [HalConsumer] REJECTED SELF-ECHO FEEDBACK LOOP: \"{user_text}\" matches HAL recent speech. Suppressing inference.")
             await self.send(text_data="DONE")
             return
             
@@ -362,6 +404,12 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if sentence_count == 1 and self.is_client_sleeping:
                         self.is_client_sleeping = False
                         await self.send(text_data="WAKE")
+
+                    # Track recent speech for echo cancellation & send to client for frontend filtering
+                    self.recent_hal_sentences.append(speech_text)
+                    if len(self.recent_hal_sentences) > 15:
+                        self.recent_hal_sentences.pop(0)
+                    await self.send(text_data=f"HAL_TEXT:{speech_text}")
 
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")

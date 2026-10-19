@@ -16,6 +16,9 @@ export class SpeechRecognizer {
     this.recognition = null;
     this.isListening = false;
     this.isPaused = false;
+    this.isCooldown = false;
+    this.cooldownTimer = null;
+    this.ignoreUpToIndex = 0;
     this.isActive = false;
     this.isStarting = false;
     this.restartTimeout = null;
@@ -54,12 +57,24 @@ export class SpeechRecognizer {
     };
 
     this.recognition.onresult = (event) => {
-      if (this.isPaused) return;
+      // While HAL is speaking or during post-playback acoustic holdoff,
+      // continually update ignoreUpToIndex so all audio buffered or captured during output is rejected
+      if (this.isPaused || this.isCooldown) {
+        this.ignoreUpToIndex = event.results.length;
+        this.accumulatedText = '';
+        clearTimeout(this.interimDebounceTimer);
+        return;
+      }
+
+      const startIndex = Math.max(event.resultIndex, this.ignoreUpToIndex || 0);
+      if (startIndex >= event.results.length) {
+        return;
+      }
 
       let interim = '';
       let finals = '';
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+      for (let i = startIndex; i < event.results.length; ++i) {
         const item = event.results[i];
         const text = item[0] ? item[0].transcript : '';
         if (item.isFinal) {
@@ -118,10 +133,14 @@ export class SpeechRecognizer {
 
   _finalizeSpeech() {
     clearTimeout(this.interimDebounceTimer);
+    if (this.isPaused || this.isCooldown) {
+      this.accumulatedText = '';
+      return;
+    }
     const speechToSend = this.accumulatedText.trim();
     this.accumulatedText = '';
 
-    if (speechToSend && !this.isPaused) {
+    if (speechToSend) {
       this.onLog(`🗣️ [SpeechRecognizer] Thought complete (${this.SILENCE_DELAY_MS}ms pause). Sending: "${speechToSend}"`);
       this.onFinalSpeech(speechToSend);
     }
@@ -198,6 +217,8 @@ export class SpeechRecognizer {
     // onresult silently ignores speech during HAL audio playback with zero system beeps.
     if (!this.isSupported || this.isPaused) return;
     this.isPaused = true;
+    this.isCooldown = false;
+    clearTimeout(this.cooldownTimer);
     clearTimeout(this.interimDebounceTimer);
     this.accumulatedText = '';
     this.onLog('🔇 [SpeechRecognizer] Muted recognition (HAL output in progress).');
@@ -207,9 +228,20 @@ export class SpeechRecognizer {
     // Resume listening after HAL finishes speaking
     if (!this.isSupported) return;
     this.isPaused = false;
+    this.isCooldown = true;
     this.accumulatedText = '';
     clearTimeout(this.interimDebounceTimer);
-    this.onLog('🎙️ [SpeechRecognizer] Resumed active speech listening.');
+    clearTimeout(this.cooldownTimer);
+
+    // 1400ms post-playback echo & WebKit audio buffer holdoff window
+    // Completely suppresses enclosure acoustic reverberations and delayed WebKit recognition from HAL's voice
+    this.cooldownTimer = setTimeout(() => {
+      this.isCooldown = false;
+      this.accumulatedText = '';
+      this.onLog('🎙️ [SpeechRecognizer] Acoustic holdoff complete. Resumed active user listening.');
+    }, 1400);
+
+    this.onLog('🎙️ [SpeechRecognizer] Resumed speech recognition (holding off enclosure echo)...');
     // Only start if the session genuinely ended or dropped in the background
     if (this.isListening && !this.isActive && !this.isStarting) {
       this._safeStart();
