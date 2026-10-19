@@ -106,6 +106,8 @@ function log(msg) {
   sendTelemetry(msg);
 }
 
+let thinkingWatchdogTimer = null;
+
 // State Machine Update
 function setState(newState) {
   currentState = newState;
@@ -114,6 +116,17 @@ function setState(newState) {
     .trim();
   if (newState === State.LISTENING || newState === State.IDLE || newState === State.THINKING) {
     resetToStandby();
+  }
+
+  clearTimeout(thinkingWatchdogTimer);
+  if (newState === State.THINKING) {
+    thinkingWatchdogTimer = setTimeout(() => {
+      if (currentState === State.THINKING) {
+        log('⚠️ [Watchdog] Thinking state timed out (15s). Recovering to LISTENING.');
+        if (speechRecognizer) speechRecognizer.resume();
+        setState(State.LISTENING);
+      }
+    }, 15000);
   }
 
   log(`🔄 State Transition -> ${newState}`);
@@ -363,6 +376,7 @@ speechRecognizer = new SpeechRecognizer({
       const speechToSend = isPhonetic ? 'HAL' : text;
       log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
       wsClient.sendJson({ type: 'user_text', text: speechToSend });
+      if (speechRecognizer) speechRecognizer.pause();
       setState(State.THINKING);
     }
   },

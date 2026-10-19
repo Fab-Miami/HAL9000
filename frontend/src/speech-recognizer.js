@@ -59,8 +59,8 @@ export class SpeechRecognizer {
     };
 
     this.recognition.onresult = (event) => {
-      // If WebKit recycled its buffer or started a new sub-session
-      if (event.resultIndex < this.turnStartIndex) {
+      // Safety bounds check: only reset if buffer was actually flushed (length < turnStartIndex)
+      if (this.turnStartIndex > event.results.length) {
         this.turnStartIndex = 0;
       }
 
