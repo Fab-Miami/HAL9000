@@ -138,6 +138,12 @@ export class AudioRecorder {
             this.firstAcousticTapTime = 0;
             this.firstAcousticTapPeak = 0;
           }
+
+          // In standby mode, stream voice audio to server if human speech exceeds noise floor
+          // so server can detect "HAL wake up" with 2-second silence window.
+          if (voiceDelta > 0.015) {
+            this.onAudioData(pcmBuffer);
+          }
           return;
         }
 

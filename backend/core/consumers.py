@@ -81,6 +81,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.speech_detected = False
         self.processing_task = None
         self.current_volume = 5
+        self.is_client_sleeping = False
         
         # Load recent history and long-term summaries
         self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
@@ -131,6 +132,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if msg.get('type') == 'telemetry':
                         log(f"📱 [Client Telemetry] {msg.get('message')}")
                         return
+                    if msg.get('type') == 'sleep_state':
+                        self.is_client_sleeping = bool(msg.get('sleeping'))
+                        log(f"🌙 [HalConsumer] Client sleep state synced: {self.is_client_sleeping}")
+                        return
                     if 'volume' in msg:
                         self.current_volume = max(1, min(10, int(msg['volume'])))
                         log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
@@ -140,7 +145,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                             summaries_text=self.summaries, 
                             current_volume=self.current_volume
                         )
-                    # Immediate text response from Web Speech API
+                    # Immediate text response from client (if any)
                     if msg.get('type') == 'user_text' and msg.get('text'):
                         user_text = msg['text'].strip()
                         if user_text:
@@ -203,8 +208,9 @@ class HalConsumer(AsyncWebsocketConsumer):
     async def _process_pipeline(self):
         """Fallback audio pipeline: waits for silence, then packages WAV and invokes generation."""
         try:
-            # Wait for the capture window of silence to accumulate audio
-            while time.time() - self.last_speech_time < CAPTURE_WINDOW:
+            # When sleeping, wait for 2.0s of silence after speech (wake trigger); in conversation, use 1.2s
+            silence_window = 2.0 if self.is_client_sleeping else CAPTURE_WINDOW
+            while time.time() - self.last_speech_time < silence_window:
                 await asyncio.sleep(0.05)
             
             buffer_size = len(self.audio_buffer)
@@ -348,6 +354,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                         continue
 
                     sentence_count += 1
+                    if sentence_count == 1 and self.is_client_sleeping:
+                        self.is_client_sleeping = False
+                        await self.send(text_data="WAKE")
+
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
                     

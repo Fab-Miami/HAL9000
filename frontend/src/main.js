@@ -1,7 +1,6 @@
 import { AudioRecorder } from './audio-recorder.js';
 import { AudioPlayer } from './audio-player.js';
 import { WsClient } from './ws-client.js';
-import { SpeechRecognizer } from './speech-recognizer.js';
 import { MotionDetector } from './motion-detector.js';
 
 // DOM Elements
@@ -34,8 +33,8 @@ let conversationTimeRemaining = 0;
 let wsClient = null;
 let audioPlayer = null;
 let audioRecorder = null;
-let speechRecognizer = null;
 let motionDetector = null;
+let isSystemInitialized = false;
 
 // Sleep Mode State
 let sleepTimer = null;
@@ -59,9 +58,8 @@ function wakeUp() {
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = false;
   }
-  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
-    speechRecognizer.setSleeping(false);
-    speechRecognizer.resume();
+  if (wsClient && wsClient.isConnected) {
+    wsClient.sendJson({ type: 'sleep_state', sleeping: false });
   }
   setState(State.LISTENING);
   resetSleepTimer();
@@ -85,9 +83,8 @@ function goToSleep() {
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = true;
   }
-  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
-    speechRecognizer.setSleeping(true);
-    speechRecognizer.resume();
+  if (wsClient && wsClient.isConnected) {
+    wsClient.sendJson({ type: 'sleep_state', sleeping: true });
   }
   setState(State.SLEEPING);
 }
@@ -269,11 +266,9 @@ audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
       if (audioRecorder) audioRecorder.muted = true;
-      if (speechRecognizer) speechRecognizer.pause();
       setState(State.PROCESSING);
     } else {
       if (audioRecorder) audioRecorder.muted = false;
-      if (speechRecognizer) speechRecognizer.resume();
       resetToStandby();
       stopInteraction();
     }
@@ -282,103 +277,6 @@ audioPlayer = new AudioPlayer({
     if (currentState === State.PROCESSING) {
       updateVisuals(intensity, true); // HAL Voice slightly blinks central dot
     }
-  },
-  onLog: log,
-});
-
-/**
- * Calibrated wake-word validator.
- * In sleep mode, HAL ONLY wakes on direct wake commands ("HAL wake up", "wake up HAL", "wake up")
- * including iOS Safari speech recognition's natural phonetic transcriptions ("How to wake up", "How wake up", "Al wake up").
- * Rejects general ambient speech that doesn't contain wake commands.
- */
-function isHalWakeWord(text) {
-  if (!text) return false;
-  const clean = text.trim().toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
-
-  // 1. Must contain "wake up"
-  if (!/\bwake\s*up\b/i.test(clean)) {
-    return false;
-  }
-
-  // 2. Reject long ambient sentences (avoid waking on ambient conversation talking about waking up)
-  const words = clean.split(' ').filter(Boolean);
-  if (words.length > 7) {
-    return false;
-  }
-
-  // 3. Match wake phrases addressed to HAL or iOS phonetic variations (how, how to, al, hell):
-  // e.g. "hal wake up", "how to wake up", "how to wake up wake up", "how wake up", "wake up hal", "wake up", "wake up wake up"
-  const wakePattern = /^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:(?:hal|how\s+to|how|al|hell)\s+)?(?:wake\s*up\s*)+(?:(?:hal|how|al|please)\s*)*$/i;
-  if (wakePattern.test(clean)) {
-    return true;
-  }
-
-  // Any short phrase containing (hal|how|al) + wake up
-  if (/\b(?:hal|how|al)\b/i.test(clean) && /\bwake\s*up\b/i.test(clean)) {
-    return true;
-  }
-
-  // Short direct "wake up"
-  if (/^(?:please\s+)?(?:wake\s*up\s*)+(?:please)?$/i.test(clean)) {
-    return true;
-  }
-
-  return false;
-}
-
-speechRecognizer = new SpeechRecognizer({
-  onFinalSpeech: (text) => {
-    if (currentState === State.SLEEPING) {
-      if (!isHalWakeWord(text)) {
-        log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
-        return;
-      }
-      log(`☀️ [Sleeping] Verified wake phrase ("${text}") + 2s silence! Waking up HAL.`);
-      wakeUp();
-    } else {
-      resetSleepTimer();
-    }
-
-    if (persistentLedOn) {
-      setPersistentLed(false);
-    }
-    if (text) {
-      // Instantaneous hardware feedback: End of listening mode acknowledged
-      triggerLedExpression('listen-done', 400);
-    }
-    if (wsClient && wsClient.isConnected && text) {
-      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
-      wsClient.sendJson({ type: 'user_text', text: text });
-      setState(State.THINKING);
-    }
-  },
-  onInterimSpeech: (text) => {
-    if (currentState === State.SLEEPING) {
-      // In sleep mode, strictly wait for finalized phrase + 2s silence.
-      // Do NOT wake on partial speech or interim results.
-      return;
-    }
-    resetSleepTimer();
-    if (persistentLedOn && text && text.trim()) {
-      setPersistentLed(false);
-    }
-    // CRITICAL HARDWARE FEEDBACK: Outer ring (#layer-ring-on) blinks to visually acknowledge user speech
-    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING && text && text.trim()) {
-      if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') < 0.6) {
-        layerRingOn.style.opacity = '0.85';
-        setTimeout(() => {
-          if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
-            if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') === 0.85) {
-              layerRingOn.style.opacity = '0.25';
-            }
-          }
-        }, 120);
-      }
-    }
-  },
-  onStatusChange: (status) => {
-    log(`🗣️ SpeechRecognizer status: ${status}`);
   },
   onLog: log,
 });
@@ -401,8 +299,8 @@ motionDetector = new MotionDetector({
 
 audioRecorder = new AudioRecorder({
   onAudioData: (pcmBuffer) => {
-    // Single Input Pipeline: SpeechRecognizer is primary; only stream raw PCM as fallback if Web Speech is unsupported
-    if (!speechRecognizer.isSupported && wsClient && wsClient.isConnected) {
+    // Proven 2-month silent Web Audio pipeline: stream raw 16kHz PCM chunks directly to server
+    if (wsClient && wsClient.isConnected) {
       wsClient.sendAudio(pcmBuffer);
     }
   },
@@ -433,6 +331,9 @@ audioRecorder = new AudioRecorder({
 
 wsClient = new WsClient({
   onAudioReceived: (arrayBuffer) => {
+    if (currentState === State.SLEEPING) {
+      wakeUp();
+    }
     if (currentState !== State.PROCESSING) {
       setState(State.PROCESSING);
     }
@@ -467,6 +368,9 @@ wsClient = new WsClient({
     } else if (text === 'THINKING') {
       log('🤔 Received THINKING signal from server.');
       setState(State.THINKING);
+    } else if (text === 'WAKE') {
+      log('☀️ Received WAKE signal from server.');
+      wakeUp();
     } else if (text === 'SLEEP') {
       log('🌙 Received SLEEP signal from server. Queueing sleep mode for after voice playback.');
       pendingSleepCommand = true;
@@ -479,7 +383,8 @@ wsClient = new WsClient({
     log(`🌐 WebSocket: ${status}`);
     if (status === 'CONNECTED') {
       wsClient.sendJson({ type: 'init', volume: audioPlayer.volumeLevel });
-      log(`🎛️ Synced hardware volume ${audioPlayer.volumeLevel}/10 to HAL backend.`);
+      wsClient.sendJson({ type: 'sleep_state', sleeping: currentState === State.SLEEPING });
+      log(`🎛️ Synced hardware volume ${audioPlayer.volumeLevel}/10 and sleep state to HAL backend.`);
     }
   },
   onLog: log,
@@ -528,7 +433,6 @@ function triggerVoiceBargeIn() {
   log('⚡ User voice barge-in detected! Halting HAL speech playback immediately.');
   audioPlayer.stopPlayback();
   wsClient.sendInterrupt();
-  if (speechRecognizer) speechRecognizer.resume();
   setState(State.LISTENING);
 }
 
@@ -645,6 +549,9 @@ setInterval(() => {
 
 // Master Initialization (Triggered by one tap on INITIALIZE SYSTEM)
 async function initializeSystem() {
+  if (isSystemInitialized) return;
+  isSystemInitialized = true;
+
   log('🚀 Initializing HAL 9000 system on iPhone...');
 
   // Fade out and completely remove initialization overlay from DOM to destroy GPU CALayers
@@ -671,7 +578,6 @@ async function initializeSystem() {
 
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
     await audioRecorder.start();
-    speechRecognizer.start();
     setState(State.LISTENING);
     resetSleepTimer();
 
@@ -692,7 +598,7 @@ async function initializeSystem() {
 
 // Synchronous iOS gesture trigger for Accelerometer / Motion Sensors
 function onInitializeGesture(e) {
-  if (e && e.type === 'touchend') {
+  if (e && e.cancelable) {
     e.preventDefault();
   }
   // CRITICAL FOR IOS SAFARI:
@@ -706,7 +612,7 @@ function onInitializeGesture(e) {
 
 if (initOverlay) {
   initOverlay.addEventListener('click', onInitializeGesture);
-  initOverlay.addEventListener('touchend', onInitializeGesture);
+  initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
 }
 
 // Physical enclosure constraint: Phone is permanently sealed behind the glass fisheye lens.
