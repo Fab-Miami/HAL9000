@@ -56,7 +56,7 @@
 
 ## 7. Sealed Physical Enclosure & Hardware Constraints
 - **Hardware Form Factor**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami, permanently connected to wall power.
-- **Touchscreen Inaccessible**: Physical taps are detected solely via the accelerometer (`MotionDetector`, threshold 2.5 m/s²) and acoustic double-taps.
+- **Touchscreen Inaccessible**: Physical taps are detected solely via the accelerometer (`MotionDetector`, threshold 1.25 m/s²) and acoustic double-taps.
 - **24/7 Screen & Faceplate Visibility**: Battery saving and screen dimming are strictly forbidden. The faceplate (`#layer-everything-off`) stays 100% visible 24/7 via WakeLock and silent loop video. Standby/sleep is expressed EXCLUSIVELY by extinguishing the central red LED (`#layer-center-on`).
 - **Location Context**: Line 355 in `backend/core/llm.py` MUST always preserve: `"Your current location is Miami Beach."`.
 

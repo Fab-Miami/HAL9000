@@ -6,7 +6,7 @@
  */
 
 export class MotionDetector {
-  constructor({ threshold = 2.5, cooldownMs = 500, onKnock, onLog } = {}) {
+  constructor({ threshold = 1.25, cooldownMs = 500, onKnock, onLog } = {}) {
     this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for enclosure/desk finger taps)
     this.cooldownMs = cooldownMs; // Prevent duplicate knock triggers from ringing vibrations
     this.onKnock = onKnock || (() => {});

@@ -402,7 +402,7 @@ speechRecognizer = new SpeechRecognizer({
 });
 
 motionDetector = new MotionDetector({
-  threshold: 2.5,
+  threshold: 1.25,
   onKnock: (magnitude) => {
     // MOTION DETECTOR IS EXCLUSIVELY FOR WAKE UP IN SLEEP MODE!
     // If HAL is awake or speaking, never listen or intercept.
