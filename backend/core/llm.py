@@ -518,9 +518,19 @@ async def stream_gemini_response(chat_session, user_input):
                 mime_type="audio/wav"
             )
         else:
-            # Text input (from Web Speech API)
+            # Text input
             input_part = str(user_input)
         
+        # Sanitize chat_session history: Gemini API strictly rejects multi-turn requests
+        # if past turns contain raw audio/inline_data. Past history turns must be text-only!
+        history_list = getattr(chat_session, '_history', None)
+        if history_list:
+            for content in history_list:
+                if getattr(content, 'parts', None):
+                    for idx, part in enumerate(content.parts):
+                        if getattr(part, 'inline_data', None):
+                            content.parts[idx] = types.Part.from_text(text="[Spoken Audio Input]")
+
         # Send message to Gemini Async Chat Session with streaming enabled
         response_stream = await chat_session.send_message_stream([time_context, input_part])
         

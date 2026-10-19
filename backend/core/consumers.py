@@ -505,6 +505,13 @@ class HalConsumer(AsyncWebsocketConsumer):
             try:
                 history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
                 await asyncio.to_thread(llm.save_history, self.client_id, history_data, manual_transcript)
+                # Re-sync chat session with clean, text-only multi-turn history from SQLite
+                self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
+                self.chat_session = llm.create_chat_session(
+                    history=self.history,
+                    summaries_text=self.summaries,
+                    current_volume=self.current_volume
+                )
             except Exception as hist_err:
                 log(f"⚠️ [HalConsumer] History persistence note: {hist_err}")
 
