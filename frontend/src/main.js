@@ -343,65 +343,8 @@ function isHalWakeWord(text) {
   return false;
 }
 
-// =========================================================================================
-// ANTI-SELF-ECHO FILTER (MONOLITH ENCLOSURE ACOUSTIC ISOLATION)
-// Tracks recent HAL speech sentences and rejects any microphone transcripts that match
-// HAL's own synthesized vocal output echoing inside the aluminum enclosure.
-// =========================================================================================
-const recentHalSentences = [];
-
-function recordHalSpeech(sentence) {
-  if (!sentence || typeof sentence !== 'string') return;
-  const cleanText = sentence.trim();
-  if (cleanText) {
-    recentHalSentences.push(cleanText);
-    if (recentHalSentences.length > 6) {
-      recentHalSentences.shift();
-    }
-  }
-}
-
-function isEchoOfHal(userText) {
-  if (!userText || recentHalSentences.length === 0) return false;
-  // Acoustic echo is physically impossible if more than 2.0s have elapsed since HAL stopped speaking
-  if (Date.now() - lastPlaybackEndTime > 2000) {
-    recentHalSentences.length = 0;
-    return false;
-  }
-  const clean = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-  const uClean = clean(userText);
-  // Short conversational phrases ("are you there", "can you hear me", "what is that") are NEVER echoes
-  if (!uClean || uClean.length < 15) return false;
-  const uWords = uClean.split(/\s+/).filter(Boolean);
-  if (uWords.length < 4) return false;
-
-  for (const s of recentHalSentences) {
-    const hClean = clean(s);
-    if (!hClean) continue;
-    // 1. Verbatim exact match of full sentence
-    if (uClean === hClean) {
-      return true;
-    }
-    // 2. High word overlap of USER's sentence (>= 85% of user's words) and similar sentence length
-    const hWords = new Set(hClean.split(/\s+/).filter(Boolean));
-    let overlap = 0;
-    for (const w of uWords) {
-      if (hWords.has(w)) overlap++;
-    }
-    if ((overlap / uWords.length) >= 0.85 && Math.abs(uWords.length - hWords.size) <= 3) {
-      return true;
-    }
-  }
-  return false;
-}
-
 speechRecognizer = new SpeechRecognizer({
   onFinalSpeech: (text) => {
-    if (isEchoOfHal(text)) {
-      log(`🛑 [SpeechRecognizer] Suppressed enclosure self-echo: "${text}"`);
-      return;
-    }
-
     if (currentState === State.SLEEPING) {
       if (!isHalWakeWord(text)) {
         log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
@@ -430,10 +373,6 @@ speechRecognizer = new SpeechRecognizer({
     }
   },
   onInterimSpeech: (text) => {
-    if (isEchoOfHal(text)) {
-      return;
-    }
-
     if (currentState === State.SLEEPING) {
       if (isHalWakeWord(text)) {
         log(`☀️ [Sleeping] Interim HAL wake word detected: "${text}"! Waking up HAL.`);
@@ -556,9 +495,6 @@ wsClient = new WsClient({
     } else if (text.startsWith('TAG:')) {
       const tag = text.substring(4).trim();
       handleEmotionTag(tag);
-    } else if (text.startsWith('HAL_TEXT:')) {
-      const sent = text.substring(9).trim();
-      recordHalSpeech(sent);
     } else if (text === 'THINKING') {
       log('🤔 Received THINKING signal from server.');
       setState(State.THINKING);

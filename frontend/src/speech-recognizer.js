@@ -52,13 +52,20 @@ export class SpeechRecognizer {
     this.recognition.onstart = () => {
       this.isActive = true;
       this.isStarting = false;
+      this.ignoreUpToIndex = 0; // Fresh WebKit session, reset result cursor
+      this.accumulatedText = '';
       this.onLog('🎙️ [SpeechRecognizer] Speech recognition session started.');
       this.onStatusChange('LISTENING');
     };
 
     this.recognition.onresult = (event) => {
-      // While HAL is speaking or during post-playback acoustic holdoff,
-      // continually update ignoreUpToIndex so all audio buffered or captured during output is rejected
+      // If WebKit recycled its buffer or started a new sub-session
+      if (event.resultIndex < this.ignoreUpToIndex) {
+        this.ignoreUpToIndex = 0;
+      }
+
+      // While HAL is speaking or during 0.5s post-playback acoustic holdoff:
+      // discard everything and bump ignoreUpToIndex to ignore all audio played during speech
       if (this.isPaused || this.isCooldown) {
         this.ignoreUpToIndex = event.results.length;
         this.accumulatedText = '';
@@ -118,6 +125,7 @@ export class SpeechRecognizer {
     this.recognition.onend = () => {
       this.isActive = false;
       this.isStarting = false;
+      this.ignoreUpToIndex = 0; // Session ended, reset cursor for next start
       // Automatically maintain continuous listening in Safari without cutting speech
       if (this.isListening && !this.isPaused) {
         clearTimeout(this.restartTimeout);
@@ -233,15 +241,15 @@ export class SpeechRecognizer {
     clearTimeout(this.interimDebounceTimer);
     clearTimeout(this.cooldownTimer);
 
-    // 1400ms post-playback echo & WebKit audio buffer holdoff window
-    // Completely suppresses enclosure acoustic reverberations and delayed WebKit recognition from HAL's voice
+    // 500ms post-playback holdoff window:
+    // Completely suppresses any enclosure acoustic reverberations and trailing WebKit recognition
     this.cooldownTimer = setTimeout(() => {
       this.isCooldown = false;
       this.accumulatedText = '';
-      this.onLog('🎙️ [SpeechRecognizer] Acoustic holdoff complete. Resumed active user listening.');
-    }, 1400);
+      this.onLog('🎙️ [SpeechRecognizer] Holdoff complete (0.5s). Resumed active user listening.');
+    }, 500);
 
-    this.onLog('🎙️ [SpeechRecognizer] Resumed speech recognition (holding off enclosure echo)...');
+    this.onLog('🎙️ [SpeechRecognizer] Audio playback finished. Holding off recognition for 0.5s...');
     // Only start if the session genuinely ended or dropped in the background
     if (this.isListening && !this.isActive && !this.isStarting) {
       this._safeStart();

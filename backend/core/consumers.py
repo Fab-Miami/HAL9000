@@ -82,8 +82,6 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.processing_task = None
         self.current_volume = 5
         self.is_client_sleeping = False
-        self.recent_hal_sentences = []
-        self.last_speech_output_time = 0.0
         
         # Load recent history and long-term summaries
         self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
@@ -197,45 +195,6 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if len(self.pre_roll_buffer) > 16000:
                         self.pre_roll_buffer = self.pre_roll_buffer[-16000:]
 
-    def _is_echo_of_hal(self, text: str) -> bool:
-        """Detects if incoming transcript is an acoustic echo of HAL's own synthesized speech."""
-        if not text or not self.recent_hal_sentences:
-            return False
-
-        # Acoustic echo is physically impossible if more than 2.5s have elapsed since HAL output audio
-        if time.time() - self.last_speech_output_time > 2.5:
-            self.recent_hal_sentences.clear()
-            return False
-
-        def clean(s: str) -> str:
-            return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
-
-        u_clean = clean(text)
-        if not u_clean or len(u_clean) < 15:
-            return False
-
-        u_words = u_clean.split()
-        if len(u_words) < 4:
-            return False
-
-        for hal_sent in self.recent_hal_sentences:
-            h_clean = clean(hal_sent)
-            if not h_clean:
-                continue
-
-            # 1. Exact full sentence verbatim echo
-            if u_clean == h_clean:
-                return True
-
-            # 2. High word overlap (>= 85% of user's words) and similar sentence length
-            h_words = set(h_clean.split())
-            if h_words:
-                overlap = len(set(u_words) & h_words)
-                if (overlap / len(u_words)) >= 0.85 and abs(len(u_words) - len(h_words)) <= 3:
-                    return True
-
-        return False
-
     async def _process_text_pipeline(self, user_text: str):
         """Processes text input directly from Web Speech API with zero silence-window delay."""
         if is_stop_command(user_text):
@@ -243,12 +202,6 @@ class HalConsumer(AsyncWebsocketConsumer):
             await self.send(text_data="DONE")
             return
 
-        # Enclosure acoustic feedback guard: Reject transcripts echoing HAL's own synthesized voice
-        if self._is_echo_of_hal(user_text):
-            log(f"🛑 [HalConsumer] REJECTED SELF-ECHO FEEDBACK LOOP: \"{user_text}\" matches HAL recent speech. Suppressing inference.")
-            await self.send(text_data="DONE")
-            return
-            
         # Phonetic normalization for Fab's personal domain & surname
         normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\.com\b', 'colozzi.com', user_text, flags=re.IGNORECASE)
         normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\b', 'Colozzi', normalized_text, flags=re.IGNORECASE)
@@ -410,12 +363,6 @@ class HalConsumer(AsyncWebsocketConsumer):
                         self.is_client_sleeping = False
                         await self.send(text_data="WAKE")
 
-                    # Track recent speech for echo cancellation & send to client for frontend filtering
-                    self.recent_hal_sentences.append(speech_text)
-                    if len(self.recent_hal_sentences) > 15:
-                        self.recent_hal_sentences.pop(0)
-                    await self.send(text_data=f"HAL_TEXT:{speech_text}")
-
                     tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
                     
@@ -575,7 +522,6 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             # Signal client that audio generation is complete
             log("🏁 [HalConsumer] Sending DONE signal to client...")
-            self.last_speech_output_time = time.time()
             await self.send(text_data="DONE")
             log(f"⏱️ [HalConsumer] Pipeline complete in {time.time() - start_time:.2f}s.")
 
