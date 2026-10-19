@@ -668,7 +668,6 @@ async function initializeSystem() {
     log('✅ HAL 9000 fully operational and standing by.');
   } catch (err) {
     log(`❌ Initialization error: ${err.message}`);
-    alert(`Microphone permission is required to operate HAL 9000: ${err.message}`);
   }
 }
 

@@ -19,6 +19,7 @@ export class MotionDetector {
     this.lastY = 0;
     this.lastZ = 0;
     this.hasPreviousGravitySample = false;
+    this.permissionPromise = null;
 
     this._handleMotion = this._handleMotion.bind(this);
   }
@@ -35,29 +36,37 @@ export class MotionDetector {
       return Promise.resolve(false);
     }
 
+    if (this.permissionPromise) {
+      return this.permissionPromise;
+    }
+
     if (typeof DeviceMotionEvent.requestPermission === 'function') {
       try {
-        const promise = DeviceMotionEvent.requestPermission();
-        promise
+        this.permissionPromise = DeviceMotionEvent.requestPermission()
           .then((permissionState) => {
             if (permissionState === 'granted') {
               this.onLog('✅ [MotionDetector] iOS DeviceMotion permission GRANTED.');
               this.start();
+              return true;
             } else {
               this.onLog(`⚠️ [MotionDetector] iOS DeviceMotion permission ${permissionState}.`);
+              return false;
             }
           })
           .catch((err) => {
             this.onLog(`❌ [MotionDetector] Permission request error: ${err.message}`);
+            return false;
           });
-        return promise;
+        return this.permissionPromise;
       } catch (err) {
         this.onLog(`❌ [MotionDetector] Sync request error: ${err.message}`);
-        return Promise.reject(err);
+        this.permissionPromise = Promise.resolve(false);
+        return this.permissionPromise;
       }
     } else {
       this.start();
-      return Promise.resolve(true);
+      this.permissionPromise = Promise.resolve(true);
+      return this.permissionPromise;
     }
   }
 
