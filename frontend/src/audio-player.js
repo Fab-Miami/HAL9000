@@ -98,6 +98,7 @@ export class AudioPlayer {
     source.start(this.scheduledTime);
     this.scheduledTime += audioBuffer.duration;
     this.activeSources.push(source);
+    this.streamFinished = false;
 
     if (!this.isPlaying) {
       this.isPlaying = true;
@@ -110,7 +111,8 @@ export class AudioPlayer {
         this.activeSources.splice(index, 1);
       }
 
-      if (this.activeSources.length === 0 && this.scheduledTime <= this.audioContext.currentTime + 0.1) {
+      // Only end playback if server sent DONE (streamFinished) AND all scheduled audio has finished playing
+      if (this.streamFinished && this.activeSources.length === 0 && this.scheduledTime <= this.audioContext.currentTime + 0.1) {
         this.isPlaying = false;
         this.onPlaybackStateChange(false);
       }
@@ -119,7 +121,8 @@ export class AudioPlayer {
 
   finishStream() {
     // Called when DONE signal arrives from server
-    if (this.activeSources.length === 0) {
+    this.streamFinished = true;
+    if (this.activeSources.length === 0 && (!this.audioContext || this.scheduledTime <= this.audioContext.currentTime + 0.1)) {
       this.isPlaying = false;
       this.onPlaybackStateChange(false);
     }
@@ -127,6 +130,7 @@ export class AudioPlayer {
 
   stopPlayback() {
     // Immediately cut off all queued audio chunks (Barge-in)
+    this.streamFinished = true;
     this.activeSources.forEach((src) => {
       try {
         src.stop();

@@ -10,7 +10,7 @@ from . import tts
 
 # How long to wait for silence before processing (seconds).
 CAPTURE_WINDOW = 1.2
-SILENCE_THRESHOLD = 3000  # Threshold accommodating the physical enclosure ambient acoustic floor
+SILENCE_THRESHOLD = 1500  # Calibrated for natural human voice through physical enclosure and glass lens
 
 import datetime
 def log(msg):
