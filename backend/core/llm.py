@@ -153,6 +153,7 @@ def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1, sa
         wav_file.setnchannels(channels)
         wav_file.setsampwidth(sample_width)
         wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
     return wav_io.getvalue()
 
 MIAMI_TZ = zoneinfo.ZoneInfo("America/New_York")
