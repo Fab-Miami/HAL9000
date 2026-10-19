@@ -521,15 +521,18 @@ async def stream_gemini_response(chat_session, user_input):
             # Text input
             input_part = str(user_input)
         
-        # Sanitize chat_session history: Gemini API strictly rejects multi-turn requests
-        # if past turns contain raw audio/inline_data. Past history turns must be text-only!
-        history_list = getattr(chat_session, '_history', None)
-        if history_list:
-            for content in history_list:
-                if getattr(content, 'parts', None):
-                    for idx, part in enumerate(content.parts):
-                        if getattr(part, 'inline_data', None):
-                            content.parts[idx] = types.Part.from_text(text="[Spoken Audio Input]")
+        def _sanitize_history():
+            for hist_attr in ('_curated_history', '_comprehensive_history', '_history'):
+                h_list = getattr(chat_session, hist_attr, None)
+                if h_list and isinstance(h_list, list):
+                    for content in h_list:
+                        if getattr(content, 'parts', None):
+                            for idx, part in enumerate(content.parts):
+                                if getattr(part, 'inline_data', None):
+                                    content.parts[idx] = types.Part.from_text(text="[Spoken Audio Input]")
+
+        # 1. Sanitize before sending to ensure no past turn has inline audio
+        _sanitize_history()
 
         # Send message to Gemini Async Chat Session with streaming enabled
         response_stream = await chat_session.send_message_stream([time_context, input_part])
@@ -551,6 +554,9 @@ async def stream_gemini_response(chat_session, user_input):
 
             if chunk.text:
                 yield chunk.text
+
+        # 2. Immediately sanitize after turn completes so this turn's audio does not linger in history
+        _sanitize_history()
                 
     except Exception as e:
         print(f"❌ [Gemini Error]: {e}")
