@@ -9,8 +9,8 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 1.2
-SILENCE_THRESHOLD = 1500  # Calibrated for natural human voice through physical enclosure and glass lens
+CAPTURE_WINDOW = 2.0
+SILENCE_THRESHOLD = 3000  # Restored baseline: threshold accommodating the physical enclosure ambient acoustic floor
 
 import datetime
 def log(msg):
@@ -169,8 +169,11 @@ class HalConsumer(AsyncWebsocketConsumer):
             rms = 0.0
             if len(data) > 0:
                 rms = float(np.sqrt(np.mean(np.square(data.astype(np.float32)))))
-
-            if rms > SILENCE_THRESHOLD:
+            # Voice Activity Hysteresis: Require SILENCE_THRESHOLD (3000) for onset,
+            # but once recording, keep speech alive at 40% (1200) so softer words and
+            # natural mid-sentence pauses aren't cut off prematurely.
+            active_threshold = (SILENCE_THRESHOLD * 0.40) if self.is_recording else SILENCE_THRESHOLD
+            if rms > active_threshold:
                 self.last_speech_time = time.time()
                 if not self.is_recording:
                     self.is_recording = True
@@ -208,8 +211,8 @@ class HalConsumer(AsyncWebsocketConsumer):
     async def _process_pipeline(self):
         """Fallback audio pipeline: waits for silence, then packages WAV and invokes generation."""
         try:
-            # When sleeping, wait for 2.0s of silence after speech (wake trigger); in conversation, use 1.2s
-            silence_window = 2.0 if self.is_client_sleeping else CAPTURE_WINDOW
+            # In standby/sleep, wait for 2.5s of verified silence after wake command; in conversation, use CAPTURE_WINDOW (2.0s)
+            silence_window = 2.5 if self.is_client_sleeping else CAPTURE_WINDOW
             while time.time() - self.last_speech_time < silence_window:
                 await asyncio.sleep(0.05)
             
