@@ -384,27 +384,15 @@ speechRecognizer = new SpeechRecognizer({
 });
 
 motionDetector = new MotionDetector({
-  threshold: 3.8,
+  threshold: 2.5,
   onKnock: (magnitude) => {
-    // If HAL is speaking, ignore low vibrations (< 5.5 m/s²) caused by audio speaker resonance in chassis
-    if (currentState === State.PROCESSING && magnitude < 5.5) {
-      log(`ℹ️ [MotionDetector] Filtered speaker resonance (${magnitude.toFixed(1)} m/s²) during audio playback.`);
-      return;
-    }
+    // MOTION DETECTOR IS EXCLUSIVELY FOR WAKE UP IN SLEEP MODE!
+    // If HAL is awake or speaking, never listen or intercept.
+    if (currentState !== State.SLEEPING) return;
 
-    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
-    // Physical tap blinks the 3 auxiliary dots immediately!
+    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)! Waking up HAL.`);
     triggerLedExpression('wink', 450);
-
-    if (currentState === State.SLEEPING) {
-      log('☀️ [Sleeping] Enclosure knock detected! Waking up HAL.');
-      wakeUp();
-    } else if (currentState === State.PROCESSING || currentState === State.THINKING) {
-      log('⚡ Intercepting HAL via physical enclosure knock.');
-      triggerVoiceBargeIn();
-    } else {
-      resetSleepTimer();
-    }
+    wakeUp();
     requestScreenWakeLock();
     ensureKeepAwakeVideoPlaying();
   },
