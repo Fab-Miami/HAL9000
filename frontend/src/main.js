@@ -197,9 +197,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend.');
+      log('✅ [WS] Connected to HAL backend (v2 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
+        version: 'v2',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
