@@ -269,6 +269,8 @@ function updateVisuals(intensity, isHalSpeech = false) {
   }
 }
 
+let lastPlaybackEndTime = 0;
+
 // Instantiate Subsystems
 audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
@@ -277,6 +279,7 @@ audioPlayer = new AudioPlayer({
       if (speechRecognizer) speechRecognizer.pause();
       setState(State.PROCESSING);
     } else {
+      lastPlaybackEndTime = Date.now();
       if (audioRecorder) audioRecorder.muted = false;
       if (speechRecognizer) speechRecognizer.resume();
       resetToStandby();
@@ -352,7 +355,7 @@ function recordHalSpeech(sentence) {
   const cleanText = sentence.trim();
   if (cleanText) {
     recentHalSentences.push(cleanText);
-    if (recentHalSentences.length > 15) {
+    if (recentHalSentences.length > 6) {
       recentHalSentences.shift();
     }
   }
@@ -360,27 +363,32 @@ function recordHalSpeech(sentence) {
 
 function isEchoOfHal(userText) {
   if (!userText || recentHalSentences.length === 0) return false;
+  // Acoustic echo is physically impossible if more than 2.0s have elapsed since HAL stopped speaking
+  if (Date.now() - lastPlaybackEndTime > 2000) {
+    recentHalSentences.length = 0;
+    return false;
+  }
   const clean = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
   const uClean = clean(userText);
-  if (!uClean) return false;
-  const uWords = new Set(uClean.split(/\s+/).filter(Boolean));
-  if (uWords.size === 0) return false;
+  // Short conversational phrases ("are you there", "can you hear me", "what is that") are NEVER echoes
+  if (!uClean || uClean.length < 15) return false;
+  const uWords = uClean.split(/\s+/).filter(Boolean);
+  if (uWords.length < 4) return false;
 
   for (const s of recentHalSentences) {
     const hClean = clean(s);
     if (!hClean) continue;
-    // 1. Direct containment / substring match
-    if (uClean.length >= 6 && (uClean.includes(hClean) || hClean.includes(uClean))) {
+    // 1. Verbatim exact match of full sentence
+    if (uClean === hClean) {
       return true;
     }
-    // 2. High word overlap (catches partial / truncated transcriptions of HAL's voice)
+    // 2. High word overlap of USER's sentence (>= 85% of user's words) and similar sentence length
     const hWords = new Set(hClean.split(/\s+/).filter(Boolean));
     let overlap = 0;
     for (const w of uWords) {
       if (hWords.has(w)) overlap++;
     }
-    const minLen = Math.min(uWords.size, hWords.size);
-    if (minLen >= 3 && (overlap / minLen) >= 0.60) {
+    if ((overlap / uWords.length) >= 0.85 && Math.abs(uWords.length - hWords.size) <= 3) {
       return true;
     }
   }
@@ -764,7 +772,12 @@ async function initializeSystem() {
     await audioPlayer.initialize();
 
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
-    await audioRecorder.start();
+    try {
+      await audioRecorder.start();
+    } catch (recErr) {
+      log(`⚠️ AudioRecorder startup note: ${recErr.message}`);
+    }
+
     if (speechRecognizer) {
       speechRecognizer.start();
     }
@@ -782,6 +795,7 @@ async function initializeSystem() {
 
     log('✅ HAL 9000 fully operational and standing by.');
   } catch (err) {
+    isSystemInitialized = false;
     log(`❌ Initialization error: ${err.message}`);
   }
 }

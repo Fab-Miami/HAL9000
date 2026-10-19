@@ -111,9 +111,10 @@ export class AudioPlayer {
         this.activeSources.splice(index, 1);
       }
 
-      // Only end playback if server sent DONE (streamFinished) AND all scheduled audio has finished playing
-      if (this.streamFinished && this.activeSources.length === 0 && this.scheduledTime <= this.audioContext.currentTime + 0.1) {
+      // End playback when server sent DONE (streamFinished) AND all scheduled audio chunks have finished playing
+      if (this.streamFinished && this.activeSources.length === 0) {
         this.isPlaying = false;
+        this.scheduledTime = 0;
         this.onPlaybackStateChange(false);
       }
     };
@@ -122,9 +123,20 @@ export class AudioPlayer {
   finishStream() {
     // Called when DONE signal arrives from server
     this.streamFinished = true;
-    if (this.activeSources.length === 0 && (!this.audioContext || this.scheduledTime <= this.audioContext.currentTime + 0.1)) {
+    if (this.activeSources.length === 0) {
       this.isPlaying = false;
+      this.scheduledTime = 0;
       this.onPlaybackStateChange(false);
+    } else {
+      // Safety watchdog: ensure playback state resets once remaining scheduled time passes
+      const remainingMs = Math.max(100, Math.round(((this.scheduledTime - (this.audioContext ? this.audioContext.currentTime : 0)) * 1000) + 250));
+      setTimeout(() => {
+        if (this.isPlaying && this.activeSources.length === 0) {
+          this.isPlaying = false;
+          this.scheduledTime = 0;
+          this.onPlaybackStateChange(false);
+        }
+      }, remainingMs);
     }
   }
 

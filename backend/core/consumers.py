@@ -83,6 +83,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.current_volume = 5
         self.is_client_sleeping = False
         self.recent_hal_sentences = []
+        self.last_speech_output_time = 0.0
         
         # Load recent history and long-term summaries
         self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
@@ -201,15 +202,20 @@ class HalConsumer(AsyncWebsocketConsumer):
         if not text or not self.recent_hal_sentences:
             return False
 
+        # Acoustic echo is physically impossible if more than 2.5s have elapsed since HAL output audio
+        if time.time() - self.last_speech_output_time > 2.5:
+            self.recent_hal_sentences.clear()
+            return False
+
         def clean(s: str) -> str:
             return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
 
         u_clean = clean(text)
-        if not u_clean:
+        if not u_clean or len(u_clean) < 15:
             return False
 
-        u_words = set(u_clean.split())
-        if not u_words:
+        u_words = u_clean.split()
+        if len(u_words) < 4:
             return False
 
         for hal_sent in self.recent_hal_sentences:
@@ -217,16 +223,15 @@ class HalConsumer(AsyncWebsocketConsumer):
             if not h_clean:
                 continue
 
-            # 1. Exact or substring match (e.g. user text is inside HAL sentence or HAL sentence is inside user text)
-            if len(u_clean) >= 6 and (u_clean in h_clean or h_clean in u_clean):
+            # 1. Exact full sentence verbatim echo
+            if u_clean == h_clean:
                 return True
 
-            # 2. High word overlap (captures partial / noisy transcriptions of HAL's voice)
+            # 2. High word overlap (>= 85% of user's words) and similar sentence length
             h_words = set(h_clean.split())
             if h_words:
-                overlap = len(u_words & h_words)
-                min_len = min(len(u_words), len(h_words))
-                if min_len >= 3 and (overlap / min_len) >= 0.60:
+                overlap = len(set(u_words) & h_words)
+                if (overlap / len(u_words)) >= 0.85 and abs(len(u_words) - len(h_words)) <= 3:
                     return True
 
         return False
@@ -570,6 +575,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             # Signal client that audio generation is complete
             log("🏁 [HalConsumer] Sending DONE signal to client...")
+            self.last_speech_output_time = time.time()
             await self.send(text_data="DONE")
             log(f"⏱️ [HalConsumer] Pipeline complete in {time.time() - start_time:.2f}s.")
 
