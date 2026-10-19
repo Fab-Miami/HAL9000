@@ -191,24 +191,28 @@ export class SpeechRecognizer {
 
   pause() {
     // Mute speech recognition while HAL is actively speaking
+    // CRITICAL: NEVER call recognition.abort() or recognition.stop() here!
+    // In iOS Safari, aborting or stopping speech recognition causes the iOS system to
+    // emit an audible system dictation chime ("BEEP BEEP").
+    // By keeping recognition running continuously and simply setting isPaused = true,
+    // onresult silently ignores speech during HAL audio playback with zero system beeps.
     if (!this.isSupported || this.isPaused) return;
     this.isPaused = true;
-    this.isActive = false;
-    this.isStarting = false;
     clearTimeout(this.interimDebounceTimer);
     this.accumulatedText = '';
-    try {
-      this.recognition.abort();
-    } catch (e) {}
     this.onLog('🔇 [SpeechRecognizer] Muted recognition (HAL output in progress).');
   }
 
   resume() {
     // Resume listening after HAL finishes speaking
-    if (!this.isSupported || !this.isListening) return;
+    if (!this.isSupported) return;
     this.isPaused = false;
     this.accumulatedText = '';
+    clearTimeout(this.interimDebounceTimer);
     this.onLog('🎙️ [SpeechRecognizer] Resumed active speech listening.');
-    this._safeStart();
+    // Only start if the session genuinely ended or dropped in the background
+    if (this.isListening && !this.isActive && !this.isStarting) {
+      this._safeStart();
+    }
   }
 }
