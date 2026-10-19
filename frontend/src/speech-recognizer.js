@@ -5,11 +5,12 @@
  */
 
 export class SpeechRecognizer {
-  constructor({ onFinalSpeech, onInterimSpeech, onStatusChange, onLog }) {
+  constructor({ onFinalSpeech, onInterimSpeech, onStatusChange, onLog, getLastVoiceTime }) {
     this.onFinalSpeech = onFinalSpeech || (() => {});
     this.onInterimSpeech = onInterimSpeech || (() => {});
     this.onStatusChange = onStatusChange || (() => {});
     this.onLog = onLog || console.log;
+    this.getLastVoiceTime = getLastVoiceTime || (() => 0);
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     this.isSupported = !!SpeechRecognitionClass;
@@ -27,6 +28,8 @@ export class SpeechRecognizer {
     this.watchdogInterval = null;
     this.sleeping = false;
     this.SILENCE_DELAY_MS = 1800; // 1,800ms natural conversational pause
+    this.lastTextReceivedTime = 0;
+    this.latestSnapshotIndex = 0;
 
     if (this.isSupported) {
       try {
@@ -53,6 +56,8 @@ export class SpeechRecognizer {
       this.isActive = true;
       this.isStarting = false;
       this.turnStartIndex = 0;
+      this.latestSnapshotIndex = 0;
+      this.lastTextReceivedTime = 0;
       this.currentText = '';
       this.onLog('🎙️ [SpeechRecognizer] Speech recognition session started.');
       this.onStatusChange('LISTENING');
@@ -85,6 +90,8 @@ export class SpeechRecognizer {
 
       if (speech) {
         this.currentText = speech;
+        this.lastTextReceivedTime = Date.now();
+        this.latestSnapshotIndex = event.results.length;
         this.onInterimSpeech(speech);
 
         // Natural silence debounce: 1.8s during active conversation, 2.5s when in standby
@@ -134,10 +141,33 @@ export class SpeechRecognizer {
       this.currentText = '';
       return;
     }
+
+    // Acoustic Voice Activity Verification:
+    // If user was speaking acoustically within the required silence window, do NOT finalize!
+    // WebKit on iOS batches speech tokens and may delay emitting the next chunk while user speaks.
+    const lastVoice = this.getLastVoiceTime();
+    if (lastVoice > 0) {
+      const elapsedSinceVoice = Date.now() - lastVoice;
+      const requiredDelay = this.sleeping ? 2500 : this.SILENCE_DELAY_MS;
+      const timeSinceLastText = Date.now() - (this.lastTextReceivedTime || 0);
+
+      // Defer finalization if acoustic speech was detected recently,
+      // with a 4.0s timeout on WebKit text stalls to avoid locking on constant ambient noise.
+      if (elapsedSinceVoice < requiredDelay && timeSinceLastText < 4000) {
+        const waitRemaining = Math.max(150, requiredDelay - elapsedSinceVoice);
+        clearTimeout(this.interimDebounceTimer);
+        this.interimDebounceTimer = setTimeout(() => {
+          this._finalizeSpeech(this.latestSnapshotIndex || snapshotIndex);
+        }, waitRemaining);
+        return;
+      }
+    }
+
     const speechToSend = this.currentText.trim();
     this.currentText = '';
-    if (typeof snapshotIndex === 'number') {
-      this.turnStartIndex = snapshotIndex;
+    const finalIndex = typeof snapshotIndex === 'number' ? Math.max(snapshotIndex, this.latestSnapshotIndex || 0) : this.latestSnapshotIndex;
+    if (typeof finalIndex === 'number' && finalIndex > 0) {
+      this.turnStartIndex = finalIndex;
     }
 
     if (speechToSend) {
@@ -221,6 +251,7 @@ export class SpeechRecognizer {
     clearTimeout(this.cooldownTimer);
     clearTimeout(this.interimDebounceTimer);
     this.currentText = '';
+    this.lastTextReceivedTime = 0;
     this.onLog('🔇 [SpeechRecognizer] Muted recognition (HAL output in progress).');
   }
 
@@ -230,6 +261,7 @@ export class SpeechRecognizer {
     this.isPaused = false;
     this.isCooldown = true;
     this.currentText = '';
+    this.lastTextReceivedTime = 0;
     clearTimeout(this.interimDebounceTimer);
     clearTimeout(this.cooldownTimer);
 

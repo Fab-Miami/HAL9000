@@ -33,6 +33,7 @@ let audioRecorder = null;
 let speechRecognizer = null;
 let motionDetector = null;
 let isSystemInitialized = false;
+let lastUserVoiceTime = 0;
 
 // Sleep Mode State
 let sleepTimer = null;
@@ -289,6 +290,7 @@ audioPlayer = new AudioPlayer({
     } else {
       if (audioRecorder) audioRecorder.muted = false;
       if (speechRecognizer) speechRecognizer.resume();
+      lastUserVoiceTime = 0;
       resetToStandby();
       stopInteraction();
     }
@@ -351,7 +353,9 @@ function isHalWakeWord(text) {
 }
 
 speechRecognizer = new SpeechRecognizer({
+  getLastVoiceTime: () => lastUserVoiceTime,
   onFinalSpeech: (text) => {
+    lastUserVoiceTime = 0;
     if (currentState === State.SLEEPING) {
       if (!isHalWakeWord(text)) {
         log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
@@ -376,7 +380,7 @@ speechRecognizer = new SpeechRecognizer({
       const speechToSend = isPhonetic ? 'HAL' : text;
       log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
       wsClient.sendJson({ type: 'user_text', text: speechToSend });
-      if (speechRecognizer) speechRecognizer.pause();
+      // NOTE: Do NOT pause speech recognition here! AudioPlayer handles muting when audio output begins.
       setState(State.THINKING);
     }
   },
@@ -443,6 +447,9 @@ audioRecorder = new AudioRecorder({
     }
   },
   onAudioLevel: (intensity) => {
+    if (intensity > 0.012) {
+      lastUserVoiceTime = Date.now();
+    }
     if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
       updateVisuals(intensity, false); // User Voice Modulates Acoustic Ring
     }
