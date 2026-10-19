@@ -193,7 +193,12 @@ class HalConsumer(AsyncWebsocketConsumer):
             log(f"🛑 [HalConsumer] Stop command received via text (\"{user_text}\"). Remaining silent.")
             await self.send(text_data="DONE")
             return
-        await self._execute_generation(user_text, is_text_mode=True, initial_transcript=user_text)
+            
+        # Phonetic normalization for Fab's personal domain & surname
+        normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\.com\b', 'colozzi.com', user_text, flags=re.IGNORECASE)
+        normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\b', 'Colozzi', normalized_text, flags=re.IGNORECASE)
+        
+        await self._execute_generation(normalized_text, is_text_mode=True, initial_transcript=normalized_text)
 
     async def _process_pipeline(self):
         """Fallback audio pipeline: waits for silence, then packages WAV and invokes generation."""
