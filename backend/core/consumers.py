@@ -399,11 +399,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                 
                 accumulated_text += token
 
-                # If model responded with [SILENCE] or standalone "Silence.", abort speech generation immediately
-                accum_clean = re.sub(r'(?i)^\s*\*?\*?HALANSWER\*?\*?\s*:\s*', '', accumulated_text).strip()
-                if "[SILENCE]" in accumulated_text.upper() or re.sub(r'[^a-z0-9]', '', accum_clean.lower()) in ('silence', 'none', 'ambientnoise'):
+                # If model responded with explicit [SILENCE] protocol tag, abort speech generation immediately
+                if "[SILENCE]" in accumulated_text.upper():
                     is_silent_response = True
-                    log("🤫 [HalConsumer] Non-speech/ambient audio detected. HAL remaining completely silent.")
+                    log("🤫 [HalConsumer] Protocol [SILENCE] detected. HAL remaining completely silent.")
                     while not sentence_queue.empty():
                         try:
                             sentence_queue.get_nowait()
@@ -436,8 +435,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                         # Process any remaining sentences in the HAL part
                         clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
-                        clean_hal_tok = re.sub(r'[^a-z0-9]', '', clean_hal.lower())
-                        if clean_hal and not clean_hal.upper().startswith("[SILENCE]") and clean_hal_tok not in ('silence', 'none', 'ambientnoise'):
+                        if clean_hal and "[SILENCE]" not in clean_hal.upper():
                             clean_hal = await self._process_hardware_directives(clean_hal)
                             if clean_hal:
                                 full_response_text += clean_hal + " "
@@ -458,10 +456,9 @@ class HalConsumer(AsyncWebsocketConsumer):
                             
                             # Clean up and push to TTS queue
                             if complete_sentence:
-                                cleaned_tok = re.sub(r'[^a-z0-9]', '', complete_sentence.lower())
-                                if complete_sentence.upper().startswith("[SILENCE]") or cleaned_tok in ('silence', 'none', 'ambientnoise', 'nospeech'):
+                                if "[SILENCE]" in complete_sentence.upper():
                                     is_silent_response = True
-                                    log(f"🤫 [HalConsumer] Detected silence marker in sentence: \"{complete_sentence}\". Remaining silent.")
+                                    log(f"🤫 [HalConsumer] Silence protocol [SILENCE] detected in sentence. Remaining silent.")
                                     while not sentence_queue.empty():
                                         try:
                                             sentence_queue.get_nowait()
@@ -480,7 +477,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             # If the stream finished without encountering USERTRANSCRIPT:, flush remaining text
             if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
                 clean_tail = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', accumulated_text).strip()
-                if not clean_tail.upper().startswith("[SILENCE]"):
+                if "[SILENCE]" not in clean_tail.upper():
                     clean_tail = await self._process_hardware_directives(clean_tail)
                     if clean_tail:
                         full_response_text += clean_tail

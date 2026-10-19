@@ -25,10 +25,6 @@ const State = {
 let currentState = State.IDLE;
 let wakeLockSentinel = null;
 let wakeLockFailedLogged = false;
-let tapCount = 0;
-let tapTimer = null;
-let conversationInterval = null;
-let conversationTimeRemaining = 0;
 
 // Subsystems declared early so log/sendTelemetry does not trigger Temporal Dead Zone ReferenceError
 let wsClient = null;
@@ -269,7 +265,6 @@ function updateVisuals(intensity, isHalSpeech = false) {
   }
 }
 
-let lastPlaybackEndTime = 0;
 
 // Instantiate Subsystems
 audioPlayer = new AudioPlayer({
@@ -279,7 +274,6 @@ audioPlayer = new AudioPlayer({
       if (speechRecognizer) speechRecognizer.pause();
       setState(State.PROCESSING);
     } else {
-      lastPlaybackEndTime = Date.now();
       if (audioRecorder) audioRecorder.muted = false;
       if (speechRecognizer) speechRecognizer.resume();
       resetToStandby();
@@ -530,31 +524,6 @@ function stopInteraction() {
     goToSleep();
   } else {
     resetSleepTimer();
-  }
-
-  try {
-    audioRecorder.start();
-  } catch (e) {}
-}
-
-function startConversationTimer(seconds) {
-  clearConversationTimer();
-  conversationTimeRemaining = seconds;
-
-  conversationInterval = setInterval(() => {
-    conversationTimeRemaining--;
-
-    if (conversationTimeRemaining <= 0) {
-      clearConversationTimer();
-      log('⏳ Continuous conversation mode timed out.');
-    }
-  }, 1000);
-}
-
-function clearConversationTimer() {
-  if (conversationInterval) {
-    clearInterval(conversationInterval);
-    conversationInterval = null;
   }
 }
 
