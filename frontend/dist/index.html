@@ -24,13 +24,23 @@
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png?v=3" />
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=3" />
 
-  <script type="module" crossorigin src="/assets/index-Cfbd3D4V.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DgQ1cgVk.css">
+  <script type="module" crossorigin src="/assets/index-GIlmFu5m.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BUv89yn9.css">
 </head>
 <body>
   <div id="app">
-    <!-- Transparent Interaction Layer (Forces iOS Safari to register tap and unlock AudioContext) -->
-    <div id="init-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999; cursor:pointer; -webkit-tap-highlight-color:transparent;"></div>
+    <!-- Initialization Modal Overlay (Prompts user to touch screen to unlock audio & grant iOS permissions) -->
+    <div id="init-overlay">
+      <div class="init-modal-card">
+        <div class="init-scanner-ring">
+          <div class="init-scanner-pulse"></div>
+          <div class="init-scanner-core"></div>
+        </div>
+        <div class="init-title">HAL 9000 SYSTEM</div>
+        <div class="init-action">TOUCH SCREEN TO ACTIVATE</div>
+        <div class="init-desc">Tap anywhere to grant Microphone &amp; Motion Sensor permissions</div>
+      </div>
+    </div>
     
     <!-- Main Optical Faceplate (Centered behind 3D printed bezel) -->
     <div id="hal-stage">

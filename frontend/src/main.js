@@ -788,6 +788,7 @@ async function initializeSystem() {
 
 // Synchronous iOS gesture trigger for Accelerometer / Motion Sensors
 function onInitializeGesture(e) {
+  if (isSystemInitialized) return;
   if (e && e.cancelable) {
     e.preventDefault();
   }
