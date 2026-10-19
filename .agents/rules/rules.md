@@ -40,19 +40,32 @@
   - **One-Way Lock**: Once in `3D` mode, it **STAYS in `3D` mode** until the next app restart / browser reload.
 - **Master Image (`HAL9000.png`)**: Optical center is locked at exact concentric origin `(639.5, 639.5)`.
 
-## 6. Voice Activity Detection & Audio Pipeline
-- **Silence Window**: `CAPTURE_WINDOW = 1.0` seconds of trailing silence.
-- **VAD Threshold**: `SILENCE_THRESHOLD = 2200` RMS (isolates real vocal speech at 4,000–8,000+ RMS while discarding ambient room noise at 900–1,400 RMS).
-- **Buffer Alignment**: Strict 16-bit PCM word alignment (`trim_bytes` and `pcm_bytes` must always be an even multiple of 2 bytes).
-- **Phantom Noise Rejection**: Discard audio payloads under 0.40s or below the vocal RMS energy floor before calling LLM.
-- **Transcript Isolation**: Quarantines `USERTRANSCRIPT:` from LLM token stream so transcript text never leaks to TTS.
-- **Voice Barge-In**: User speech while HAL is talking triggers an immediate `<50ms` interrupt and playback cutoff.
+## 6. Audio Architecture & Speech Recognition (PHONE DOES 100% OF LISTENING)
+- **PRIMARY LISTENING PIPELINE IS ON-DEVICE (THE PHONE)**:
+  - The hosting iPhone runs Apple's on-device neural dictation via Web Speech API (`SpeechRecognizer` using `webkitSpeechRecognition`).
+  - **NEVER REMOVE, BYPASS, OR DISABLE `SpeechRecognizer` in `frontend/src/main.js`!**
+  - **NEVER switch primary listening to server-side raw audio VAD!**
+  - The phone transcribes words in real-time, modulates the acoustic ring (`#layer-ring-on`), and sends transcribed text tokens (`wsClient.sendJson({ type: 'user_text', text: speechToSend })`) to Daphne.
+  - The server consumes `user_text` directly via `_process_text_pipeline(user_text)` with ZERO audio buffering delay, ZERO server silence timer cutoffs, and ZERO RMS filtering.
+  - Raw audio streaming (`wsClient.sendAudio(pcmBuffer)`) is STRICTLY a fallback for non-Safari environments where `!speechRecognizer.isSupported`. On iPhone Safari, it must remain inactive.
+- **ZERO iOS DICTATION DOUBLE-BEEPS**:
+  - In `frontend/src/speech-recognizer.js`, `pause()` sets `this.isPaused = true` and `resume()` sets `this.isPaused = false`.
+  - **CRITICAL**: NEVER call `recognition.abort()` or `recognition.stop()` in `pause()`, and NEVER call `recognition.start()` in `resume()`. Calling abort/start triggers Apple's loud system dictation audio chime ("BEEP BEEP"). Keeping the session open silently in memory eliminates all beeps completely.
+- **VOICE BARGE-IN**:
+  - User speech while HAL is talking triggers an immediate interrupt to Daphne (`wsClient.sendInterrupt()`), stops playback immediately, and resumes `speechRecognizer`.
 
-## 7. Models & Engines
-- **LLM Engine**: Modern `google-genai` SDK using `gemini-3-flash-preview` with streaming.
+## 7. Sealed Physical Enclosure & Hardware Constraints
+- **Hardware Form Factor**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami, permanently connected to wall power.
+- **Touchscreen Inaccessible**: Physical taps are detected solely via the accelerometer (`MotionDetector`, threshold 2.5 m/s²) and acoustic double-taps.
+- **24/7 Screen & Faceplate Visibility**: Battery saving and screen dimming are strictly forbidden. The faceplate (`#layer-everything-off`) stays 100% visible 24/7 via WakeLock and silent loop video. Standby/sleep is expressed EXCLUSIVELY by extinguishing the central red LED (`#layer-center-on`).
+- **Location Context**: Line 355 in `backend/core/llm.py` MUST always preserve: `"Your current location is Miami Beach."`.
+
+## 8. Models & Engines
+- **LLM Engine**: Modern `google-genai` SDK using `gemini-3-flash-preview` / `gemini-3.5-flash-lite` with streaming.
 - **TTS Engine**: `kokoro-onnx` using quantized model `kokoro-v1.0-quant.onnx` and custom `hal9000` voice weights (`voices-v1.0.bin`) at 24kHz.
-- **No Search Overhead**: Pure zero-overhead conversational streaming (no search tools attached to default chat).
+- **Tools**: Live web browsing (`read_web_page`), Google Calendar, Google Shopping List, and Google Search.
 
-## 8. General Constraints
+## 9. General Constraints
+- **NEVER BREAK OR REFACTOR CORE ARCHITECTURE WITHOUT EXPLICIT PERMISSION FROM FAB.**
 - **CRITICAL: DO NOT EVER WRITE UNIT TESTS.**
-- **ALWAYS DELETE TEST FILES AND TEMPORARY SCRIPTS**: Any python scripts, bash scripts, or other temporary files created during debugging (e.g. `test_ws_loud.py`, `test_rms.py`, `run.sh`) must be explicitly deleted before finishing the task. Do not leave them behind in the workspace!
+- **ALWAYS DELETE TEST FILES AND TEMPORARY SCRIPTS**: Any python scripts, bash scripts, or other temporary files created during debugging must be explicitly deleted before finishing the task. Do not leave them behind in the workspace!
