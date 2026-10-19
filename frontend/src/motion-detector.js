@@ -24,36 +24,45 @@ export class MotionDetector {
   }
 
   /**
-   * Request iOS sensor permission and begin motion monitoring.
-   * MUST be invoked directly inside a user touch/click gesture (e.g. INITIALIZE SYSTEM).
+   * Request iOS sensor permission synchronously in user gesture call stack.
+   * In iOS Safari, DeviceMotionEvent.requestPermission() MUST be invoked directly
+   * on the synchronous turn of a click/touchend event; any preceding 'await' causes
+   * WebKit to reject with "requires a user gesture".
    */
-  async initialize() {
+  requestPermissionSync() {
     if (!this.isSupported) {
       this.onLog('⚠️ [MotionDetector] DeviceMotionEvent not supported in this browser environment.');
-      return false;
+      return Promise.resolve(false);
     }
 
-    try {
-      // iOS 13+ permission model
-      if (typeof DeviceMotionEvent.requestPermission === 'function') {
-        const permissionState = await DeviceMotionEvent.requestPermission();
-        if (permissionState === 'granted') {
-          this.onLog('✅ [MotionDetector] iOS DeviceMotion permission GRANTED.');
-          this.start();
-          return true;
-        } else {
-          this.onLog(`⚠️ [MotionDetector] iOS DeviceMotion permission ${permissionState}.`);
-          return false;
-        }
-      } else {
-        // Non-iOS or older Safari: permission granted by default
-        this.start();
-        return true;
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      try {
+        const promise = DeviceMotionEvent.requestPermission();
+        promise
+          .then((permissionState) => {
+            if (permissionState === 'granted') {
+              this.onLog('✅ [MotionDetector] iOS DeviceMotion permission GRANTED.');
+              this.start();
+            } else {
+              this.onLog(`⚠️ [MotionDetector] iOS DeviceMotion permission ${permissionState}.`);
+            }
+          })
+          .catch((err) => {
+            this.onLog(`❌ [MotionDetector] Permission request error: ${err.message}`);
+          });
+        return promise;
+      } catch (err) {
+        this.onLog(`❌ [MotionDetector] Sync request error: ${err.message}`);
+        return Promise.reject(err);
       }
-    } catch (err) {
-      this.onLog(`❌ [MotionDetector] Permission request error: ${err.message}`);
-      return false;
+    } else {
+      this.start();
+      return Promise.resolve(true);
     }
+  }
+
+  async initialize() {
+    return this.requestPermissionSync();
   }
 
   start() {

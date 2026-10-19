@@ -22,7 +22,8 @@ export class SpeechRecognizer {
     this.interimDebounceTimer = null;
     this.watchdogInterval = null;
     this.accumulatedText = '';
-    this.SILENCE_DELAY_MS = 1200; // 1,200ms pause window before dispatching speech
+    this.sleeping = false;
+    this.SILENCE_DELAY_MS = 1200; // 1,200ms pause window in conversation; 2,000ms when sleeping
 
     if (this.isSupported) {
       try {
@@ -76,11 +77,13 @@ export class SpeechRecognizer {
       if (currentLiveSpeech) {
         this.onInterimSpeech(currentLiveSpeech);
 
-        // Unified 1,200ms debounce: Wait for 1.2s of real silence before finalizing thought
+        // When sleeping, wait for ~2s of verified silence after "HAL wake up" before waking.
+        // During active conversation, use 1.2s debounce for responsive turns.
+        const delay = this.sleeping ? 2000 : this.SILENCE_DELAY_MS;
         clearTimeout(this.interimDebounceTimer);
         this.interimDebounceTimer = setTimeout(() => {
           this._finalizeSpeech();
-        }, this.SILENCE_DELAY_MS);
+        }, delay);
       }
     };
 
@@ -174,10 +177,16 @@ export class SpeechRecognizer {
       this.watchdogInterval = null;
     }
     clearTimeout(this.restartTimeout);
-    clearTimeout(this.interimDebounceTimer);
     try {
       this.recognition.stop();
     } catch (e) {}
+  }
+
+  setSleeping(sleeping) {
+    this.sleeping = !!sleeping;
+    this.accumulatedText = '';
+    clearTimeout(this.interimDebounceTimer);
+    this.onLog(`🗣️ [SpeechRecognizer] Standby/sleep mode set to: ${this.sleeping} (silence delay: ${this.sleeping ? 2000 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   pause() {

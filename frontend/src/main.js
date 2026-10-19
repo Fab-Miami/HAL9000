@@ -60,6 +60,7 @@ function wakeUp() {
     audioRecorder.sleeping = false;
   }
   if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.setSleeping(false);
     speechRecognizer.resume();
   }
   setState(State.LISTENING);
@@ -74,7 +75,7 @@ function goToSleep() {
     return;
   }
   
-  log('🌙 HAL entering Standby (Listening for enclosure tap or HAL wake word).');
+  log('🌙 HAL entering Standby (Listening for enclosure double-tap or "HAL wake up").');
   if (persistentLedOn) setPersistentLed(false);
   document.body.classList.add('sleep-mode');
   // Standby mode: ONLY central LED turns off. Faceplate stays 100% visible at all times!
@@ -85,6 +86,7 @@ function goToSleep() {
     audioRecorder.sleeping = true;
   }
   if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.setSleeping(true);
     speechRecognizer.resume();
   }
   setState(State.SLEEPING);
@@ -287,61 +289,17 @@ audioPlayer = new AudioPlayer({
 /**
  * Strict wake-word validator.
  * In sleep mode, HAL ONLY wakes on:
- * 1. An isolated "HAL" or greeting + "HAL" (e.g. "HAL", "Hey HAL", "OK HAL", "HAL?", "HAL wake up")
- * 2. Short wake phrases addressing HAL (e.g. "HAL are you there", "HAL wake up")
- * 3. Direct commands addressed to HAL (e.g. "HAL, what is on my calendar")
- * 4. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
- *    (e.g. "how", "al", "her", "hell", "owl" strictly as isolated short wake words)
- * Strictly rejects words containing "hal" (e.g. "hallucinant", "halibut", "shallow")
- * and general ambient conversation.
+ * "HAL wake up" (or "Hey HAL wake up", "OK HAL wake up", "Wake up HAL") followed by verified silence.
+ * All phonetic stand-ins (how, al, her, hell, owl) and general speech are strictly excluded.
  */
 function isHalWakeWord(text) {
   if (!text) return false;
-  const clean = text.trim().toLowerCase();
+  const clean = text.trim().toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
 
-  // 1. Strict anti-hallucination / substring rejection
-  // Rejects words that merely contain "hal" as part of another word
-  if (/\b(?:hallucin\w+|halibut|shallow|chalet|unhallowed|inhale|exhale|half)\b/i.test(clean)) {
-    return false;
-  }
-
-  // 2. Exact isolated wake word or greeting + HAL:
-  // e.g. "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal", "hal 9000", "hal nine thousand"
-  const isolatedHalRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:9000|nine\s+thousand))?[,\.!\?]*$/i;
-  if (isolatedHalRegex.test(clean)) {
-    return true;
-  }
-
-  // 3. Short wake phrases addressing HAL:
-  // e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake", "hal listen", "hal up"
-  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|can\s+you\s+hear\s+me|listen|up)[,\.!\?]*$/i;
-  if (shortWakeRegex.test(clean)) {
-    return true;
-  }
-  const reverseWakeRegex = /^(?:wake\s*up\s+)?hal[,\.!\?]*$/i;
-  if (reverseWakeRegex.test(clean)) {
-    return true;
-  }
-
-  // 4. Direct commands starting with HAL:
-  // e.g. "hal, what time is it", "hey hal, what is on my calendar"
-  if (/^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b[,\s]+/i.test(clean)) {
-    return true;
-  }
-
-  // 5. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
-  // On iOS Safari, "HAL" without context is frequently transcribed as "how", "al", "her", "hell", "owl"
-  // STRICT RULE: Only accept these if spoken as the ISOLATED word or short wake phrase, NOT in ambient sentences.
-  const isolatedPhoneticRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i;
-  if (isolatedPhoneticRegex.test(clean)) {
-    return true;
-  }
-  const shortPhoneticWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her)\s+(?:wake\s*up|are\s+you\s+(?:there|awake))[,\.!\?]*$/i;
-  if (shortPhoneticWakeRegex.test(clean)) {
-    return true;
-  }
-
-  return false;
+  // Strict wake phrases:
+  // "hal wake up", "hey hal wake up", "ok hal wake up", "okay hal wake up", "wake up hal", "please wake up hal", "hal please wake up"
+  const wakeWordPattern = /^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal\s+(?:please\s+)?wake\s*up|wake\s*up\s+(?:please\s+)?hal)(?:\s+please)?$/i;
+  return wakeWordPattern.test(clean);
 }
 
 speechRecognizer = new SpeechRecognizer({
@@ -351,7 +309,7 @@ speechRecognizer = new SpeechRecognizer({
         log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
         return;
       }
-      log(`☀️ [Sleeping] Isolated HAL wake word verified: "${text}"! Waking up HAL.`);
+      log(`☀️ [Sleeping] Verified wake phrase ("${text}") + 2s silence! Waking up HAL.`);
       wakeUp();
     } else {
       resetSleepTimer();
@@ -365,20 +323,15 @@ speechRecognizer = new SpeechRecognizer({
       triggerLedExpression('listen-done', 400);
     }
     if (wsClient && wsClient.isConnected && text) {
-      // If wake word was an isolated phonetic variation (e.g. iOS hearing "how" or "her"), normalize to 'HAL'
-      const isPhonetic = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i.test(text.trim().toLowerCase());
-      const speechToSend = isPhonetic ? 'HAL' : text;
-      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
-      wsClient.sendJson({ type: 'user_text', text: speechToSend });
+      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${text}"`);
+      wsClient.sendJson({ type: 'user_text', text: text });
       setState(State.THINKING);
     }
   },
   onInterimSpeech: (text) => {
     if (currentState === State.SLEEPING) {
-      if (isHalWakeWord(text)) {
-        log(`☀️ [Sleeping] Interim HAL wake word detected: "${text}"! Waking up HAL.`);
-        wakeUp();
-      }
+      // In sleep mode, strictly wait for finalized phrase + 2s silence.
+      // Do NOT wake on partial speech or interim results.
       return;
     }
     resetSleepTimer();
@@ -448,7 +401,7 @@ audioRecorder = new AudioRecorder({
     }
   },
   onWakeTrigger: (reason) => {
-    log(`🥁 Enclosure tap detected acoustically (${reason})! Waking up HAL.`);
+    log(`🥁 Enclosure double-tap detected acoustically (${reason})! Waking up HAL.`);
     triggerLedExpression('wink', 450);
     if (currentState === State.SLEEPING) {
       wakeUp();
@@ -707,8 +660,10 @@ async function initializeSystem() {
     initKeepAwakeVideo();
     requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
 
-    // 6. Request accelerometer motion permission & begin knock detection
-    await motionDetector.initialize();
+    // 6. Ensure accelerometer knock detection is started
+    if (motionDetector) {
+      await motionDetector.initialize();
+    }
 
     log('✅ HAL 9000 fully operational and standing by.');
   } catch (err) {
@@ -717,12 +672,23 @@ async function initializeSystem() {
   }
 }
 
-if (initOverlay) {
-  initOverlay.addEventListener('click', initializeSystem);
-  initOverlay.addEventListener('touchstart', (e) => {
+// Synchronous iOS gesture trigger for Accelerometer / Motion Sensors
+function onInitializeGesture(e) {
+  if (e && e.type === 'touchend') {
     e.preventDefault();
-    initializeSystem();
-  });
+  }
+  // CRITICAL FOR IOS SAFARI:
+  // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct
+  // user gesture call stack BEFORE any async/await; otherwise WebKit revokes user activation!
+  if (motionDetector) {
+    motionDetector.requestPermissionSync();
+  }
+  initializeSystem();
+}
+
+if (initOverlay) {
+  initOverlay.addEventListener('click', onInitializeGesture);
+  initOverlay.addEventListener('touchend', onInitializeGesture);
 }
 
 // Physical enclosure constraint: Phone is permanently sealed behind the glass fisheye lens.

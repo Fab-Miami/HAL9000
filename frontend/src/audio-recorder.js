@@ -19,7 +19,8 @@ export class AudioRecorder {
     this.isRecording = false;
     this.muted = false;
     this.sleeping = false;
-    this.lastAcousticTapTime = 0;
+    this.firstAcousticTapTime = 0;
+    this.firstAcousticTapPeak = 0;
   }
 
   async start() {
@@ -100,20 +101,42 @@ export class AudioRecorder {
         const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 18.0) : 0.0;
         this.onAudioLevel(intensity);
 
-        // Acoustic Tap Detection when sleeping:
-        // Knocks and physical taps on the aluminum enclosure / phone body produce
-        // an instantaneous mechanical impulse: sharp peak, high crest factor, or a sudden
-        // energy spike relative to ambient noise floor.
+        // =========================================================================================
+        // DOUBLE-TAP ACOUSTIC WAKE DETECTION (STANDBY MODE)
+        // Requires 2 consecutive impulse taps:
+        // 1. Almost consecutive: 140ms - 850ms apart (avoids reverberation and separate events)
+        // 2. Almost identical: peak amplitude ratio >= 0.40 (same knuckle/finger impact force)
+        // Single isolated loud sounds (door slams, coughs, TV peaks) are strictly rejected!
+        // =========================================================================================
         if (this.sleeping) {
           const now = performance.now();
-          if (now - this.lastAcousticTapTime > 500) {
-            const crestFactor = maxPeak / (rms + 0.0001);
-            const isImpulseTap = (maxPeak > 0.25 && crestFactor > 3.0) || (maxPeak > 0.38 && (rms - this.noiseFloor) > 0.08);
-            if (isImpulseTap) {
-              this.lastAcousticTapTime = now;
-              this.onLog(`🥁 [AudioRecorder] Acoustic enclosure tap detected (Peak: ${maxPeak.toFixed(2)}, Crest: ${crestFactor.toFixed(1)}, RMS: ${rms.toFixed(2)})`);
-              this.onWakeTrigger('acoustic_tap');
+          const crestFactor = maxPeak / (rms + 0.0001);
+          const isImpulse = (maxPeak > 0.20 && crestFactor > 2.6) || (maxPeak > 0.35 && (rms - this.noiseFloor) > 0.04);
+
+          if (isImpulse) {
+            const timeSinceFirstTap = now - this.firstAcousticTapTime;
+
+            if (this.firstAcousticTapTime > 0 && timeSinceFirstTap >= 140 && timeSinceFirstTap <= 850) {
+              const peakRatio = Math.min(this.firstAcousticTapPeak, maxPeak) / Math.max(this.firstAcousticTapPeak, maxPeak);
+              if (peakRatio >= 0.40) {
+                this.onLog(`🥁 [AudioRecorder] Verified DOUBLE TAP on enclosure! (Tap 1: ${this.firstAcousticTapPeak.toFixed(2)}, Tap 2: ${maxPeak.toFixed(2)}, Match: ${(peakRatio * 100).toFixed(0)}%, Interval: ${Math.round(timeSinceFirstTap)}ms). Waking HAL.`);
+                this.firstAcousticTapTime = 0;
+                this.firstAcousticTapPeak = 0;
+                this.onWakeTrigger('acoustic_double_tap');
+                return;
+              } else {
+                this.onLog(`🥁 [AudioRecorder] Tap 2 rejected: amplitude mismatch (Tap 1: ${this.firstAcousticTapPeak.toFixed(2)}, Tap 2: ${maxPeak.toFixed(2)}, Ratio: ${(peakRatio * 100).toFixed(0)}%). Resetting first tap.`);
+                this.firstAcousticTapTime = now;
+                this.firstAcousticTapPeak = maxPeak;
+              }
+            } else if (timeSinceFirstTap > 850 || this.firstAcousticTapTime === 0) {
+              this.firstAcousticTapTime = now;
+              this.firstAcousticTapPeak = maxPeak;
+              this.onLog(`🥁 [AudioRecorder] First tap detected (Peak: ${maxPeak.toFixed(2)}, Crest: ${crestFactor.toFixed(1)}). Awaiting second tap within 850ms...`);
             }
+          } else if (this.firstAcousticTapTime > 0 && (now - this.firstAcousticTapTime) > 850) {
+            this.firstAcousticTapTime = 0;
+            this.firstAcousticTapPeak = 0;
           }
           return;
         }
