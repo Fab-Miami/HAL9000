@@ -248,12 +248,13 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Strict validation: verify trimmed audio payload duration and RMS volume
             speech_duration_s = len(pcm_bytes) / (16000 * 2)
             audio_arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
-            peak_rms = 0.0
+            overall_rms = 0.0
             if len(audio_arr) > 0:
-                peak_rms = float(np.sqrt(np.mean(np.square(audio_arr))))
+                overall_rms = float(np.sqrt(np.mean(np.square(audio_arr))))
 
-            if speech_duration_s < 0.40 or peak_rms < (SILENCE_THRESHOLD * 0.70):
-                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom trigger (Duration: {speech_duration_s:.2f}s, RMS: {peak_rms:.0f}). Resetting.")
+            # Filter out true phantom triggers (transient clicks < 0.40s or long pure silence < 800 RMS)
+            if speech_duration_s < 0.40 or (speech_duration_s < 1.0 and overall_rms < 1200) or overall_rms < 800:
+                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom trigger (Duration: {speech_duration_s:.2f}s, RMS: {overall_rms:.0f}). Resetting.")
                 self.audio_buffer = bytearray()
                 self.pre_roll_buffer = bytearray()
                 self.is_recording = False
