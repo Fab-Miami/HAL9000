@@ -6,8 +6,8 @@
  */
 
 export class MotionDetector {
-  constructor({ threshold = 1.25, cooldownMs = 500, onKnock, onLog } = {}) {
-    this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for enclosure/desk finger taps)
+  constructor({ threshold = 0.35, cooldownMs = 500, onKnock, onLog } = {}) {
+    this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for aluminum enclosure finger/knuckle knocks)
     this.cooldownMs = cooldownMs; // Prevent duplicate knock triggers from ringing vibrations
     this.onKnock = onKnock || (() => {});
     this.onLog = onLog || console.log;
@@ -15,6 +15,7 @@ export class MotionDetector {
     this.isSupported = typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
     this.isActive = false;
     this.lastKnockTime = 0;
+    this.lastSubVibrationTime = 0;
     this.lastX = 0;
     this.lastY = 0;
     this.lastZ = 0;
@@ -121,12 +122,21 @@ export class MotionDetector {
     // Capture highest impulse between linear acceleration and jerk filter
     const magnitude = Math.max(magLinear, magJerk);
 
+    // Telemetry: Log subtle vibrations between 0.15 m/s² and threshold to monitor frame impacts
+    if (magnitude >= 0.15 && magnitude < this.threshold) {
+      const now = performance.now();
+      if (now - this.lastSubVibrationTime > 400) {
+        this.lastSubVibrationTime = now;
+        this.onLog(`📳 [MotionDetector] Frame vibration detected: ${magnitude.toFixed(2)} m/s² (below threshold ${this.threshold} m/s²)`);
+      }
+    }
+
     // Check if mechanical shockwave exceeds knock threshold
-    if (magnitude > this.threshold) {
+    if (magnitude >= this.threshold) {
       const now = performance.now();
       if (now - this.lastKnockTime > this.cooldownMs) {
         this.lastKnockTime = now;
-        this.onLog(`💥 [MotionDetector] ENCLOSURE KNOCK DETECTED (Shock magnitude: ${magnitude.toFixed(1)} m/s²)`);
+        this.onLog(`💥 [MotionDetector] ENCLOSURE KNOCK DETECTED (Shock magnitude: ${magnitude.toFixed(2)} m/s²)`);
         this.onKnock(magnitude);
       }
     }

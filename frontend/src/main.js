@@ -402,13 +402,13 @@ speechRecognizer = new SpeechRecognizer({
 });
 
 motionDetector = new MotionDetector({
-  threshold: 1.25,
+  threshold: 0.35,
   onKnock: (magnitude) => {
     // MOTION DETECTOR IS EXCLUSIVELY FOR WAKE UP IN SLEEP MODE!
     // If HAL is awake or speaking, never listen or intercept.
     if (currentState !== State.SLEEPING) return;
 
-    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)! Waking up HAL.`);
+    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(2)} m/s²)! Waking up HAL.`);
     triggerLedExpression('wink', 450);
     wakeUp();
     requestScreenWakeLock();
