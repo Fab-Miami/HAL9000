@@ -287,19 +287,44 @@ audioPlayer = new AudioPlayer({
 });
 
 /**
- * Strict wake-word validator.
- * In sleep mode, HAL ONLY wakes on:
- * "HAL wake up" (or "Hey HAL wake up", "OK HAL wake up", "Wake up HAL") followed by verified silence.
- * All phonetic stand-ins (how, al, her, hell, owl) and general speech are strictly excluded.
+ * Calibrated wake-word validator.
+ * In sleep mode, HAL ONLY wakes on direct wake commands ("HAL wake up", "wake up HAL", "wake up")
+ * including iOS Safari speech recognition's natural phonetic transcriptions ("How to wake up", "How wake up", "Al wake up").
+ * Rejects general ambient speech that doesn't contain wake commands.
  */
 function isHalWakeWord(text) {
   if (!text) return false;
   const clean = text.trim().toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
 
-  // Strict wake phrases:
-  // "hal wake up", "hey hal wake up", "ok hal wake up", "okay hal wake up", "wake up hal", "please wake up hal", "hal please wake up"
-  const wakeWordPattern = /^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal\s+(?:please\s+)?wake\s*up|wake\s*up\s+(?:please\s+)?hal)(?:\s+please)?$/i;
-  return wakeWordPattern.test(clean);
+  // 1. Must contain "wake up"
+  if (!/\bwake\s*up\b/i.test(clean)) {
+    return false;
+  }
+
+  // 2. Reject long ambient sentences (avoid waking on ambient conversation talking about waking up)
+  const words = clean.split(' ').filter(Boolean);
+  if (words.length > 7) {
+    return false;
+  }
+
+  // 3. Match wake phrases addressed to HAL or iOS phonetic variations (how, how to, al, hell):
+  // e.g. "hal wake up", "how to wake up", "how to wake up wake up", "how wake up", "wake up hal", "wake up", "wake up wake up"
+  const wakePattern = /^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:(?:hal|how\s+to|how|al|hell)\s+)?(?:wake\s*up\s*)+(?:(?:hal|how|al|please)\s*)*$/i;
+  if (wakePattern.test(clean)) {
+    return true;
+  }
+
+  // Any short phrase containing (hal|how|al) + wake up
+  if (/\b(?:hal|how|al)\b/i.test(clean) && /\bwake\s*up\b/i.test(clean)) {
+    return true;
+  }
+
+  // Short direct "wake up"
+  if (/^(?:please\s+)?(?:wake\s*up\s*)+(?:please)?$/i.test(clean)) {
+    return true;
+  }
+
+  return false;
 }
 
 speechRecognizer = new SpeechRecognizer({
@@ -359,8 +384,14 @@ speechRecognizer = new SpeechRecognizer({
 });
 
 motionDetector = new MotionDetector({
-  threshold: 2.5,
+  threshold: 3.8,
   onKnock: (magnitude) => {
+    // If HAL is speaking, ignore low vibrations (< 5.5 m/s²) caused by audio speaker resonance in chassis
+    if (currentState === State.PROCESSING && magnitude < 5.5) {
+      log(`ℹ️ [MotionDetector] Filtered speaker resonance (${magnitude.toFixed(1)} m/s²) during audio playback.`);
+      return;
+    }
+
     log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(1)} m/s²)!`);
     // Physical tap blinks the 3 auxiliary dots immediately!
     triggerLedExpression('wink', 450);
