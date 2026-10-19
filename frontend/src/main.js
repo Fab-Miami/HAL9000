@@ -447,7 +447,7 @@ audioRecorder = new AudioRecorder({
     }
   },
   onAudioLevel: (intensity) => {
-    if (intensity > 0.012) {
+    if (intensity > 0.002) {
       lastUserVoiceTime = Date.now();
     }
     if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
@@ -519,6 +519,9 @@ wsClient = new WsClient({
     } else if (text === 'SLEEP') {
       log('🌙 Received SLEEP signal from server. Queueing sleep mode for after voice playback.');
       pendingSleepCommand = true;
+    } else if (text === 'RELOAD') {
+      log('🔄 [HAL Remote Control] Received RELOAD signal from server. Refreshing page...');
+      window.location.reload();
     } else if (text === 'DONE') {
       log('🏁 Received DONE signal from server.');
       audioPlayer.finishStream();
