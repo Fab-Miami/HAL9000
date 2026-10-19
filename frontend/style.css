@@ -90,6 +90,7 @@ html, body {
 #layer-everything-off {
   z-index: 1;
   opacity: 1.0;
+  transition: opacity 0.15s ease-out;
 }
 
 #layer-3-led-on {
@@ -256,26 +257,28 @@ body.mode-enclosure #hal-stage {
 
 /* ----------------------------------------------------
    Standby Mode (Sleeping Mode: hal2026_everything_off.png)
+   Slow fade out from 100% to 50% in 2 seconds once display switches to off
    ---------------------------------------------------- */
 body.sleep-mode {
   background-color: #000000;
 }
 
 body.sleep-mode #layer-everything-off {
-  opacity: 1.0 !important; /* hal2026_everything_off.png: Active sleeping mode visual */
+  opacity: 0.5 !important;
+  transition: opacity 2s ease-in-out 0.25s !important;
 }
 
 body.sleep-mode #layer-center-on {
   opacity: 0 !important;
-  transition: opacity 1.2s ease-out !important;
+  transition: opacity 0.25s ease-out !important;
 }
 
 body.sleep-mode #layer-ring-on {
   opacity: 0 !important;
-  transition: opacity 0.2s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
 
 body.sleep-mode #layer-3-led-on {
   opacity: 0 !important;
-  transition: opacity 0.2s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
