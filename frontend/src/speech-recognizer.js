@@ -30,7 +30,6 @@ export class SpeechRecognizer {
     this.SILENCE_DELAY_MS = 1800; // 1,800ms natural conversational pause
     this.lastTextReceivedTime = 0;
     this.latestSnapshotIndex = 0;
-    this.committedText = '';
 
     if (this.isSupported) {
       try {
@@ -60,43 +59,32 @@ export class SpeechRecognizer {
       this.latestSnapshotIndex = 0;
       this.lastTextReceivedTime = 0;
       this.currentText = '';
-      this.committedText = '';
       this.onLog('🎙️ [SpeechRecognizer] Speech recognition session started.');
       this.onStatusChange('LISTENING');
     };
 
     this.recognition.onresult = (event) => {
-      // Build full accumulated text from current session
-      let fullTranscript = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        const item = event.results[i];
-        if (item && item[0] && item[0].transcript) {
-          fullTranscript += item[0].transcript + ' ';
-        }
-      }
-      fullTranscript = fullTranscript.trim();
-
-      // Detect if Safari recycled or reset its internal buffer
-      if (this.committedText && fullTranscript) {
-        const checkSnippet = this.committedText.trim().substring(0, Math.min(20, this.committedText.trim().length)).toLowerCase();
-        if (!fullTranscript.toLowerCase().includes(checkSnippet)) {
-          this.committedText = '';
-        }
+      // Safety bounds check: only reset if buffer was actually flushed (length < turnStartIndex)
+      if (this.turnStartIndex > event.results.length) {
+        this.turnStartIndex = 0;
       }
 
       // While HAL is speaking or during 0.5s post-playback holdoff:
-      // discard everything and commit all heard speech so HAL's voice is never transcribed
+      // discard everything and advance turnStartIndex past any speech heard during output
       if (this.isPaused || this.isCooldown) {
-        this.committedText = fullTranscript;
+        this.turnStartIndex = event.results.length;
         this.currentText = '';
         clearTimeout(this.interimDebounceTimer);
         return;
       }
 
-      // Extract only the new speech spoken in this turn
-      let speech = fullTranscript;
-      if (this.committedText) {
-        speech = this._stripCommittedText(fullTranscript, this.committedText);
+      // Read current turn's speech directly from WebKit's results array
+      let speech = '';
+      for (let i = this.turnStartIndex; i < event.results.length; ++i) {
+        const item = event.results[i];
+        if (item && item[0] && item[0].transcript) {
+          speech += item[0].transcript + ' ';
+        }
       }
       speech = speech.trim();
 
@@ -134,7 +122,6 @@ export class SpeechRecognizer {
       this.isStarting = false;
       this.turnStartIndex = 0;
       this.currentText = '';
-      this.committedText = '';
       // Automatically maintain continuous listening in Safari without cutting speech
       if (this.isListening && !this.isPaused) {
         clearTimeout(this.restartTimeout);
@@ -146,37 +133,6 @@ export class SpeechRecognizer {
         this.onStatusChange('IDLE');
       }
     };
-  }
-
-  _stripCommittedText(fullText, committedText) {
-    if (!committedText) return fullText;
-    const normFull = fullText.trim();
-    const normCommitted = committedText.trim();
-
-    if (normFull.toLowerCase().startsWith(normCommitted.toLowerCase())) {
-      return normFull.substring(normCommitted.length).replace(/^[\s,.\-!?;:]+/, '').trim();
-    }
-
-    // Token-based prefix matching to tolerate WebKit punctuation / casing shifts
-    const cWords = normCommitted.toLowerCase().split(/\s+/).filter(Boolean);
-    const fWords = normFull.split(/\s+/).filter(Boolean);
-
-    let matchCount = 0;
-    while (matchCount < cWords.length && matchCount < fWords.length) {
-      const cleanF = fWords[matchCount].toLowerCase().replace(/[^\w]/g, '');
-      const cleanC = cWords[matchCount].replace(/[^\w]/g, '');
-      if (cleanF === cleanC) {
-        matchCount++;
-      } else {
-        break;
-      }
-    }
-
-    if (matchCount > 0) {
-      return fWords.slice(matchCount).join(' ').trim();
-    }
-
-    return normFull;
   }
 
   _finalizeSpeech(snapshotIndex) {
@@ -199,7 +155,6 @@ export class SpeechRecognizer {
       // with a 4.0s timeout on WebKit text stalls to avoid locking on constant ambient noise.
       if (elapsedSinceVoice < requiredDelay && timeSinceLastText < 4000) {
         const waitRemaining = Math.max(150, requiredDelay - elapsedSinceVoice);
-        this.onLog(`⏳ [SpeechRecognizer] Voice active (${elapsedSinceVoice}ms ago < ${requiredDelay}ms). Deferring finalization by ${waitRemaining}ms...`);
         clearTimeout(this.interimDebounceTimer);
         this.interimDebounceTimer = setTimeout(() => {
           this._finalizeSpeech(this.latestSnapshotIndex || snapshotIndex);
@@ -210,9 +165,12 @@ export class SpeechRecognizer {
 
     const speechToSend = this.currentText.trim();
     this.currentText = '';
+    const finalIndex = typeof snapshotIndex === 'number' ? Math.max(snapshotIndex, this.latestSnapshotIndex || 0) : this.latestSnapshotIndex;
+    if (typeof finalIndex === 'number' && finalIndex > 0) {
+      this.turnStartIndex = finalIndex;
+    }
 
     if (speechToSend) {
-      this.committedText = (this.committedText ? this.committedText + ' ' : '') + speechToSend;
       this.onLog(`🗣️ [SpeechRecognizer] Speech finalized (${this.SILENCE_DELAY_MS}ms pause). Sending: "${speechToSend}"`);
       this.onFinalSpeech(speechToSend);
     }

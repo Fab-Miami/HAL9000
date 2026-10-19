@@ -447,7 +447,7 @@ audioRecorder = new AudioRecorder({
     }
   },
   onAudioLevel: (intensity) => {
-    if (intensity > 0.002) {
+    if (intensity > 0.012) {
       lastUserVoiceTime = Date.now();
     }
     if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
