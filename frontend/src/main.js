@@ -1,6 +1,7 @@
 import { AudioRecorder } from './audio-recorder.js';
 import { AudioPlayer } from './audio-player.js';
 import { WsClient } from './ws-client.js';
+import { SpeechRecognizer } from './speech-recognizer.js';
 import { MotionDetector } from './motion-detector.js';
 
 // DOM Elements
@@ -33,6 +34,7 @@ let conversationTimeRemaining = 0;
 let wsClient = null;
 let audioPlayer = null;
 let audioRecorder = null;
+let speechRecognizer = null;
 let motionDetector = null;
 let isSystemInitialized = false;
 
@@ -58,6 +60,9 @@ function wakeUp() {
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = false;
   }
+  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.setSleeping(false);
+  }
   if (wsClient && wsClient.isConnected) {
     wsClient.sendJson({ type: 'sleep_state', sleeping: false });
   }
@@ -82,6 +87,9 @@ function goToSleep() {
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (typeof audioRecorder !== 'undefined' && audioRecorder) {
     audioRecorder.sleeping = true;
+  }
+  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
+    speechRecognizer.setSleeping(true);
   }
   if (wsClient && wsClient.isConnected) {
     wsClient.sendJson({ type: 'sleep_state', sleeping: true });
@@ -266,9 +274,11 @@ audioPlayer = new AudioPlayer({
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
       if (audioRecorder) audioRecorder.muted = true;
+      if (speechRecognizer) speechRecognizer.pause();
       setState(State.PROCESSING);
     } else {
       if (audioRecorder) audioRecorder.muted = false;
+      if (speechRecognizer) speechRecognizer.resume();
       resetToStandby();
       stopInteraction();
     }
@@ -277,6 +287,116 @@ audioPlayer = new AudioPlayer({
     if (currentState === State.PROCESSING) {
       updateVisuals(intensity, true); // HAL Voice slightly blinks central dot
     }
+  },
+  onLog: log,
+});
+
+function isHalWakeWord(text) {
+  if (!text) return false;
+  const clean = text.trim().toLowerCase();
+
+  // 1. Strict anti-hallucination / substring rejection
+  // Rejects words that merely contain "hal" as part of another word
+  if (/\b(?:hallucin\w+|halibut|shallow|chalet|unhallowed|inhale|exhale|half)\b/i.test(clean)) {
+    return false;
+  }
+
+  // 2. Exact isolated wake word or greeting + HAL:
+  // e.g. "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal", "hal 9000", "hal nine thousand"
+  const isolatedHalRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:9000|nine\s+thousand))?[,\.!\?]*$/i;
+  if (isolatedHalRegex.test(clean)) {
+    return true;
+  }
+
+  // 3. Short wake phrases addressing HAL:
+  // e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake", "hal listen", "hal up"
+  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|can\s+you\s+hear\s+me|listen|up)[,\.!\?]*$/i;
+  if (shortWakeRegex.test(clean)) {
+    return true;
+  }
+  const reverseWakeRegex = /^(?:wake\s*up\s+)?hal[,\.!\?]*$/i;
+  if (reverseWakeRegex.test(clean)) {
+    return true;
+  }
+
+  // 4. Direct commands starting with HAL:
+  // e.g. "hal, what time is it", "hey hal, what is on my calendar"
+  if (/^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b[,\s]+/i.test(clean)) {
+    return true;
+  }
+
+  // 5. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
+  // On iOS Safari, "HAL" without context is frequently transcribed as "how", "al", "her", "hell", "owl"
+  // STRICT RULE: Only accept these if spoken as the ISOLATED word or short wake phrase, NOT in ambient sentences.
+  const isolatedPhoneticRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i;
+  if (isolatedPhoneticRegex.test(clean)) {
+    return true;
+  }
+  const shortPhoneticWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her)\s+(?:wake\s*up|are\s+you\s+(?:there|awake))[,\.!\?]*$/i;
+  if (shortPhoneticWakeRegex.test(clean)) {
+    return true;
+  }
+
+  return false;
+}
+
+speechRecognizer = new SpeechRecognizer({
+  onFinalSpeech: (text) => {
+    if (currentState === State.SLEEPING) {
+      if (!isHalWakeWord(text)) {
+        log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
+        return;
+      }
+      log(`☀️ [Sleeping] Isolated HAL wake word verified: "${text}"! Waking up HAL.`);
+      wakeUp();
+    } else {
+      resetSleepTimer();
+    }
+
+    if (persistentLedOn) {
+      setPersistentLed(false);
+    }
+    if (text) {
+      // Instantaneous hardware feedback: End of listening mode acknowledged
+      triggerLedExpression('listen-done', 400);
+    }
+    if (wsClient && wsClient.isConnected && text) {
+      // If wake word was an isolated phonetic variation (e.g. iOS hearing "how" or "her"), normalize to 'HAL'
+      const isPhonetic = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i.test(text.trim().toLowerCase());
+      const speechToSend = isPhonetic ? 'HAL' : text;
+      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
+      wsClient.sendJson({ type: 'user_text', text: speechToSend });
+      setState(State.THINKING);
+    }
+  },
+  onInterimSpeech: (text) => {
+    if (currentState === State.SLEEPING) {
+      if (isHalWakeWord(text)) {
+        log(`☀️ [Sleeping] Interim HAL wake word detected: "${text}"! Waking up HAL.`);
+        wakeUp();
+      }
+      return;
+    }
+    resetSleepTimer();
+    if (persistentLedOn && text && text.trim()) {
+      setPersistentLed(false);
+    }
+    // CRITICAL HARDWARE FEEDBACK: Outer ring (#layer-ring-on) blinks to visually acknowledge user speech
+    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING && text && text.trim()) {
+      if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') < 0.6) {
+        layerRingOn.style.opacity = '0.85';
+        setTimeout(() => {
+          if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
+            if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') === 0.85) {
+              layerRingOn.style.opacity = '0.25';
+            }
+          }
+        }, 120);
+      }
+    }
+  },
+  onStatusChange: (status) => {
+    log(`🗣️ SpeechRecognizer status: ${status}`);
   },
   onLog: log,
 });
@@ -299,8 +419,8 @@ motionDetector = new MotionDetector({
 
 audioRecorder = new AudioRecorder({
   onAudioData: (pcmBuffer) => {
-    // Proven 2-month silent Web Audio pipeline: stream raw 16kHz PCM chunks directly to server
-    if (wsClient && wsClient.isConnected) {
+    // Single Input Pipeline: SpeechRecognizer is primary; only stream raw PCM as fallback if Web Speech is unsupported
+    if (!speechRecognizer.isSupported && wsClient && wsClient.isConnected) {
       wsClient.sendAudio(pcmBuffer);
     }
   },
@@ -433,6 +553,7 @@ function triggerVoiceBargeIn() {
   log('⚡ User voice barge-in detected! Halting HAL speech playback immediately.');
   audioPlayer.stopPlayback();
   wsClient.sendInterrupt();
+  if (speechRecognizer) speechRecognizer.resume();
   setState(State.LISTENING);
 }
 
@@ -578,6 +699,9 @@ async function initializeSystem() {
 
     // 4. Start Microphone Capture (keeps mediaStream alive permanently)
     await audioRecorder.start();
+    if (speechRecognizer) {
+      speechRecognizer.start();
+    }
     setState(State.LISTENING);
     resetSleepTimer();
 

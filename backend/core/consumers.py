@@ -9,8 +9,8 @@ from . import llm
 from . import tts
 
 # How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 2.0
-SILENCE_THRESHOLD = 1600  # Calibrated for natural human voice (2100-4200 RMS) through enclosure and glass lens
+CAPTURE_WINDOW = 2.5
+SILENCE_THRESHOLD = 1400  # Generous sensitivity for human speech through enclosure and glass lens
 
 import datetime
 def log(msg):
@@ -252,9 +252,10 @@ class HalConsumer(AsyncWebsocketConsumer):
             if len(audio_arr) > 0:
                 overall_rms = float(np.sqrt(np.mean(np.square(audio_arr))))
 
-            # Filter out true phantom triggers (transient clicks < 0.40s or long pure silence < 800 RMS)
-            if speech_duration_s < 0.40 or (speech_duration_s < 1.0 and overall_rms < 1200) or overall_rms < 800:
-                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom trigger (Duration: {speech_duration_s:.2f}s, RMS: {overall_rms:.0f}). Resetting.")
+            # Filter out true transient clicks (< 0.35s) or short whisper blips (< 0.8s and < 600 RMS)
+            # NEVER discard speech payloads that have real duration (>= 0.8s)
+            if speech_duration_s < 0.35 or (speech_duration_s < 0.8 and overall_rms < 600):
+                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom click (Duration: {speech_duration_s:.2f}s, RMS: {overall_rms:.0f}). Resetting.")
                 self.audio_buffer = bytearray()
                 self.pre_roll_buffer = bytearray()
                 self.is_recording = False
