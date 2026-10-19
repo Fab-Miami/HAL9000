@@ -282,3 +282,214 @@ body.sleep-mode #layer-3-led-on {
   opacity: 0 !important;
   transition: opacity 0.15s ease-out !important;
 }
+
+/* ----------------------------------------------------
+   Real-Time Knock & Vibration Diagnostics HUD
+   ---------------------------------------------------- */
+#knock-hud {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100vw - 28px);
+  max-width: 420px;
+  background: rgba(12, 12, 18, 0.92);
+  border: 1px solid rgba(255, 34, 0, 0.4);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 1000;
+  font-family: -apple-system, "SF Pro Display", "SF Mono", Menlo, Consolas, monospace;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  touch-action: manipulation;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#knock-hud.hud-hit {
+  border-color: #ffaa00;
+  box-shadow: 0 0 20px rgba(255, 170, 0, 0.5), inset 0 0 12px rgba(255, 170, 0, 0.2);
+}
+
+#knock-hud.hud-wake {
+  border-color: #00ff66;
+  box-shadow: 0 0 24px rgba(0, 255, 102, 0.7), inset 0 0 16px rgba(0, 255, 102, 0.3);
+}
+
+.knock-hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.hud-title {
+  color: #ff3311;
+}
+
+.hud-status {
+  color: #888888;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.knock-hud-meters {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.meter-box {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.meter-box.highlight {
+  border-color: rgba(255, 204, 0, 0.35);
+  background: rgba(255, 204, 0, 0.05);
+}
+
+.meter-label {
+  font-size: 9px;
+  color: #888888;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.meter-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-box.highlight .meter-val {
+  color: #ffcc00;
+}
+
+.meter-val .unit {
+  font-size: 9px;
+  font-weight: 400;
+  color: #777777;
+  margin-left: 1px;
+}
+
+.knock-vu-container {
+  width: 100%;
+  padding: 2px 0;
+}
+
+.knock-vu-track {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.knock-vu-fill {
+  height: 100%;
+  width: 0%;
+  background-color: #ff2200;
+  border-radius: 4px;
+  transition: width 0.05s linear, background-color 0.15s ease;
+}
+
+.knock-vu-thresh-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 4px #ffffff;
+  pointer-events: none;
+  left: 23.3%;
+}
+
+.knock-hud-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #777777;
+  font-variant-numeric: tabular-nums;
+}
+
+.knock-hud-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hud-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #cccccc;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-btn:active {
+  background: rgba(255, 34, 0, 0.3);
+  border-color: #ff2200;
+  color: #ffffff;
+}
+
+.thresh-presets {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.preset-label {
+  font-size: 9px;
+  color: #777777;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.thresh-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #888888;
+  font-size: 10px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.thresh-btn.active {
+  background: rgba(255, 34, 0, 0.25);
+  border-color: #ff2200;
+  color: #ff5533;
+  font-weight: 700;
+}
+
+/* Keep HUD visible in sleep mode so physical wake testing is fully observable */
+body.sleep-mode #knock-hud {
+  opacity: 0.88;
+}
+

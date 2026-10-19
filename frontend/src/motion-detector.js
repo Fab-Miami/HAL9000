@@ -6,16 +6,17 @@
  */
 
 export class MotionDetector {
-  constructor({ threshold = 0.35, cooldownMs = 500, onKnock, onLog } = {}) {
-    this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for aluminum enclosure finger/knuckle knocks)
+  constructor({ threshold = 0.35, cooldownMs = 500, onKnock, onLog, onMotionSample } = {}) {
+    this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for enclosure/desk finger taps)
     this.cooldownMs = cooldownMs; // Prevent duplicate knock triggers from ringing vibrations
     this.onKnock = onKnock || (() => {});
     this.onLog = onLog || console.log;
+    this.onMotionSample = onMotionSample || (() => {});
 
     this.isSupported = typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
     this.isActive = false;
     this.lastKnockTime = 0;
-    this.lastSubVibrationTime = 0;
+    this.lastPeakLogTime = 0;
     this.lastX = 0;
     this.lastY = 0;
     this.lastZ = 0;
@@ -23,6 +24,14 @@ export class MotionDetector {
     this.permissionPromise = null;
 
     this._handleMotion = this._handleMotion.bind(this);
+  }
+
+  setThreshold(val) {
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      this.threshold = num;
+      this.onLog(`🎯 [MotionDetector] Knock threshold updated to: ${this.threshold.toFixed(2)} m/s²`);
+    }
   }
 
   /**
@@ -79,7 +88,7 @@ export class MotionDetector {
     if (this.isActive || !this.isSupported) return;
     window.addEventListener('devicemotion', this._handleMotion, { passive: true });
     this.isActive = true;
-    this.onLog(`🎯 [MotionDetector] Active: monitoring enclosure knocks (Threshold: ${this.threshold} m/s²).`);
+    this.onLog(`🎯 [MotionDetector] Active: monitoring enclosure knocks (Threshold: ${this.threshold.toFixed(2)} m/s²).`);
   }
 
   stop() {
@@ -122,12 +131,22 @@ export class MotionDetector {
     // Capture highest impulse between linear acceleration and jerk filter
     const magnitude = Math.max(magLinear, magJerk);
 
-    // Telemetry: Log subtle vibrations between 0.15 m/s² and threshold to monitor frame impacts
-    if (magnitude >= 0.15 && magnitude < this.threshold) {
+    // Stream real-time motion sample to UI HUD / Test monitor
+    if (this.onMotionSample) {
+      this.onMotionSample({
+        magnitude,
+        magLinear,
+        magJerk,
+        threshold: this.threshold,
+      });
+    }
+
+    // Diagnostic logging: capture every discrete knock impulse above noise floor (> 0.08 m/s²)
+    if (magnitude > 0.08) {
       const now = performance.now();
-      if (now - this.lastSubVibrationTime > 400) {
-        this.lastSubVibrationTime = now;
-        this.onLog(`📳 [MotionDetector] Frame vibration detected: ${magnitude.toFixed(2)} m/s² (below threshold ${this.threshold} m/s²)`);
+      if (now - this.lastPeakLogTime > 250) {
+        this.lastPeakLogTime = now;
+        this.onLog(`📊 [Knock Monitor] Peak: ${magnitude.toFixed(2)} m/s² (Lin: ${magLinear.toFixed(2)}, Jerk: ${magJerk.toFixed(2)}) | Thresh: ${this.threshold.toFixed(2)}`);
       }
     }
 
@@ -136,7 +155,7 @@ export class MotionDetector {
       const now = performance.now();
       if (now - this.lastKnockTime > this.cooldownMs) {
         this.lastKnockTime = now;
-        this.onLog(`💥 [MotionDetector] ENCLOSURE KNOCK DETECTED (Shock magnitude: ${magnitude.toFixed(2)} m/s²)`);
+        this.onLog(`💥 [MotionDetector] ENCLOSURE KNOCK DETECTED (Shock: ${magnitude.toFixed(2)} m/s² >= Thresh: ${this.threshold.toFixed(2)})`);
         this.onKnock(magnitude);
       }
     }

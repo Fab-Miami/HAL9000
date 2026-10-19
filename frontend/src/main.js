@@ -119,6 +119,7 @@ function setState(newState) {
   if (newState === State.LISTENING || newState === State.IDLE || newState === State.THINKING) {
     resetToStandby();
   }
+  updateHudStatusText();
 
   log(`🔄 State Transition -> ${newState}`);
 }
@@ -401,6 +402,159 @@ speechRecognizer = new SpeechRecognizer({
   onLog: log,
 });
 
+// ==========================================================================
+// KNOCK SENSOR DIAGNOSTICS & REAL-TIME PEAK MONITOR
+// Displays live physical acceleration, shock peaks, VU meter, and threshold presets
+// ==========================================================================
+let highestPeak = 0;
+let knockEventCount = 0;
+let wakeFlashTimeout = null;
+
+function updateKnockHud(sample) {
+  const hudContainer = document.getElementById('knock-hud');
+  if (!hudContainer) return;
+
+  const hudCurrent = document.getElementById('hud-current');
+  const hudPeak = document.getElementById('hud-peak');
+  const hudThresh = document.getElementById('hud-thresh');
+  const hudBreakdown = document.getElementById('hud-breakdown');
+  const hudStatus = document.getElementById('hud-status');
+  const vuFill = document.getElementById('knock-vu-fill');
+  const vuThreshMark = document.getElementById('knock-vu-thresh-mark');
+
+  const mag = sample.magnitude;
+  if (hudCurrent) {
+    hudCurrent.innerHTML = `${mag.toFixed(2)} <span class="unit">m/s²</span>`;
+  }
+  if (hudBreakdown) {
+    hudBreakdown.textContent = `Lin: ${sample.magLinear.toFixed(2)} | Jerk: ${sample.magJerk.toFixed(2)}`;
+  }
+  if (hudThresh) {
+    hudThresh.innerHTML = `${sample.threshold.toFixed(2)} <span class="unit">m/s²</span>`;
+  }
+
+  // Live VU level meter (0 to 1.5 m/s² scale)
+  const maxScale = 1.5;
+  const pct = Math.min(100, Math.max(0, (mag / maxScale) * 100));
+  if (vuFill) {
+    vuFill.style.width = `${pct}%`;
+    if (mag >= sample.threshold) {
+      vuFill.style.backgroundColor = '#00ff66';
+    } else if (mag >= sample.threshold * 0.6) {
+      vuFill.style.backgroundColor = '#ffaa00';
+    } else {
+      vuFill.style.backgroundColor = '#ff2200';
+    }
+  }
+
+  // Update threshold position marker
+  if (vuThreshMark) {
+    const threshPct = Math.min(100, Math.max(0, (sample.threshold / maxScale) * 100));
+    vuThreshMark.style.left = `${threshPct}%`;
+  }
+
+  // Track Peak Shock
+  if (mag > highestPeak) {
+    highestPeak = mag;
+    if (hudPeak) {
+      hudPeak.innerHTML = `${highestPeak.toFixed(2)} <span class="unit">m/s²</span>`;
+    }
+  }
+
+  // Subtle tap or vibration above baseline noise floor (> 0.10 m/s²)
+  if (mag > 0.10) {
+    knockEventCount++;
+    const countEl = document.getElementById('hud-event-count');
+    if (countEl) countEl.textContent = `Events: ${knockEventCount}`;
+
+    hudContainer.classList.add('hud-hit');
+    setTimeout(() => hudContainer.classList.remove('hud-hit'), 180);
+
+    // Shock exceeded threshold!
+    if (mag >= sample.threshold) {
+      hudContainer.classList.add('hud-wake');
+      setTimeout(() => hudContainer.classList.remove('hud-wake'), 600);
+
+      if (hudStatus) {
+        clearTimeout(wakeFlashTimeout);
+        hudStatus.textContent = '💥 WAKE TRIGGERED!';
+        hudStatus.style.color = '#00ff66';
+        wakeFlashTimeout = setTimeout(() => {
+          updateHudStatusText();
+        }, 1500);
+      }
+    }
+  }
+}
+
+function updateHudStatusText() {
+  const hudStatus = document.getElementById('hud-status');
+  if (!hudStatus) return;
+  if (currentState === State.SLEEPING) {
+    hudStatus.textContent = 'SLEEP (KNOCK TO WAKE)';
+    hudStatus.style.color = '#ffaa00';
+  } else if (currentState === State.LISTENING) {
+    hudStatus.textContent = 'AWAKE (LISTENING)';
+    hudStatus.style.color = '#00ff66';
+  } else if (currentState === State.PROCESSING) {
+    hudStatus.textContent = 'AWAKE (SPEAKING)';
+    hudStatus.style.color = '#00ccff';
+  } else if (currentState === State.THINKING) {
+    hudStatus.textContent = 'THINKING...';
+    hudStatus.style.color = '#ffee55';
+  } else {
+    hudStatus.textContent = 'STANDBY';
+    hudStatus.style.color = '#888888';
+  }
+}
+
+function initKnockHudControls() {
+  const btnReset = document.getElementById('btn-reset-peak');
+  if (btnReset) {
+    const onReset = (e) => {
+      if (e && e.cancelable) e.preventDefault();
+      highestPeak = 0;
+      const hudPeak = document.getElementById('hud-peak');
+      if (hudPeak) hudPeak.innerHTML = `0.00 <span class="unit">m/s²</span>`;
+      log('📊 [Knock Monitor] Peak shock counter reset to 0.00 m/s².');
+    };
+    btnReset.addEventListener('click', onReset);
+    btnReset.addEventListener('touchend', onReset, { passive: false });
+  }
+
+  const btnSleep = document.getElementById('btn-toggle-sleep');
+  if (btnSleep) {
+    const onSleep = (e) => {
+      if (e && e.cancelable) e.preventDefault();
+      log('🌙 [Knock Monitor] SLEEP NOW button pressed -> triggering Standby mode.');
+      goToSleep();
+    };
+    btnSleep.addEventListener('click', onSleep);
+    btnSleep.addEventListener('touchend', onSleep, { passive: false });
+  }
+
+  const threshBtns = document.querySelectorAll('.thresh-btn');
+  threshBtns.forEach((btn) => {
+    const onThresh = (e) => {
+      if (e && e.cancelable) e.preventDefault();
+      const val = parseFloat(btn.getAttribute('data-thresh'));
+      if (!isNaN(val) && motionDetector) {
+        motionDetector.setThreshold(val);
+        threshBtns.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const hudThresh = document.getElementById('hud-thresh');
+        if (hudThresh) hudThresh.innerHTML = `${val.toFixed(2)} <span class="unit">m/s²</span>`;
+        const vuThreshMark = document.getElementById('knock-vu-thresh-mark');
+        if (vuThreshMark) {
+          vuThreshMark.style.left = `${Math.min(100, (val / 1.5) * 100)}%`;
+        }
+      }
+    };
+    btn.addEventListener('click', onThresh);
+    btn.addEventListener('touchend', onThresh, { passive: false });
+  });
+}
+
 motionDetector = new MotionDetector({
   threshold: 0.35,
   onKnock: (magnitude) => {
@@ -413,6 +567,9 @@ motionDetector = new MotionDetector({
     wakeUp();
     requestScreenWakeLock();
     ensureKeepAwakeVideoPlaying();
+  },
+  onMotionSample: (sample) => {
+    updateKnockHud(sample);
   },
   onLog: log,
 });
@@ -758,6 +915,9 @@ if (screen.orientation && screen.orientation.lock) {
 } else if (window.screen && window.screen.lockOrientation) {
   window.screen.lockOrientation('portrait');
 }
+
+initKnockHudControls();
+updateHudStatusText();
 
 log('📱 Initialized HAL 9000 pure optical mode (ZERO text UI).');
 
