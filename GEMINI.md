@@ -1,26 +1,22 @@
 # HAL 9000 INVIOLABLE ARCHITECTURAL DIRECTIVES
 
-## CRITICAL MANDATE #1: THE PHONE DOES 100% OF THE LISTENING
-- **On-Device Speech Recognition (`webkitSpeechRecognition`) is PERMANENT and NON-NEGOTIABLE.**
-- The iPhone Safari frontend handles all voice detection and speech-to-text locally via `SpeechRecognizer` (`frontend/src/speech-recognizer.js`).
-- The phone transcribes words in real time, modulates the optical acoustic ring (`#layer-ring-on`), and sends finalized text JSON (`{"type": "user_text", "text": "..."}`) to the backend.
-- **NEVER REMOVE, DISABLE, OR BYPASS `SpeechRecognizer` in `frontend/src/main.js`.**
-- **NEVER STREAM RAW AUDIO PCM TO THE BACKEND AS PRIMARY INPUT.** Raw audio streaming is strictly a fallback for non-Safari browsers (`!speechRecognizer.isSupported`).
-- The backend processes `user_text` in `_process_text_pipeline()` directly without audio buffering delay, without server VAD thresholds, without 2.0-second silence timers, and without cutting off sentences mid-speech.
+## CRITICAL MANDATE #1: GEMINI NATIVE MULTIMODAL AUDIO LISTENING (ZERO WEBKIT STT)
+- **Audio Capture on Phone, Listening on Gemini**: The iPhone captures microphone audio via Web Audio API, downsamples cleanly to 16kHz 16-bit Mono PCM, and streams audio to the backend.
+- **Gemini Does 100% of the Speech Comprehension**: Audio is fed directly to Gemini's native multimodal audio engine (`gemini-3.5-flash-lite`, the lowest-latency model in the fleet) via `types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")`.
+- **Complete Elimination of `webkitSpeechRecognition`**: Web Speech API is permanently removed. This eliminates all iOS system dictation chimes ("BEEP BEEP"), eliminates Apple's delayed neural buffer lag / echo loops, eliminates Safari session dropouts, and provides native understanding of "HAL", proper nouns ("Fab", "Colozzi", "Mindolog"), and natural vocal inflection.
+- **Physical Muting & Zero Echo**: When HAL is speaking, audio capture is strictly muted. When playback completes, listening resumes instantly. There are ZERO delayed ghost buffers or echo loops.
+- **Voice Barge-In**: If the user speaks or knocks while HAL is speaking, audio playback halts immediately and HAL returns to listening.
+- **Turn-Taking & Silence Detection**: Handled on the iPhone via vocal RMS. Turns finalize after strictly 1.8 seconds of natural silence during active conversation (`SILENCE_DELAY_MS = 1800`), and 2.5 seconds in standby.
+- **Optical Feedback**: The outer acoustic ring (`#layer-ring-on` / `hal2026_ring_on.png`) visibly blinks and pulses in real time with the user's vocal volume RMS while speaking.
 
-## CRITICAL MANDATE #2: ZERO iOS SYSTEM DICTATION CHIMES ("BEEP BEEP")
-- In `frontend/src/speech-recognizer.js`:
-  - `pause()` sets `this.isPaused = true`. It **MUST NEVER** call `recognition.abort()` or `recognition.stop()`.
-  - `resume()` sets `this.isPaused = false`. It **MUST NEVER** call `recognition.start()` unless the session genuinely died.
-- Calling `abort()` or `start()` during turn-taking causes iOS Safari to emit the loud system dictation chime ("BEEP BEEP"). Keeping the session continuously alive and muting `onresult` in memory guarantees completely silent operation.
-
-## CRITICAL MANDATE #3: PHYSICAL HARDWARE MONOLITH CONSTRAINTS
+## CRITICAL MANDATE #2: PHYSICAL HARDWARE MONOLITH CONSTRAINTS
 - **Sealed Physical Enclosure**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
-- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (`MotionDetector`, default threshold 1.0 m/s²) and acoustic double-taps.
+- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (threshold 1.0 m/s²) and acoustic double-taps for wake.
 - **24/7 Screen On**: Screen dimming or power saving is STRICTLY FORBIDDEN. Standby/sleep mode turns off ONLY the central red LED (`layer-center-on`). The faceplate remains 100% visible 24/7 via Screen Wake Lock and looping silent keep-awake video.
-- **Location Context**: Line 355 in `backend/core/llm.py` must ALWAYS preserve: `"Your current location is Miami Beach."`.
+- **Location Context**: System prompt context must ALWAYS preserve: `"Your current location is Miami Beach."`.
+- **Minimal Clean Architecture**: Strict maximum of 3 to 4 cohesive files total across frontend and backend. No fragmented bloated files or duplicate audio pipelines.
 
-## CRITICAL MANDATE #4: NEVER BREAK ARCHITECTURE WITHOUT PERMISSION
+## CRITICAL MANDATE #3: NEVER BREAK ARCHITECTURE WITHOUT PERMISSION
 - Do not refactor core subsystems, communication protocols, or listening architecture without explicit permission from Fab.
 - Do not write unit tests.
 - Always automatically commit, push, and deploy to Hetzner via `/home/docdoc1/deploy_hal9000.sh` when completing changes.

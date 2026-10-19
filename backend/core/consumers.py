@@ -1,20 +1,13 @@
 import asyncio
 import json
 import re
-import sys
 import time
-import numpy as np
-from channels.generic.websocket import AsyncWebsocketConsumer
-from . import llm
-from . import tts
-
-# How long to wait for silence before processing (seconds).
-CAPTURE_WINDOW = 2.5
-SILENCE_THRESHOLD = 1400  # Generous sensitivity for human speech through enclosure and glass lens
-
 import datetime
+from channels.generic.websocket import AsyncWebsocketConsumer
+from . import hal_brain
+
 def log(msg):
-    """Print with immediate flush so systemd/journalctl shows output in real time."""
+    """Print with immediate flush so journalctl shows output in real time."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     print(f"[{timestamp}] {msg}", flush=True)
 
@@ -26,7 +19,7 @@ def clean_speech_text(text: str) -> str:
     if not text:
         return ""
     t = text
-    # Remove markdown link syntax [text](url) -> text
+    # Remove markdown links [text](url) -> text
     t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
     # Remove code blocks and inline backticks
     t = re.sub(r'```.*?```', '', t, flags=re.DOTALL)
@@ -35,64 +28,39 @@ def clean_speech_text(text: str) -> str:
     t = re.sub(r'#+\s*', '', t)
     # Remove bullet markers like * or - or + or •
     t = re.sub(r'(?:^|\n|\s)[\*\-\+•]\s+', ' ', t)
-    # Remove all asterisks, underscores, tildes, backticks, hashes, carets, slashes, backslashes, @, |, <, >
+    # Remove all asterisks, underscores, tildes, backticks, hashes, carets, slashes, @, |, <, >
     t = re.sub(r'[\*\_~`#^|><\\@]', '', t)
     # Convert & to 'and', % to 'percent', + to 'plus'
     t = re.sub(r'\s*&\s*', ' and ', t)
     t = re.sub(r'(\d+)\s*%', r'\1 percent', t)
     t = re.sub(r'\s*\+\s*', ' plus ', t)
-    # Remove parentheses and brackets around words (e.g. (such as X) -> such as X)
+    # Remove parentheses and brackets around words
     t = re.sub(r'[\(\)\[\]\{\}]', ' ', t)
     # Collapse multiple whitespace
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 
-def is_stop_command(text: str) -> bool:
-    """
-    Returns True if user explicitly said 'stop', 'halt', 'quiet', 'shut up',
-    or if speech contains repeated/consecutive 'stop' words (e.g. 'stop stop', 'stop stop stop').
-    """
-    if not text:
-        return False
-    t = text.strip()
-    # 1. Consecutive stops: "stop stop", "stop, stop", "no stop stop", "HAL stop stop"
-    if re.search(r'\bstop\b(?:[,\s\.\-]+)\bstop\b', t, re.IGNORECASE):
-        return True
-    # 2. Standalone stop: "stop", "HAL stop", "quiet", "shut up", "halt", "be quiet"
-    if re.search(r'^\s*(?:(?:hey\s+|ok\s+)?hal\s*,?\s*)?(?:stop|halt|quiet|shut\s*up|be\s*quiet|silence)[.!?]?\s*$', t, re.IGNORECASE):
-        return True
-    # 3. Explicit stop speaking: "stop talking", "stop speaking", "shut up", "be quiet"
-    if re.search(r'\b(?:stop\s+talking|stop\s+speaking|shut\s+up|be\s+quiet|be\s+silent)\b', t, re.IGNORECASE):
-        return True
-    return False
-
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
-        log(f"🔌 [HalConsumer] New connection from client: {self.client_id}")
+        log(f"🔌 [HalConsumer] Connection from client: {self.client_id}")
         await self.accept()
-        log(f"✅ [HalConsumer] Connection accepted for {self.client_id}.")
-        
-        # State variables
-        self.audio_buffer = bytearray()
-        self.pre_roll_buffer = bytearray()
-        self.last_speech_time = time.time()
-        self.is_recording = False
-        self.speech_detected = False
+        log(f"✅ [HalConsumer] Accepted connection for {self.client_id}.")
+
         self.processing_task = None
         self.current_volume = 5
         self.is_client_sleeping = False
-        
-        # Load recent history and long-term summaries
-        self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
-        self.chat_session = llm.create_chat_session(
-            history=self.history, 
-            summaries_text=self.summaries, 
+
+        # Load 3-tier memory and initialize Gemini chat session
+        self.history, self.summaries = await asyncio.to_thread(hal_brain.load_memory, self.client_id)
+        self.chat_session = hal_brain.create_chat_session(
+            history=self.history,
+            summaries_text=self.summaries,
             current_volume=self.current_volume
         )
-        
-        # Trigger background summarization for any other old chats this client might have
-        asyncio.create_task(asyncio.to_thread(llm.summarize_old_conversations, self.client_id))
+
+        # Trigger background summarization for turns prior to 4 AM
+        asyncio.create_task(asyncio.to_thread(hal_brain.summarize_old_conversations, self.client_id))
 
         # Register for tool callback events (LED:API trigger)
         from .tool_events import register_tool_callback
@@ -100,7 +68,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         register_tool_callback(self._tool_callback)
 
     async def disconnect(self, close_code):
-        log(f"🔴 [HalConsumer] Client disconnected. Code: {close_code}")
+        log(f"🔴 [HalConsumer] Client disconnected (Code: {close_code}).")
         from .tool_events import unregister_tool_callback
         if hasattr(self, '_tool_callback'):
             unregister_tool_callback(self._tool_callback)
@@ -117,13 +85,9 @@ class HalConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         if text_data:
             if text_data == "INTERRUPT":
-                log("🛑 [HalConsumer] Voice Barge-In signal received. Terminating response generation...")
+                log("🛑 [HalConsumer] Voice Barge-In signal received. Cancelling response generation.")
                 if self.processing_task and not self.processing_task.done():
                     self.processing_task.cancel()
-                self.audio_buffer = bytearray()
-                self.pre_roll_buffer = bytearray()
-                self.is_recording = False
-                self.speech_detected = False
                 return
 
             try:
@@ -134,150 +98,23 @@ class HalConsumer(AsyncWebsocketConsumer):
                         return
                     if msg.get('type') == 'sleep_state':
                         self.is_client_sleeping = bool(msg.get('sleeping'))
-                        log(f"🌙 [HalConsumer] Client sleep state synced: {self.is_client_sleeping}")
+                        log(f"🌙 [HalConsumer] Client sleep state: {self.is_client_sleeping}")
                         return
                     if 'volume' in msg:
                         self.current_volume = max(1, min(10, int(msg['volume'])))
-                        log(f"🎛️ [HalConsumer] Client synced hardware volume: {self.current_volume}/10")
-                        curr_hist = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                        self.chat_session = llm.create_chat_session(
-                            history=curr_hist or self.history, 
-                            summaries_text=self.summaries, 
-                            current_volume=self.current_volume
-                        )
-                    # Immediate text response from client (if any)
-                    if msg.get('type') == 'user_text' and msg.get('text'):
-                        user_text = msg['text'].strip()
-                        if user_text:
-                            log(f"⚡ [HalConsumer] Received Web Speech transcript: \"{user_text}\"")
-                            # Cancel any pending audio capture task
-                            if self.processing_task and not self.processing_task.done():
-                                self.processing_task.cancel()
-                            self.audio_buffer = bytearray()
-                            self.pre_roll_buffer = bytearray()
-                            self.is_recording = False
-                            self.speech_detected = False
-                            
-                            self.processing_task = asyncio.create_task(self._process_text_pipeline(user_text))
-                            return
+                        log(f"🎛️ [HalConsumer] Client volume: {self.current_volume}/10")
             except Exception as e:
-                log(f"⚠️ [HalConsumer] JSON message parse error: {e}")
+                log(f"⚠️ [HalConsumer] JSON parse error: {e}")
 
         if bytes_data:
-            # Check for voice activity in this chunk
-            data = np.frombuffer(bytes_data, dtype=np.int16)
-            rms = 0.0
-            if len(data) > 0:
-                rms = float(np.sqrt(np.mean(np.square(data.astype(np.float32)))))
-            # Voice Activity Hysteresis: Require SILENCE_THRESHOLD (3000) for onset,
-            # but once recording, keep speech alive at 40% (1200) so softer words and
-            # natural mid-sentence pauses aren't cut off prematurely.
-            active_threshold = (SILENCE_THRESHOLD * 0.40) if self.is_recording else SILENCE_THRESHOLD
-            if rms > active_threshold:
-                self.last_speech_time = time.time()
-                if not self.is_recording:
-                    self.is_recording = True
-                    self.speech_detected = True
-                    # Prepend pre-roll buffer (0.5s) so speech onset isn't lost
-                    self.audio_buffer = bytearray(self.pre_roll_buffer)
-                    self.audio_buffer.extend(bytes_data)
-                    log(f"🎙️ [HalConsumer] Speech detected (RMS: {rms:.0f}). Capturing until {CAPTURE_WINDOW}s of silence...")
-                    self.processing_task = asyncio.create_task(self._process_pipeline())
-                else:
-                    self.audio_buffer.extend(bytes_data)
-            else:
-                if self.is_recording:
-                    # User spoke previously, now accumulating silence window
-                    self.audio_buffer.extend(bytes_data)
-                else:
-                    # Ambient silence: maintain 0.5s rolling pre-roll buffer (16000 bytes)
-                    self.pre_roll_buffer.extend(bytes_data)
-                    if len(self.pre_roll_buffer) > 16000:
-                        self.pre_roll_buffer = self.pre_roll_buffer[-16000:]
+            # Incoming finalized user audio turn (16kHz Mono WAV container)
+            duration_s = len(bytes_data) / (16000 * 2)
+            log(f"🎙️ [HalConsumer] Received audio turn payload: {len(bytes_data)} bytes (~{duration_s:.1f}s). Dispatching to Gemini...")
 
-    async def _process_text_pipeline(self, user_text: str):
-        """Processes text input directly from Web Speech API with zero silence-window delay."""
-        if is_stop_command(user_text):
-            log(f"🛑 [HalConsumer] Stop command received via text (\"{user_text}\"). Remaining silent.")
-            await self.send(text_data="DONE")
-            return
+            if self.processing_task and not self.processing_task.done():
+                self.processing_task.cancel()
 
-        # Phonetic normalization for Fab's personal domain & surname
-        normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\.com\b', 'colozzi.com', user_text, flags=re.IGNORECASE)
-        normalized_text = re.sub(r'\b(?:cozy\s+conozzi|cozy\s+colozzi|conozzi)\b', 'Colozzi', normalized_text, flags=re.IGNORECASE)
-        
-        await self._execute_generation(normalized_text, is_text_mode=True, initial_transcript=normalized_text)
-
-    async def _process_pipeline(self):
-        """Fallback audio pipeline: waits for silence, then packages WAV and invokes generation."""
-        try:
-            # In standby/sleep, wait for 2.5s of verified silence after wake command; in conversation, use CAPTURE_WINDOW (2.0s)
-            silence_window = 2.5 if self.is_client_sleeping else CAPTURE_WINDOW
-            while time.time() - self.last_speech_time < silence_window:
-                await asyncio.sleep(0.05)
-            
-            buffer_size = len(self.audio_buffer)
-            duration_s = buffer_size / (16000 * 2)  # 16kHz, 16-bit mono
-            log(f"🤫 [HalConsumer] Silence detected. Captured {buffer_size} bytes ({duration_s:.1f}s of audio).")
-            
-            # If no speech was detected or buffer is too short, reset silently without inference
-            if not self.speech_detected or buffer_size < 19200:
-                log("⚠️ [HalConsumer] Insufficient speech energy. Resetting silently.")
-                self.audio_buffer = bytearray()
-                self.pre_roll_buffer = bytearray()
-                self.is_recording = False
-                self.speech_detected = False
-                await self.send(text_data="DONE")
-                return
-
-            # Trim trailing dead silence from buffer, leaving a clean 0.15s cushion
-            trailing_silence_s = time.time() - self.last_speech_time
-            trim_duration_s = max(0.0, trailing_silence_s - 0.15)
-            trim_bytes = int(trim_duration_s * 16000) * 2  # Strictly even number of bytes
-            
-            if trim_bytes > 0 and len(self.audio_buffer) > trim_bytes + 6400:
-                pcm_bytes = bytes(self.audio_buffer[:-trim_bytes])
-                log(f"✂️ [HalConsumer] Trimmed {trim_bytes} bytes ({trim_duration_s:.2f}s) of dead trailing silence.")
-            else:
-                pcm_bytes = bytes(self.audio_buffer)
-            
-            # Ensure strict 16-bit PCM word alignment (must be multiple of 2 bytes)
-            if len(pcm_bytes) % 2 != 0:
-                pcm_bytes = pcm_bytes[:-1]
-
-            # Strict validation: verify trimmed audio payload duration and RMS volume
-            speech_duration_s = len(pcm_bytes) / (16000 * 2)
-            audio_arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
-            overall_rms = 0.0
-            if len(audio_arr) > 0:
-                overall_rms = float(np.sqrt(np.mean(np.square(audio_arr))))
-
-            # Filter out true transient clicks (< 0.35s) or short whisper blips (< 0.8s and < 600 RMS)
-            # NEVER discard speech payloads that have real duration (>= 0.8s)
-            if speech_duration_s < 0.35 or (speech_duration_s < 0.8 and overall_rms < 600):
-                log(f"🤫 [HalConsumer] Filtered out ambient noise/phantom click (Duration: {speech_duration_s:.2f}s, RMS: {overall_rms:.0f}). Resetting.")
-                self.audio_buffer = bytearray()
-                self.pre_roll_buffer = bytearray()
-                self.is_recording = False
-                self.speech_detected = False
-                await self.send(text_data="DONE")
-                return
-
-            log("📦 [HalConsumer] Packaging to WAV...")
-            wav_bytes = llm.pcm_to_wav(pcm_bytes)
-            await self._execute_generation(wav_bytes, is_text_mode=False)
-
-        except asyncio.CancelledError:
-            log("🛑 [HalConsumer] Pipeline task cancelled (User barge-in, text switch, or disconnect).")
-        except Exception as e:
-            log(f"❌ [HalConsumer] Error in audio pipeline: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            self.audio_buffer = bytearray()
-            self.pre_roll_buffer = bytearray()
-            self.is_recording = False
-            self.speech_detected = False
+            self.processing_task = asyncio.create_task(self._process_audio_turn(bytes_data))
 
     async def _process_hardware_directives(self, text: str) -> str:
         """Parses and dispatches hardware tags (volume, sleep, optical emotion tags) via WebSocket."""
@@ -289,72 +126,57 @@ class HalConsumer(AsyncWebsocketConsumer):
         if vol_match:
             new_vol = max(1, min(10, int(vol_match.group(1))))
             self.current_volume = new_vol
-            log(f"🔊 [HalConsumer] Volume command parsed from HAL text: {new_vol}/10")
+            log(f"🔊 [HalConsumer] Volume command parsed: {new_vol}/10")
             await self.send(text_data=f"VOLUME:{new_vol}")
             text = re.sub(r'\[?volume:\s*\d+\]?', '', text, flags=re.IGNORECASE).strip()
 
         # 2. Sleep tags: [SLEEP]
         if "[SLEEP]" in text.upper():
-            log("🌙 [HalConsumer] Sleep command parsed from HAL text.")
+            log("🌙 [HalConsumer] Sleep command parsed.")
             await self.send(text_data="SLEEP")
             text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
 
-        # 3. Direct LED Hardware commands: [LED: ON], [LED: OFF], [LED_ON], [LED_OFF], [LIGHTS: ON], [LIGHTS: OFF]
+        # 3. Direct LED Hardware commands: [LED: ON], [LED: OFF]
         led_match = re.search(r'\[?(?:led|lights):\s*(on|off)\]?|\[LED[_\-\s]*(ON|OFF)\]|\[LIGHTS[_\-\s]*(ON|OFF)\]', text, re.IGNORECASE)
         if led_match:
             led_state = (led_match.group(1) or led_match.group(2) or led_match.group(3)).upper()
-            log(f"💡 [HalConsumer] LED hardware command parsed from HAL text: {led_state}")
+            log(f"💡 [HalConsumer] LED command parsed: {led_state}")
             await self.send(text_data=f"LED:{led_state}")
             text = re.sub(r'\[?(?:led|lights):\s*(?:on|off)\]?|\[LED[_\-\s]*(?:ON|OFF)\]|\[LIGHTS[_\-\s]*(?:ON|OFF)\]', '', text, flags=re.IGNORECASE).strip()
 
-        # 4. Emotional LED Expressions & Optical Tags: [led: chuckle], [led: wink], [led: ponder], [led: breathe], [led: warm], [led: alert], [led: heartbeat], [tag: ...], [mood: ...]
+        # 4. Emotional LED Expressions: [led: chuckle], [led: wink], [led: ponder], etc.
         tag_match = re.search(r'\[?(?:led|lights|tag|mood|emotion):\s*([a-zA-Z0-9_\-]+)\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER|CHUCKLE|LAUGH|WINK|BREATHE|WARM|HEARTBEAT)\]', text, re.IGNORECASE)
         if tag_match:
             tag_name = (tag_match.group(1) or tag_match.group(2)).upper()
-            if tag_name in ('LED_ON', 'LIGHTS_ON', 'ON'):
-                log(f"💡 [HalConsumer] Optical LED ON command parsed: {tag_name}")
-                await self.send(text_data="LED:ON")
-            elif tag_name in ('LED_OFF', 'LIGHTS_OFF', 'OFF'):
-                log(f"💡 [HalConsumer] Optical LED OFF command parsed: {tag_name}")
-                await self.send(text_data="LED:OFF")
-            else:
-                log(f"💡 [HalConsumer] Emotional LED tag parsed from HAL text: {tag_name}")
-                await self.send(text_data=f"TAG:{tag_name}")
+            log(f"💡 [HalConsumer] Emotional LED tag parsed: {tag_name}")
+            await self.send(text_data=f"TAG:{tag_name}")
             text = re.sub(r'\[?(?:led|lights|tag|mood|emotion):\s*[a-zA-Z0-9_\-]+\]?|\[(ALERT|EMOTION|SURPRISE|ANGER|WARN|PONDER|CHUCKLE|LAUGH|WINK|BREATHE|WARM|HEARTBEAT)\]', '', text, flags=re.IGNORECASE).strip()
 
         return text
 
-    async def _execute_generation(self, user_input, is_text_mode=False, initial_transcript=""):
-        """Core generation loop: streams LLM response, segments sentences, and feeds Kokoro TTS."""
+    async def _process_audio_turn(self, wav_bytes: bytes):
+        """Streams Gemini native audio multimodal response, segments sentences, and feeds Kokoro TTS."""
         try:
-            # Inform the client that we are now thinking
             await self.send(text_data="THINKING")
             start_time = time.time()
-            
-            input_label = f"text: \"{user_input}\"" if is_text_mode else "audio"
-            log(f"🧠 [HalConsumer] Sending {input_label} to Gemini (streaming)...")
-            gemini_start = time.time()
-            
-            # Set up the Queue for TTS
             sentence_queue = asyncio.Queue()
-            
-            # Dedicated TTS Worker Task
+
+            # Dedicated TTS Streaming Worker Task
             async def tts_worker():
                 sentence_count = 0
                 while True:
                     sentence = await sentence_queue.get()
                     if sentence is None:
-                        break  # Poison pill received
-                    
+                        break  # Poison pill
+
                     speech_text = clean_speech_text(sentence)
                     if not speech_text:
                         sentence_queue.task_done()
                         continue
 
-                    # Safety filter: NEVER vocalize silence, meta-descriptions, or empty markers
-                    cleaned_tok = re.sub(r'[^a-z0-9]', '', speech_text.lower())
-                    if cleaned_tok in ('silence', 'none', 'ambient', 'backgroundnoise', 'ambientnoise', 'nospeech', 'stopspeaking'):
-                        log(f"🤫 [HalConsumer] Blocked silent-marker from TTS synthesis: \"{speech_text}\"")
+                    # Safety check: never vocalize silence markers
+                    clean_lower = re.sub(r'[^a-z0-9]', '', speech_text.lower())
+                    if clean_lower in ('silence', 'none', 'ambient', 'nospeech'):
                         sentence_queue.task_done()
                         continue
 
@@ -363,46 +185,32 @@ class HalConsumer(AsyncWebsocketConsumer):
                         self.is_client_sleeping = False
                         await self.send(text_data="WAKE")
 
-                    tts_start = time.time()
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
-                    
-                    # Stream Kokoro TTS audio chunks back to client
-                    async for audio_chunk in tts.text_to_speech_stream(speech_text):
+                    async for audio_chunk in hal_brain.synthesize_tts_stream(speech_text):
                         await self.send(bytes_data=audio_chunk)
-                    
-                    log(f"📤 [HalConsumer] TTS #{sentence_count} streaming completed in {time.time() - tts_start:.2f}s")
+
                     sentence_queue.task_done()
-            
+
             tts_task = asyncio.create_task(tts_worker())
 
-            # Text accumulation and sentence boundary detection
             accumulated_text = ""
             full_response_text = ""
-            manual_transcript = initial_transcript
-            first_token_time = None
-            is_transcript_mode = False
-            is_silent_response = False
-            
-            # Natural sentence terminators: period, exclamation, question mark, newline (preserves numbers with colons like 8:06 PM)
             sentence_pattern = re.compile(r'(.*?[.!?\n]+)')
+            is_silent_response = False
 
-            # Iterate over the live Gemini stream
-            async for token in llm.stream_gemini_response(self.chat_session, user_input):
+            # Feed raw WAV directly to Gemini 3.5 Flash Lite
+            async for token in hal_brain.stream_gemini_audio(self.chat_session, wav_bytes):
                 if token == "EVENT:LED_SEARCH":
-                    log("🔍 [HalConsumer] Live Web/News Search active -> Sending LED:SEARCH")
+                    log("🔍 [HalConsumer] Live Web Search active -> Sending LED:SEARCH")
                     await self.send(text_data="LED:SEARCH")
                     continue
 
-                if first_token_time is None:
-                    first_token_time = time.time()
-                    log(f"⚡ [HalConsumer] Gemini first token in {first_token_time - gemini_start:.2f}s")
-                
                 accumulated_text += token
 
-                # If model responded with explicit [SILENCE] protocol tag, abort speech generation immediately
+                # If silence protocol triggered, halt audio immediately
                 if "[SILENCE]" in accumulated_text.upper():
                     is_silent_response = True
-                    log("🤫 [HalConsumer] Protocol [SILENCE] detected. HAL remaining completely silent.")
+                    log("🤫 [HalConsumer] [SILENCE] protocol triggered. Remaining silent.")
                     while not sentence_queue.empty():
                         try:
                             sentence_queue.get_nowait()
@@ -411,126 +219,51 @@ class HalConsumer(AsyncWebsocketConsumer):
                             break
                     break
 
-                # Check if we have crossed into the USERTRANSCRIPT section
-                if not is_transcript_mode:
-                    if "USERTRANSCRIPT:" in accumulated_text:
-                        is_transcript_mode = True
-                        parts = accumulated_text.split("USERTRANSCRIPT:")
-                        hal_part = parts[0]
-                        extracted_tr = parts[1].strip() if len(parts) > 1 else ""
-                        if extracted_tr:
-                            manual_transcript = extracted_tr
-                        
-                        # Stop command check: if user said "stop" or consecutive stops, remain completely silent
-                        if is_stop_command(manual_transcript):
+                # Extract and process complete sentences
+                while True:
+                    match = sentence_pattern.search(accumulated_text)
+                    if not match:
+                        break
+
+                    sentence = match.group(1).strip()
+                    accumulated_text = accumulated_text[match.end():]
+
+                    if sentence:
+                        if "[SILENCE]" in sentence.upper():
                             is_silent_response = True
-                            log(f"🛑 [HalConsumer] Stop command detected in transcript (\"{manual_transcript.strip()}\"). Halting and remaining silent.")
-                            while not sentence_queue.empty():
-                                try:
-                                    sentence_queue.get_nowait()
-                                    sentence_queue.task_done()
-                                except Exception:
-                                    break
                             break
 
-                        # Process any remaining sentences in the HAL part
-                        clean_hal = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', hal_part).strip()
-                        if clean_hal and "[SILENCE]" not in clean_hal.upper():
-                            clean_hal = await self._process_hardware_directives(clean_hal)
-                            if clean_hal:
-                                full_response_text += clean_hal + " "
-                                await sentence_queue.put(clean_hal)
-                        accumulated_text = ""
-                    else:
-                        # Extract complete sentences from HAL's answer
-                        while True:
-                            # Strip "HALANSWER: " prefix if present at start of stream
-                            accumulated_text = re.sub(r'(?i)^\s*\*?\*?HALANSWER\*?\*?\s*:\s*', '', accumulated_text)
-                                
-                            match = sentence_pattern.search(accumulated_text)
-                            if not match:
-                                break
-                                
-                            complete_sentence = match.group(1).strip()
-                            accumulated_text = accumulated_text[match.end():]
-                            
-                            # Clean up and push to TTS queue
-                            if complete_sentence:
-                                if "[SILENCE]" in complete_sentence.upper():
-                                    is_silent_response = True
-                                    log(f"🤫 [HalConsumer] Silence protocol [SILENCE] detected in sentence. Remaining silent.")
-                                    while not sentence_queue.empty():
-                                        try:
-                                            sentence_queue.get_nowait()
-                                            sentence_queue.task_done()
-                                        except Exception:
-                                            break
-                                    break
+                        sentence = await self._process_hardware_directives(sentence)
+                        if sentence:
+                            full_response_text += sentence + " "
+                            await sentence_queue.put(sentence)
 
-                                complete_sentence = await self._process_hardware_directives(complete_sentence)
-                                if complete_sentence:
-                                    full_response_text += complete_sentence + " "
-                                    await sentence_queue.put(complete_sentence)
-                else:
-                    manual_transcript += token
+            # Flush any remaining tail text
+            if not is_silent_response and accumulated_text.strip():
+                clean_tail = await self._process_hardware_directives(accumulated_text.strip())
+                if clean_tail and "[SILENCE]" not in clean_tail.upper():
+                    full_response_text += clean_tail
+                    await sentence_queue.put(clean_tail)
 
-            # If the stream finished without encountering USERTRANSCRIPT:, flush remaining text
-            if not is_silent_response and not is_transcript_mode and accumulated_text.strip():
-                clean_tail = re.sub(r'(?i)\*?\*?HALANSWER\*?\*?\s*:', '', accumulated_text).strip()
-                if "[SILENCE]" not in clean_tail.upper():
-                    clean_tail = await self._process_hardware_directives(clean_tail)
-                    if clean_tail:
-                        full_response_text += clean_tail
-                        await sentence_queue.put(clean_tail)
-
-            log(f"⚡ [HalConsumer] Gemini streaming complete in {time.time() - gemini_start:.2f}s")
-            
-            # Extract and log transcript
-            manual_transcript = manual_transcript.strip()
-            if manual_transcript:
-                log(f"🧠 [HalConsumer] Internal Transcript Extracted: {manual_transcript}")
-                if is_stop_command(manual_transcript):
-                    is_silent_response = True
-                    log(f"🛑 [HalConsumer] Stop command confirmed (\"{manual_transcript}\"). Suppressing any remaining audio.")
-                    while not sentence_queue.empty():
-                        try:
-                            sentence_queue.get_nowait()
-                            sentence_queue.task_done()
-                        except Exception:
-                            break
-
-            # Send poison pill to stop TTS worker and wait for synthesis completion
+            # Stop TTS worker and await completion
             await sentence_queue.put(None)
             await tts_task
 
-            # Asynchronously persist updated chat history safely
+            # Asynchronously persist updated chat history to SQLite
             try:
                 history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                await asyncio.to_thread(llm.save_history, self.client_id, history_data, manual_transcript)
-                # Re-sync chat session with clean, text-only multi-turn history from SQLite
-                self.history, self.summaries = await asyncio.to_thread(llm.load_history, self.client_id)
-                self.chat_session = llm.create_chat_session(
-                    history=self.history,
-                    summaries_text=self.summaries,
-                    current_volume=self.current_volume
-                )
-            except Exception as hist_err:
-                log(f"⚠️ [HalConsumer] History persistence note: {hist_err}")
+                await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data)
+            except Exception as e:
+                log(f"⚠️ [HalConsumer] Memory persistence note: {e}")
 
-            # Signal client that audio generation is complete
-            log("🏁 [HalConsumer] Sending DONE signal to client...")
+            # Notify client that voice playback generation has finished
+            log("🏁 [HalConsumer] Sending DONE signal to client.")
             await self.send(text_data="DONE")
-            log(f"⏱️ [HalConsumer] Pipeline complete in {time.time() - start_time:.2f}s.")
+            log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
 
         except asyncio.CancelledError:
-            log("🛑 [HalConsumer] Pipeline task cancelled (User barge-in or disconnect).")
+            log("🛑 [HalConsumer] Turn cancelled by user barge-in or disconnect.")
         except Exception as e:
-            log(f"❌ [HalConsumer] Error in processing pipeline: {e}")
+            log(f"❌ [HalConsumer] Error processing turn: {e}")
             import traceback
             traceback.print_exc()
-        finally:
-            log("♻️ [HalConsumer] Resetting state for next interaction.")
-            self.audio_buffer = bytearray()
-            self.pre_roll_buffer = bytearray()
-            self.is_recording = False
-            self.speech_detected = False

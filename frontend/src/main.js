@@ -1,97 +1,86 @@
-import { AudioRecorder } from './audio-recorder.js';
-import { AudioPlayer } from './audio-player.js';
-import { WsClient } from './ws-client.js';
-import { SpeechRecognizer } from './speech-recognizer.js';
-import { MotionDetector } from './motion-detector.js';
+/**
+ * HAL 9000 Monolith Controller
+ * Coordinates the optical faceplate, 24/7 screen wake lock, accelerometer knock sensor,
+ * native WebSocket transport, and HalAudio engine.
+ */
+
+import { HalAudio } from './hal-audio.js';
 
 // DOM Elements
-const appEl = document.getElementById('app');
-const halStage = document.getElementById('hal-stage');
 const layerEverythingOff = document.getElementById('layer-everything-off');
 const layer3LedOn = document.getElementById('layer-3-led-on');
 const layerCenterOn = document.getElementById('layer-center-on');
 const layerRingOn = document.getElementById('layer-ring-on');
 const initOverlay = document.getElementById('init-overlay');
+const halContainer = document.getElementById('hal-container');
+
+// Calibrated vertical offset for physical aluminum monolith enclosure
+if (halContainer) {
+  halContainer.style.transform = 'translateY(-146.67px)';
+}
 
 // System States
 const State = {
   IDLE: 'IDLE',
   LISTENING: 'LISTENING',
   THINKING: 'THINKING',
-  PROCESSING: 'PROCESSING',
+  SPEAKING: 'SPEAKING',
   SLEEPING: 'SLEEPING',
 };
 
 let currentState = State.IDLE;
-let wakeLockSentinel = null;
-let wakeLockFailedLogged = false;
-
-// Subsystems declared early so log/sendTelemetry does not trigger Temporal Dead Zone ReferenceError
-let wsClient = null;
-let audioPlayer = null;
-let audioRecorder = null;
-let speechRecognizer = null;
-let motionDetector = null;
-let isSystemInitialized = false;
-let lastUserVoiceTime = 0;
-
-// Sleep Mode State
+let persistentLedOn = false;
+let ledAnimTimeout = null;
 let sleepTimer = null;
-let pendingSleepCommand = false;
-const SLEEP_TIMEOUT_MS = 120000; // 2 minutes
- 
-function sendTelemetry(msg) {
-  if (wsClient && wsClient.isConnected) {
+const SLEEP_TIMEOUT_MS = 120000; // 2 minutes inactivity timeout
+
+// Telemetry & WebSocket
+let ws = null;
+let wsReconnectTimer = null;
+const clientId = getOrCreateClientId();
+
+function getOrCreateClientId() {
+  let id = localStorage.getItem('hal_client_id');
+  if (!id) {
+    id = 'hal_device_' + Math.random().toString(36).substring(2, 11);
+    localStorage.setItem('hal_client_id', id);
+  }
+  return id;
+}
+
+function log(msg) {
+  console.log(msg);
+  if (ws && ws.readyState === WebSocket.OPEN) {
     try {
-      wsClient.sendJson({ type: 'telemetry', message: msg });
+      ws.send(JSON.stringify({ type: 'telemetry', message: msg }));
     } catch (e) {}
   }
 }
 
-function wakeUp() {
-  if (currentState !== State.SLEEPING) return;
-  
-  log('☀️ HAL waking up from Standby (Central eye illuminated).');
-  document.body.classList.remove('sleep-mode');
-  if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
-  if (typeof audioRecorder !== 'undefined' && audioRecorder) {
-    audioRecorder.sleeping = false;
-  }
-  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
-    speechRecognizer.setSleeping(false);
-  }
-  if (wsClient && wsClient.isConnected) {
-    wsClient.sendJson({ type: 'sleep_state', sleeping: false });
-  }
-  setState(State.LISTENING);
-  resetSleepTimer();
-  requestScreenWakeLock();
-  ensureKeepAwakeVideoPlaying();
-}
+// ===========================================================================
+// MONOLITH STATE MACHINE & OPTICAL FACEPLATE
+// ===========================================================================
+function setHalState(newState) {
+  currentState = newState;
+  log(`🔄 [State] Transition -> ${newState}`);
 
-function goToSleep() {
-  if (currentState === State.PROCESSING || currentState === State.THINKING) {
-    resetSleepTimer();
-    return;
+  if (newState === State.SLEEPING) {
+    document.body.classList.add('sleep-mode');
+    // Standby: ONLY the central red LED is extinguished. Faceplate stays 100% visible 24/7!
+    if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
+    if (layerRingOn) layerRingOn.style.opacity = '0.0';
+    if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+  } else {
+    document.body.classList.remove('sleep-mode');
+    // Active states: Central eye is illuminated
+    if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
+    if (newState !== State.LISTENING && layerRingOn) {
+      layerRingOn.style.opacity = '0.0';
+    }
+    if (layer3LedOn) {
+      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+    }
   }
-  
-  log('🌙 HAL entering Standby (Listening for enclosure double-tap or "HAL wake up").');
-  if (persistentLedOn) setPersistentLed(false);
-  document.body.classList.add('sleep-mode');
-  // Standby mode: ONLY central LED turns off. Faceplate stays 100% visible at all times!
-  if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
-  if (layerRingOn) layerRingOn.style.opacity = '0.0';
-  if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-  if (typeof audioRecorder !== 'undefined' && audioRecorder) {
-    audioRecorder.sleeping = true;
-  }
-  if (typeof speechRecognizer !== 'undefined' && speechRecognizer) {
-    speechRecognizer.setSleeping(true);
-  }
-  if (wsClient && wsClient.isConnected) {
-    wsClient.sendJson({ type: 'sleep_state', sleeping: true });
-  }
-  setState(State.SLEEPING);
 }
 
 function resetSleepTimer() {
@@ -101,103 +90,59 @@ function resetSleepTimer() {
   }
 }
 
-// Logging with visual and remote telemetry
-function log(msg) {
-  console.log(msg);
-  sendTelemetry(msg);
+function wakeUp() {
+  if (currentState !== State.SLEEPING) return;
+  log('☀️ [HAL Monolith] Waking up from Standby (Central eye illuminated).');
+  if (halAudio) halAudio.setSleeping(false);
+  setHalState(State.LISTENING);
+  resetSleepTimer();
+  requestScreenWakeLock();
+  ensureKeepAwakeVideoPlaying();
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'sleep_state', sleeping: false }));
+  }
 }
 
-let thinkingWatchdogTimer = null;
-
-// State Machine Update
-function setState(newState) {
-  currentState = newState;
-  document.body.className = document.body.className
-    .replace(/state-\w+/g, '')
-    .trim();
-  if (newState === State.LISTENING || newState === State.IDLE || newState === State.THINKING) {
-    resetToStandby();
+function goToSleep() {
+  if (currentState === State.THINKING || currentState === State.SPEAKING) {
+    resetSleepTimer();
+    return;
   }
-
-  clearTimeout(thinkingWatchdogTimer);
-  if (newState === State.THINKING) {
-    thinkingWatchdogTimer = setTimeout(() => {
-      if (currentState === State.THINKING) {
-        log('⚠️ [Watchdog] Thinking state timed out (15s). Recovering to LISTENING.');
-        if (speechRecognizer) speechRecognizer.resume();
-        setState(State.LISTENING);
-      }
-    }, 15000);
+  log('🌙 [HAL Monolith] Entering Standby (Listening for enclosure knock or double-tap).');
+  if (persistentLedOn) setPersistentLed(false);
+  if (halAudio) halAudio.setSleeping(true);
+  setHalState(State.SLEEPING);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'sleep_state', sleeping: true }));
   }
-
-  log(`🔄 State Transition -> ${newState}`);
 }
 
-// Persistent LED State: stays ON until next prompt or explicit OFF command
-let persistentLedOn = false;
-
+// ===========================================================================
+// 3 AUXILIARY SATELLITE LEDS (EMOTIONAL BODY LANGUAGE)
+// ===========================================================================
 function setPersistentLed(on) {
   persistentLedOn = on;
-  if (layer3LedOn) {
+  if (layer3LedOn && currentState !== State.SLEEPING) {
     layer3LedOn.style.opacity = on ? '1.0' : '0.0';
   }
-  log(`💡 [HAL Hardware] 3 Auxiliary LEDs ${on ? 'LOCKED ON (will stay on until next prompt)' : 'TURNED OFF'}.`);
+  log(`💡 [HAL Hardware] 3 Auxiliary LEDs ${on ? 'LOCKED ON' : 'TURNED OFF'}.`);
 }
-
-// Standby State: Center dot strictly ON and STATIC; listening ring OFF; LEDs follow persistent state
-function resetToStandby() {
-  if (currentState === State.SLEEPING) return;
-  if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
-  if (layerRingOn) layerRingOn.style.opacity = '0.0';
-  if (layer3LedOn) layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
-}
-
-// HAL 2026 Optical Subsystem: 3 Auxiliary Satellite LEDs (Emotional Body Language)
-let ledAnimTimeout = null;
 
 function clearLedAnimations() {
   clearTimeout(ledAnimTimeout);
   if (!layer3LedOn) return;
   layer3LedOn.classList.remove(
-    'led-anim-chuckle',
-    'led-anim-laugh',
-    'led-anim-wink',
-    'led-anim-ponder',
-    'led-anim-breathe',
-    'led-anim-warm',
-    'led-anim-alert',
-    'led-anim-heartbeat',
-    'led-anim-listen-done',
-    'led-anim-search',
-    'led-anim-api'
+    'led-anim-chuckle', 'led-anim-laugh', 'led-anim-wink',
+    'led-anim-ponder', 'led-anim-breathe', 'led-anim-warm',
+    'led-anim-alert', 'led-anim-heartbeat', 'led-anim-listen-done',
+    'led-anim-search', 'led-anim-api'
   );
 }
 
-function triggerLedExpression(exprName, durationMs = 1000) {
-  if (!layer3LedOn) return;
-  clearLedAnimations();
-
-  // Set CSS variable for return opacity
-  layer3LedOn.style.setProperty('--persistent-led', persistentLedOn ? '1.0' : '0.0');
-
-  // Trigger reflow to restart animation if repeated
-  void layer3LedOn.offsetWidth;
-
-  const className = `led-anim-${exprName.toLowerCase()}`;
-  layer3LedOn.classList.add(className);
-
-  ledAnimTimeout = setTimeout(() => {
-    clearLedAnimations();
-    if (layer3LedOn) {
-      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
-    }
-  }, durationMs);
-}
-
-function handleEmotionTag(tag) {
-  log(`💡 [HAL Emotion Tag] Received: ${tag}`);
+function triggerLedTag(tag) {
+  if (!layer3LedOn || currentState === State.SLEEPING) return;
   const t = (tag || '').toLowerCase().trim();
-  
+
   if (t === 'on' || t === 'led_on' || t === 'lights_on') {
     clearLedAnimations();
     setPersistentLed(true);
@@ -208,373 +153,230 @@ function handleEmotionTag(tag) {
     setPersistentLed(false);
     return;
   }
-  
-  if (t === 'chuckle' || t === 'laugh' || t === 'amuse') {
-    triggerLedExpression('chuckle', 750);
-  } else if (t === 'wink' || t === 'cheeky' || t === 'tease') {
-    triggerLedExpression('wink', 450);
-  } else if (t === 'ponder' || t === 'breathe' || t === 'think') {
-    triggerLedExpression('breathe', 1900);
-  } else if (t === 'warm' || t === 'glow' || t === 'cozy') {
-    triggerLedExpression('warm', 2500);
-  } else if (t === 'alert' || t === 'danger' || t === 'warn' || t === 'shock') {
-    triggerLedExpression('alert', 550);
-  } else if (t === 'heartbeat' || t === 'love' || t === 'emotion') {
-    triggerLedExpression('heartbeat', 950);
-  } else if (t === 'search' || t === 'internet' || t === 'web') {
-    triggerLedExpression('search', 1600);
-  } else if (t === 'api' || t === 'task' || t === 'calendar') {
-    triggerLedExpression('api', 600);
-  } else if (t === 'listen-done' || t === 'ack' || t === 'received') {
-    triggerLedExpression('listen-done', 400);
-  } else {
-    // Default expressive blink
-    triggerLedExpression('wink', 450);
+
+  clearLedAnimations();
+  layer3LedOn.style.setProperty('--persistent-led', persistentLedOn ? '1.0' : '0.0');
+  void layer3LedOn.offsetWidth; // Reflow to restart animation
+
+  let animName = 'wink';
+  let duration = 450;
+
+  if (t.includes('chuckle') || t.includes('laugh')) { animName = 'chuckle'; duration = 750; }
+  else if (t.includes('ponder') || t.includes('breathe') || t.includes('think')) { animName = 'breathe'; duration = 1900; }
+  else if (t.includes('warm') || t.includes('glow')) { animName = 'warm'; duration = 2500; }
+  else if (t.includes('alert') || t.includes('danger') || t.includes('warn')) { animName = 'alert'; duration = 550; }
+  else if (t.includes('heartbeat') || t.includes('love')) { animName = 'heartbeat'; duration = 950; }
+  else if (t.includes('search') || t.includes('web')) { animName = 'search'; duration = 1600; }
+  else if (t.includes('api') || t.includes('task') || t.includes('calendar')) { animName = 'api'; duration = 600; }
+  else if (t.includes('listen-done') || t.includes('ack')) { animName = 'listen-done'; duration = 400; }
+
+  layer3LedOn.classList.add(`led-anim-${animName}`);
+  ledAnimTimeout = setTimeout(() => {
+    clearLedAnimations();
+    if (layer3LedOn && currentState !== State.SLEEPING) {
+      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+    }
+  }, duration);
+}
+
+// ===========================================================================
+// WEBSOCKET CLIENT (DAPHNE ASGI CONNECTION)
+// ===========================================================================
+function connectWebSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  clearTimeout(wsReconnectTimer);
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws/hal/${clientId}/`;
+  log(`🌐 [WS] Connecting: ${wsUrl}`);
+
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      log('✅ [WS] Connected to HAL backend.');
+      ws.send(JSON.stringify({
+        type: 'init',
+        volume: halAudio.volumeLevel,
+        sleeping: currentState === State.SLEEPING,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        // Binary 24kHz PCM chunk from Kokoro TTS
+        if (currentState === State.SLEEPING) wakeUp();
+        if (currentState !== State.SPEAKING) setHalState(State.SPEAKING);
+        halAudio.playChunk(event.data);
+      } else if (typeof event.data === 'string') {
+        const msg = event.data;
+        if (msg === 'DONE') {
+          log('🏁 [WS] Received DONE from server.');
+          halAudio.finishStream();
+        } else if (msg === 'THINKING') {
+          setHalState(State.THINKING);
+        } else if (msg === 'WAKE') {
+          wakeUp();
+        } else if (msg === 'SLEEP') {
+          goToSleep();
+        } else if (msg === 'RELOAD') {
+          log('🔄 [WS] Remote RELOAD received. Refreshing page...');
+          window.location.reload();
+        } else if (msg.startsWith('VOLUME:')) {
+          const vol = parseInt(msg.split(':')[1], 10);
+          if (!isNaN(vol)) halAudio.setVolume(vol);
+        } else if (msg.startsWith('LED:')) {
+          const val = msg.substring(4).trim().toUpperCase();
+          if (val === 'ON') setPersistentLed(true);
+          else if (val === 'OFF') setPersistentLed(false);
+          else triggerLedTag(val);
+        } else if (msg.startsWith('TAG:')) {
+          triggerLedTag(msg.substring(4).trim());
+        }
+      }
+    };
+
+    ws.onerror = (err) => {
+      log(`⚠️ [WS] Connection error: ${err.message || 'Error'}`);
+    };
+
+    ws.onclose = (event) => {
+      log(`🔴 [WS] Disconnected (Code: ${event.code}). Auto-reconnecting in 3s...`);
+      wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
+  } catch (e) {
+    log(`❌ [WS] Instantiation failure: ${e.message}`);
   }
 }
 
-// Visual Modulation: Authentic to 2001: A Space Odyssey
-// =========================================================================================
-// CRITICAL HARDWARE & UI REQUIREMENT - DO NOT REMOVE OR BREAK:
-// The outer acoustic ring (#layer-ring-on / hal2026_ring_on.png) MUST visibly blink and
-// pulse with the user's voice intensity whenever the user is speaking in State.LISTENING.
-// This provides immediate visual confirmation to the user that HAL is hearing their message!
-// =========================================================================================
-function updateVisuals(intensity, isHalSpeech = false) {
-  if (currentState === State.SLEEPING) return;
-
-  // Normalize intensity to 0.0 - 1.0 range
-  const norm = Math.min(1.0, Math.max(0.0, intensity));
-
-  if (isHalSpeech) {
-    // When HAL speaks:
-    // 1. Listening ring is strictly OFF
-    if (layerRingOn) {
-      layerRingOn.style.opacity = '0.0';
-    }
-    // 2. Central dot slightly blinks with speech audio waveform
-    if (layerCenterOn) {
-      const halBlink = (0.72 + norm * 0.28).toFixed(2);
-      layerCenterOn.style.opacity = halBlink;
-    }
-  } else {
-    // When HAL is in listen mode (user speaks or standby):
-    // Central light is kept illuminated in a static way (never animated/dimmed)
-    if (layerCenterOn && layerCenterOn.style.opacity !== '1.0') {
-      layerCenterOn.style.opacity = '1.0';
-    }
-
-    if (norm > 0.012) {
-      // User is speaking: visibly animate (blink/pulse) the outer ring with voice energy
-      if (layerRingOn) {
-        const ringLevel = Math.min(1.0, 0.40 + (norm - 0.012) * 3.2).toFixed(2);
-        layerRingOn.style.opacity = ringLevel;
-      }
-    } else {
-      // Standby / silence between words: ring strictly OFF
-      if (layerRingOn && layerRingOn.style.opacity !== '0.0') {
-        layerRingOn.style.opacity = '0.0';
+// ===========================================================================
+// UNIFIED HAL AUDIO ENGINE INSTANTIATION
+// ===========================================================================
+const halAudio = new HalAudio({
+  // Vocal RMS feedback -> Pulses outer acoustic ring (#layer-ring-on)
+  onAudioLevel: (intensity) => {
+    if (currentState === State.LISTENING) {
+      if (intensity > 0.012) {
+        if (layerRingOn) {
+          const ringLevel = Math.min(1.0, 0.40 + (intensity - 0.012) * 3.2).toFixed(2);
+          layerRingOn.style.opacity = ringLevel;
+        }
+      } else {
+        if (layerRingOn && layerRingOn.style.opacity !== '0.0') {
+          layerRingOn.style.opacity = '0.0';
+        }
       }
     }
-  }
-}
+  },
 
+  // Playback RMS feedback -> Pulses central eye (#layer-center-on)
+  onPlaybackLevel: (intensity) => {
+    if (currentState === State.SPEAKING && layerCenterOn) {
+      layerCenterOn.style.opacity = (0.72 + intensity * 0.28).toFixed(2);
+    }
+  },
 
-// Instantiate Subsystems
-audioPlayer = new AudioPlayer({
+  // User finished speaking (1.8s silence detected) -> Send audio turn to Gemini
+  onTurnComplete: (wavBytes) => {
+    if (persistentLedOn) setPersistentLed(false);
+    triggerLedTag('listen-done');
+    setHalState(State.THINKING);
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      log(`📤 [HalAudio] Transmitting audio turn (${wavBytes.byteLength} bytes) to Gemini.`);
+      ws.send(wavBytes);
+    }
+    resetSleepTimer();
+  },
+
+  // HAL voice playback finished -> Resume active listening immediately
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
-      if (audioRecorder) audioRecorder.muted = true;
-      if (speechRecognizer) speechRecognizer.pause();
-      setState(State.PROCESSING);
+      setHalState(State.SPEAKING);
     } else {
-      if (audioRecorder) audioRecorder.muted = false;
-      if (speechRecognizer) speechRecognizer.resume();
-      lastUserVoiceTime = 0;
-      resetToStandby();
-      stopInteraction();
-    }
-  },
-  onAudioLevel: (intensity) => {
-    if (currentState === State.PROCESSING) {
-      updateVisuals(intensity, true); // HAL Voice slightly blinks central dot
-    }
-  },
-  onLog: log,
-});
-
-function isHalWakeWord(text) {
-  if (!text) return false;
-  const clean = text.trim().toLowerCase();
-
-  // 1. Strict anti-hallucination / substring rejection
-  // Rejects words that merely contain "hal" as part of another word
-  if (/\b(?:hallucin\w+|halibut|shallow|chalet|unhallowed|inhale|exhale|half)\b/i.test(clean)) {
-    return false;
-  }
-
-  // 2. Exact isolated wake word or greeting + HAL:
-  // e.g. "hal", "hey hal", "ok hal", "okay hal", "hi hal", "hello hal", "hal 9000", "hal nine thousand"
-  const isolatedHalRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:9000|nine\s+thousand))?[,\.!\?]*$/i;
-  if (isolatedHalRegex.test(clean)) {
-    return true;
-  }
-
-  // 3. Short wake phrases addressing HAL:
-  // e.g. "hal wake up", "wake up hal", "hal are you there", "hal are you awake", "hal listen", "hal up"
-  const shortWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\s+(?:wake\s*up|are\s+you\s+(?:there|awake)|can\s+you\s+hear\s+me|listen|up)[,\.!\?]*$/i;
-  if (shortWakeRegex.test(clean)) {
-    return true;
-  }
-  const reverseWakeRegex = /^(?:wake\s*up\s+)?hal[,\.!\?]*$/i;
-  if (reverseWakeRegex.test(clean)) {
-    return true;
-  }
-
-  // 4. Direct commands starting with HAL:
-  // e.g. "hal, what time is it", "hey hal, what is on my calendar"
-  if (/^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b[,\s]+/i.test(clean)) {
-    return true;
-  }
-
-  // 5. Common iOS Speech Recognition phonetic mis-transcriptions for HAL when spoken in isolation:
-  // On iOS Safari, "HAL" without context is frequently transcribed as "how", "al", "her", "hell", "owl"
-  // STRICT RULE: Only accept these if spoken as the ISOLATED word or short wake phrase, NOT in ambient sentences.
-  const isolatedPhoneticRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i;
-  if (isolatedPhoneticRegex.test(clean)) {
-    return true;
-  }
-  const shortPhoneticWakeRegex = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her)\s+(?:wake\s*up|are\s+you\s+(?:there|awake))[,\.!\?]*$/i;
-  if (shortPhoneticWakeRegex.test(clean)) {
-    return true;
-  }
-
-  return false;
-}
-
-speechRecognizer = new SpeechRecognizer({
-  getLastVoiceTime: () => lastUserVoiceTime,
-  onFinalSpeech: (text) => {
-    lastUserVoiceTime = 0;
-    if (currentState === State.SLEEPING) {
-      if (!isHalWakeWord(text)) {
-        log(`💤 [Sleeping] Ignored non-wake speech: "${text}"`);
-        return;
-      }
-      log(`☀️ [Sleeping] Isolated HAL wake word verified: "${text}"! Waking up HAL.`);
-      wakeUp();
-    } else {
+      setHalState(State.LISTENING);
       resetSleepTimer();
     }
-
-    if (persistentLedOn) {
-      setPersistentLed(false);
-    }
-    if (text) {
-      // Instantaneous hardware feedback: End of listening mode acknowledged
-      triggerLedExpression('listen-done', 400);
-    }
-    if (wsClient && wsClient.isConnected && text) {
-      // If wake word was an isolated phonetic variation (e.g. iOS hearing "how" or "her"), normalize to 'HAL'
-      const isPhonetic = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:how|al|her|hell|owl)[,\.!\?]*$/i.test(text.trim().toLowerCase());
-      const speechToSend = isPhonetic ? 'HAL' : text;
-      log(`📤 [SpeechRecognizer] Sending transcript to HAL: "${speechToSend}"`);
-      wsClient.sendJson({ type: 'user_text', text: speechToSend });
-      // NOTE: Do NOT pause speech recognition here! AudioPlayer handles muting when audio output begins.
-      setState(State.THINKING);
-    }
   },
-  onInterimSpeech: (text) => {
-    if (currentState === State.SLEEPING) {
-      if (isHalWakeWord(text)) {
-        log(`☀️ [Sleeping] Interim HAL wake word detected: "${text}"! Waking up HAL.`);
-        wakeUp();
-      }
-      return;
+
+  // User barge-in during speech -> Send interrupt to server
+  onBargeIn: () => {
+    log('⚡ [HAL Monolith] Voice barge-in detected. Halting speech playback.');
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send('INTERRUPT');
     }
+    setHalState(State.LISTENING);
     resetSleepTimer();
-    if (persistentLedOn && text && text.trim()) {
-      setPersistentLed(false);
-    }
-    // CRITICAL HARDWARE FEEDBACK: Outer ring (#layer-ring-on) blinks to visually acknowledge user speech
-    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING && text && text.trim()) {
-      if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') < 0.6) {
-        layerRingOn.style.opacity = '0.85';
-        setTimeout(() => {
-          if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
-            if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') === 0.85) {
-              layerRingOn.style.opacity = '0.25';
-            }
-          }
-        }, 120);
-      }
-    }
   },
-  onStatusChange: (status) => {
-    log(`🗣️ SpeechRecognizer status: ${status}`);
-  },
-  onLog: log,
-});
 
-// =========================================================================================
-// FAB PHYSICAL MONOLITH CALIBRATION: KNOCK-TO-WAKE SENSITIVITY THRESHOLD
-// Set to 1.0 m/s² (calibrated for physical knuckle knock on aluminum frame / desk).
-// TWEAK THIS VALUE IF EVER NEEDED: Lower = more sensitive, Higher = requires harder knock.
-// =========================================================================================
-const KNOCK_WAKE_THRESHOLD = 1.0; // <-- TWEAK KNOCK SENSITIVITY HERE (m/s²)
-
-motionDetector = new MotionDetector({
-  threshold: KNOCK_WAKE_THRESHOLD,
-  onKnock: (magnitude) => {
-    // MOTION DETECTOR IS EXCLUSIVELY FOR WAKE UP IN SLEEP MODE!
-    // If HAL is awake or speaking, never listen or intercept.
-    if (currentState !== State.SLEEPING) return;
-
-    log(`💥 Enclosure knock detected via accelerometer (${magnitude.toFixed(2)} m/s²)! Waking up HAL.`);
-    triggerLedExpression('wink', 450);
+  // Standby double-tap acoustic wake
+  onWake: (reason) => {
+    log(`🥁 [HAL Monolith] Acoustic wake triggered (${reason}).`);
+    triggerLedTag('wink');
     wakeUp();
-    requestScreenWakeLock();
-    ensureKeepAwakeVideoPlaying();
   },
+
   onLog: log,
 });
 
-audioRecorder = new AudioRecorder({
-  onAudioData: (pcmBuffer) => {
-    // Single Input Pipeline: SpeechRecognizer is primary; only stream raw PCM as fallback if Web Speech is unsupported
-    if (!speechRecognizer.isSupported && wsClient && wsClient.isConnected) {
-      wsClient.sendAudio(pcmBuffer);
-    }
-  },
-  onAudioLevel: (intensity) => {
-    if (intensity > 0.012) {
-      lastUserVoiceTime = Date.now();
-    }
-    if (currentState !== State.PROCESSING && currentState !== State.SLEEPING) {
-      updateVisuals(intensity, false); // User Voice Modulates Acoustic Ring
-    }
-  },
-  onSpeechDetected: () => {
-    if (currentState === State.PROCESSING) {
-      triggerVoiceBargeIn();
-    }
-    if (persistentLedOn) {
-      setPersistentLed(false);
-    }
-  },
-  onWakeTrigger: (reason) => {
-    log(`🥁 Enclosure double-tap detected acoustically (${reason})! Waking up HAL.`);
-    triggerLedExpression('wink', 450);
-    if (currentState === State.SLEEPING) {
-      wakeUp();
-    }
-    requestScreenWakeLock();
-    ensureKeepAwakeVideoPlaying();
-  },
-  onLog: log,
-});
+// ===========================================================================
+// HARDWARE ACCELEROMETER KNOCK SENSOR (PHYSICAL MONOLITH INTERACTION)
+// ===========================================================================
+let lastKnockTime = 0;
+let lastX = 0, lastY = 0, lastZ = 0;
+let hasGravitySample = false;
+const KNOCK_THRESHOLD = 1.0; // Calibrated for knuckle taps on aluminum enclosure (m/s²)
 
-wsClient = new WsClient({
-  onAudioReceived: (arrayBuffer) => {
-    if (currentState === State.SLEEPING) {
-      wakeUp();
+function handleDeviceMotion(event) {
+  let magLinear = 0;
+  if (event.acceleration && event.acceleration.x !== null) {
+    magLinear = Math.hypot(event.acceleration.x || 0, event.acceleration.y || 0, event.acceleration.z || 0);
+  }
+
+  let magJerk = 0;
+  if (event.accelerationIncludingGravity) {
+    const gx = event.accelerationIncludingGravity.x || 0;
+    const gy = event.accelerationIncludingGravity.y || 0;
+    const gz = event.accelerationIncludingGravity.z || 0;
+    if (hasGravitySample) {
+      magJerk = Math.hypot(gx - lastX, gy - lastY, gz - lastZ);
     }
-    if (currentState !== State.PROCESSING) {
-      setState(State.PROCESSING);
-    }
-    audioPlayer.playChunk(arrayBuffer);
-  },
-  onStringReceived: (text) => {
-    if (text.startsWith('VOLUME:')) {
-      const vol = parseInt(text.split(':')[1], 10);
-      if (!isNaN(vol)) {
-        audioPlayer.setVolumeLevel(vol);
-        log(`🔊 HAL adjusted vocal volume to: ${vol}/10`);
+    lastX = gx; lastY = gy; lastZ = gz;
+    hasGravitySample = true;
+  }
+
+  const magnitude = Math.max(magLinear, magJerk);
+  if (magnitude >= KNOCK_THRESHOLD) {
+    const now = performance.now();
+    if (now - lastKnockTime > 500) {
+      lastKnockTime = now;
+      log(`💥 [Motion] Enclosure knock detected (${magnitude.toFixed(2)} m/s²)!`);
+
+      if (currentState === State.SLEEPING) {
+        triggerLedTag('wink');
+        wakeUp();
+      } else if (currentState === State.SPEAKING) {
+        log('💥 [Motion] Knock barge-in during speech. Halting playback.');
+        halAudio.stopPlayback();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send('INTERRUPT');
+        }
+        setHalState(State.LISTENING);
       }
-    } else if (text.startsWith('LED:')) {
-      const state = text.substring(4).trim().toUpperCase();
-      if (state === 'ON') {
-        setPersistentLed(true);
-      } else if (state === 'OFF') {
-        setPersistentLed(false);
-      } else if (state === 'SEARCH') {
-        log('🔍 [HAL Hardware] Live Search active -> triggering LED:SEARCH animation.');
-        triggerLedExpression('search', 1600);
-      } else if (state === 'API') {
-        log('⚡ [HAL Hardware] API Tool execution -> triggering LED:API animation.');
-        triggerLedExpression('api', 600);
-      } else if (state === 'LISTEN_DONE' || state === 'ACK') {
-        log('👂 [HAL Hardware] End of listening -> triggering LED:LISTEN-DONE animation.');
-        triggerLedExpression('listen-done', 400);
-      }
-    } else if (text.startsWith('TAG:')) {
-      const tag = text.substring(4).trim();
-      handleEmotionTag(tag);
-    } else if (text === 'THINKING') {
-      log('🤔 Received THINKING signal from server.');
-      setState(State.THINKING);
-    } else if (text === 'WAKE') {
-      log('☀️ Received WAKE signal from server.');
-      wakeUp();
-    } else if (text === 'SLEEP') {
-      log('🌙 Received SLEEP signal from server. Queueing sleep mode for after voice playback.');
-      pendingSleepCommand = true;
-    } else if (text === 'RELOAD') {
-      log('🔄 [HAL Remote Control] Received RELOAD signal from server. Refreshing page...');
-      window.location.reload();
-    } else if (text === 'DONE') {
-      log('🏁 Received DONE signal from server.');
-      audioPlayer.finishStream();
     }
-  },
-  onStatusChange: (status) => {
-    log(`🌐 WebSocket: ${status}`);
-    if (status === 'CONNECTED') {
-      wsClient.sendJson({ type: 'init', volume: audioPlayer.volumeLevel });
-      wsClient.sendJson({ type: 'sleep_state', sleeping: currentState === State.SLEEPING });
-      log(`🎛️ Synced hardware volume ${audioPlayer.volumeLevel}/10 and sleep state to HAL backend.`);
-    }
-  },
-  onLog: log,
-});
-
-// Interaction Flow
-function stopInteraction() {
-  setState(State.LISTENING);
-  log('💬 Audio response finished. Resuming continuous listening.');
-  
-  if (pendingSleepCommand) {
-    pendingSleepCommand = false;
-    goToSleep();
-  } else {
-    resetSleepTimer();
   }
 }
 
-// Barge-in (Interruption of HAL speech when user speaks)
-function triggerVoiceBargeIn() {
-  log('⚡ User voice barge-in detected! Halting HAL speech playback immediately.');
-  audioPlayer.stopPlayback();
-  wsClient.sendInterrupt();
-  if (speechRecognizer) speechRecognizer.resume();
-  setState(State.LISTENING);
-}
-
-// ==========================================================================
-// PERMANENT SCREEN WAKE LOCK & KEEP-AWAKE SUBSYSTEM
-// HARD ARCHITECTURAL REQUIREMENT:
-// The hosting iPhone is permanently mounted inside the physical aluminum 
-// desktop monolith on Fab's desk in Miami and permanently plugged into continuous 
-// wall power.
-// - NEVER turn the screen black or dim the faceplate artwork.
-// - Battery saving logic is STRICTLY FORBIDDEN.
-// - The faceplate (#layer-everything-off) must remain 100% visible (opacity: 1.0) 24/7.
-// - Standby mode is expressed EXCLUSIVELY by extinguishing the central red LED.
-// ==========================================================================
-
-const SILENT_KEEP_AWAKE_MP4 = 'data:video/mp4;base64,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';
+// ===========================================================================
+// 24/7 SCREEN WAKE LOCK & KEEP-AWAKE MP4
+// ===========================================================================
+const SILENT_KEEP_AWAKE_MP4 = 'data:video/mp4;base64,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';
 
 let keepAwakeVideo = null;
+let wakeLockSentinel = null;
 
 function initKeepAwakeVideo() {
   if (keepAwakeVideo) {
@@ -598,16 +400,8 @@ function initKeepAwakeVideo() {
     keepAwakeVideo.style.zIndex = '-999';
     keepAwakeVideo.src = SILENT_KEEP_AWAKE_MP4;
     document.body.appendChild(keepAwakeVideo);
-
-    const playPromise = keepAwakeVideo.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => log('📺 Silent Keep-Awake video active (Prevents iOS screen dimming & auto-lock).'))
-        .catch((err) => log(`Note: Keep-Awake video play pending user gesture: ${err.message}`));
-    }
-  } catch (err) {
-    log(`Keep-Awake video init note: ${err.message}`);
-  }
+    keepAwakeVideo.play().catch(() => {});
+  } catch (e) {}
 }
 
 function ensureKeepAwakeVideoPlaying() {
@@ -616,52 +410,28 @@ function ensureKeepAwakeVideoPlaying() {
   }
 }
 
-let isAcquiringWakeLock = false;
-
 async function requestScreenWakeLock() {
-  if (isAcquiringWakeLock) return;
   if ('wakeLock' in navigator) {
     try {
-      if (wakeLockSentinel && !wakeLockSentinel.released) {
-        return;
-      }
-      isAcquiringWakeLock = true;
+      if (wakeLockSentinel && !wakeLockSentinel.released) return;
       wakeLockSentinel = await navigator.wakeLock.request('screen');
-      log('🔒 Screen Wake Lock active (Display will stay ON permanently).');
-
+      log('🔒 [WakeLock] Screen Wake Lock acquired.');
       wakeLockSentinel.addEventListener('release', () => {
-        log('🔓 Screen Wake Lock was released by system. Scheduling re-acquisition...');
         wakeLockSentinel = null;
-        setTimeout(() => {
-          if (document.visibilityState === 'visible') {
-            requestScreenWakeLock();
-          }
-        }, 1000);
+        setTimeout(requestScreenWakeLock, 1000);
       });
-    } catch (err) {
-      if (!wakeLockFailedLogged) {
-        console.log(`⚠️ Wake Lock request note: ${err.name}, ${err.message} (Keep-Awake video maintains screen ON)`);
-        wakeLockFailedLogged = true;
-      }
-      wakeLockSentinel = null;
-    } finally {
-      isAcquiringWakeLock = false;
-    }
-  } else {
-    log('⚠️ Screen Wake Lock API not supported natively; relying on Keep-Awake video.');
+    } catch (e) {}
   }
   ensureKeepAwakeVideoPlaying();
 }
 
-document.addEventListener('visibilitychange', async () => {
+document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    log('📱 App visible: re-asserting Screen Wake Lock and Keep-Awake video.');
-    await requestScreenWakeLock();
+    requestScreenWakeLock();
     ensureKeepAwakeVideoPlaying();
   }
 });
 
-// Periodic heartbeat: Re-check every 15s to guarantee the display never sleeps
 setInterval(() => {
   if (document.visibilityState === 'visible') {
     if (!wakeLockSentinel || wakeLockSentinel.released) {
@@ -671,75 +441,53 @@ setInterval(() => {
   }
 }, 15000);
 
-// Master Initialization (Triggered by one tap on INITIALIZE SYSTEM)
+// ===========================================================================
+// MASTER INITIALIZATION GESTURE (ACTIVATED BY TOUCHING OVERLAY)
+// ===========================================================================
+let isSystemInitialized = false;
+
 async function initializeSystem() {
   if (isSystemInitialized) return;
   isSystemInitialized = true;
+  log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
 
-  log('🚀 Initializing HAL 9000 system on iPhone...');
-
-  // Fade out and completely remove initialization overlay from DOM to destroy GPU CALayers
   if (initOverlay) {
     initOverlay.classList.add('fade-out');
     setTimeout(() => {
-      if (initOverlay && initOverlay.parentNode) {
-        initOverlay.remove();
-      }
+      if (initOverlay && initOverlay.parentNode) initOverlay.remove();
     }, 400);
   }
 
   try {
-    // 1. Ensure secure context
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('iOS requires HTTPS for microphone access. Please open https://' + window.location.host);
-    }
+    // 1. Connect WebSocket
+    connectWebSocket();
 
-    // 2. Connect to WebSocket first so telemetry works immediately
-    wsClient.connect();
-
-    // 3. Initialize & Warm up Audio Player pipeline
-    await audioPlayer.initialize();
-
-    // 4. Start Microphone Capture (keeps mediaStream alive permanently)
-    try {
-      await audioRecorder.start();
-    } catch (recErr) {
-      log(`⚠️ AudioRecorder startup note: ${recErr.message}`);
-    }
-
-    if (speechRecognizer) {
-      speechRecognizer.start();
-    }
-    setState(State.LISTENING);
+    // 2. Initialize Unified Web Audio Engine
+    await halAudio.initialize();
+    setHalState(State.LISTENING);
     resetSleepTimer();
 
-    // 5. Request permanent Screen Wake Lock & start keep-awake video
+    // 3. Screen Wake Lock & Video Keep-Awake
     initKeepAwakeVideo();
-    requestScreenWakeLock().catch((e) => log(`WakeLock note: ${e.message}`));
+    requestScreenWakeLock();
 
-    // 6. Ensure accelerometer knock detection is started
-    if (motionDetector) {
-      await motionDetector.initialize();
-    }
+    // 4. Accelerometer knock sensor
+    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
 
-    log('✅ HAL 9000 fully operational and standing by.');
+    log('✅ [HAL Monolith] Fully operational and standing by on Fab\'s desk.');
   } catch (err) {
     isSystemInitialized = false;
-    log(`❌ Initialization error: ${err.message}`);
+    log(`❌ [HAL Monolith] Initialization error: ${err.message}`);
   }
 }
 
-// Synchronous iOS gesture trigger for Accelerometer / Motion Sensors
 function onInitializeGesture(e) {
   if (isSystemInitialized) return;
-  if (e && e.cancelable) {
-    e.preventDefault();
-  }
-  // CRITICAL FOR IOS SAFARI:
-  // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct
-  // user gesture call stack BEFORE any async/await; otherwise WebKit revokes user activation!
-  if (motionDetector) {
-    motionDetector.requestPermissionSync();
+  if (e && e.cancelable) e.preventDefault();
+
+  // iOS Safari requires DeviceMotionEvent permission to be requested synchronously inside gesture
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().catch(() => {});
   }
   initializeSystem();
 }
@@ -749,25 +497,7 @@ if (initOverlay) {
   initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
 }
 
-// Physical enclosure constraint: Phone is permanently sealed behind the glass fisheye lens.
-// The screen is physically inaccessible. Enclosure wake is handled strictly via MotionDetector (accelerometer).
-
-// Start directly in enclosure mode with calibrated vertical offset
-document.body.classList.remove('mode-desk');
-document.body.classList.add('mode-enclosure');
-
-const halContainer = document.getElementById('hal-container');
-const eyeOffsetY = -146.67;
-if (halContainer) {
-  halContainer.style.transform = `translateY(${eyeOffsetY}px)`;
-}
-
-// Ignore orientation sensor (lock to portrait)
+// Lock orientation to portrait
 if (screen.orientation && screen.orientation.lock) {
-  screen.orientation.lock('portrait').catch((e) => log('Orientation lock note: ' + e.message));
-} else if (window.screen && window.screen.lockOrientation) {
-  window.screen.lockOrientation('portrait');
+  screen.orientation.lock('portrait').catch(() => {});
 }
-
-log('📱 Initialized HAL 9000 pure optical mode (ZERO text UI).');
-

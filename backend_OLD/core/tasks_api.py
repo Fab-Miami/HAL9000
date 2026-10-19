@@ -1,0 +1,99 @@
+import os
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from .tool_events import notify_tool_execution
+
+SCOPES = [
+    'https://www.googleapis.com/auth/tasks',
+    'https://www.googleapis.com/auth/calendar'
+]
+
+def get_tasks_service():
+    """Initializes and returns the Google Tasks API service."""
+    creds = None
+    token_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'token.json')
+    
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, 'w') as token_file:
+                    token_file.write(creds.to_json())
+            except Exception as e:
+                print(f"⚠️ [TasksAPI] Token refresh warning: {e}")
+    else:
+        raise FileNotFoundError(f"token.json not found at {token_path}. Authentication required.")
+        
+    return build('tasks', 'v1', credentials=creds)
+
+def get_or_create_shopping_list(service):
+    """Finds the 'Shopping' task list, or creates it if it doesn't exist."""
+    results = service.tasklists().list(maxResults=50).execute()
+    items = results.get('items', [])
+    
+    for item in items:
+        if item['title'].lower() in ['shopping', 'shopping list', 'groceries']:
+            return item['id']
+            
+    # If not found, create it
+    tasklist = {'title': 'Shopping List'}
+    created_tasklist = service.tasklists().insert(body=tasklist).execute()
+    return created_tasklist['id']
+
+def get_shopping_list_tasks():
+    """Returns a list of uncompleted items on the Shopping list."""
+    notify_tool_execution("tasks")
+    try:
+        service = get_tasks_service()
+        list_id = get_or_create_shopping_list(service)
+        
+        # Get uncompleted tasks
+        results = service.tasks().list(tasklist=list_id, showCompleted=False).execute()
+        items = results.get('items', [])
+        
+        if not items:
+            return "The shopping list is currently empty."
+            
+        task_titles = [item['title'] for item in items]
+        return "Current shopping list items: " + ", ".join(task_titles)
+        
+    except Exception as e:
+        return f"Error retrieving shopping list: {str(e)}"
+
+def add_task_to_shopping_list(item_name: str):
+    """Adds a new item to the Shopping list."""
+    notify_tool_execution("tasks")
+    try:
+        service = get_tasks_service()
+        list_id = get_or_create_shopping_list(service)
+        
+        task = {'title': item_name}
+        service.tasks().insert(tasklist=list_id, body=task).execute()
+        return f"Successfully added {item_name} to the shopping list."
+        
+    except Exception as e:
+        return f"Error adding item to shopping list: {str(e)}"
+
+def remove_task_from_shopping_list(item_name: str):
+    """Removes an item from the Shopping list if it exists."""
+    notify_tool_execution("tasks")
+    try:
+        service = get_tasks_service()
+        list_id = get_or_create_shopping_list(service)
+        
+        # Get uncompleted tasks
+        results = service.tasks().list(tasklist=list_id, showCompleted=False).execute()
+        items = results.get('items', [])
+        
+        for item in items:
+            if item['title'].lower() == item_name.lower():
+                service.tasks().delete(tasklist=list_id, task=item['id']).execute()
+                return f"Successfully removed {item_name} from the shopping list."
+                
+        return f"Could not find {item_name} on the shopping list."
+        
+    except Exception as e:
+        return f"Error removing item from shopping list: {str(e)}"
+
