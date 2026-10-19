@@ -43,56 +43,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Real-Time Knock & Acceleration Sensor Monitor HUD -->
-    <div id="knock-hud">
-      <div class="knock-hud-header">
-        <span class="hud-title">⚡ KNOCK SENSOR MONITOR</span>
-        <span id="hud-status" class="hud-status">STANDBY</span>
-      </div>
-      
-      <div class="knock-hud-meters">
-        <div class="meter-box">
-          <div class="meter-label">CURRENT SHOCK</div>
-          <div id="hud-current" class="meter-val">0.00 <span class="unit">m/s²</span></div>
-        </div>
-        <div class="meter-box highlight">
-          <div class="meter-label">PEAK REGISTERED</div>
-          <div id="hud-peak" class="meter-val">0.00 <span class="unit">m/s²</span></div>
-        </div>
-        <div class="meter-box">
-          <div class="meter-label">THRESHOLD</div>
-          <div id="hud-thresh" class="meter-val">0.35 <span class="unit">m/s²</span></div>
-        </div>
-      </div>
-
-      <!-- Real-time Shock VU Level Meter -->
-      <div class="knock-vu-container">
-        <div class="knock-vu-track">
-          <div id="knock-vu-fill" class="knock-vu-fill"></div>
-          <div id="knock-vu-thresh-mark" class="knock-vu-thresh-mark"></div>
-        </div>
-      </div>
-
-      <div class="knock-hud-details">
-        <span id="hud-breakdown">Lin: 0.00 | Jerk: 0.00</span>
-        <span id="hud-event-count">Events: 0</span>
-      </div>
-
-      <div class="knock-hud-controls">
-        <button id="btn-reset-peak" class="hud-btn" type="button">RESET PEAK</button>
-        <button id="btn-toggle-sleep" class="hud-btn" type="button">SLEEP NOW</button>
-        <div class="thresh-presets">
-          <span class="preset-label">THRESH:</span>
-          <button class="thresh-btn" data-thresh="0.15" type="button">0.15</button>
-          <button class="thresh-btn" data-thresh="0.25" type="button">0.25</button>
-          <button class="thresh-btn active" data-thresh="0.35" type="button">0.35</button>
-          <button class="thresh-btn" data-thresh="0.50" type="button">0.50</button>
-          <button class="thresh-btn" data-thresh="0.75" type="button">0.75</button>
-          <button class="thresh-btn" data-thresh="1.25" type="button">1.25</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

@@ -6,17 +6,15 @@
  */
 
 export class MotionDetector {
-  constructor({ threshold = 0.35, cooldownMs = 500, onKnock, onLog, onMotionSample } = {}) {
+  constructor({ threshold = 1.0, cooldownMs = 500, onKnock, onLog } = {}) {
     this.threshold = threshold; // Acceleration magnitude spike in m/s² (calibrated for enclosure/desk finger taps)
     this.cooldownMs = cooldownMs; // Prevent duplicate knock triggers from ringing vibrations
     this.onKnock = onKnock || (() => {});
     this.onLog = onLog || console.log;
-    this.onMotionSample = onMotionSample || (() => {});
 
     this.isSupported = typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
     this.isActive = false;
     this.lastKnockTime = 0;
-    this.lastPeakLogTime = 0;
     this.lastX = 0;
     this.lastY = 0;
     this.lastZ = 0;
@@ -130,25 +128,6 @@ export class MotionDetector {
 
     // Capture highest impulse between linear acceleration and jerk filter
     const magnitude = Math.max(magLinear, magJerk);
-
-    // Stream real-time motion sample to UI HUD / Test monitor
-    if (this.onMotionSample) {
-      this.onMotionSample({
-        magnitude,
-        magLinear,
-        magJerk,
-        threshold: this.threshold,
-      });
-    }
-
-    // Diagnostic logging: capture every discrete knock impulse above noise floor (> 0.08 m/s²)
-    if (magnitude > 0.08) {
-      const now = performance.now();
-      if (now - this.lastPeakLogTime > 250) {
-        this.lastPeakLogTime = now;
-        this.onLog(`📊 [Knock Monitor] Peak: ${magnitude.toFixed(2)} m/s² (Lin: ${magLinear.toFixed(2)}, Jerk: ${magJerk.toFixed(2)}) | Thresh: ${this.threshold.toFixed(2)}`);
-      }
-    }
 
     // Check if mechanical shockwave exceeds knock threshold
     if (magnitude >= this.threshold) {

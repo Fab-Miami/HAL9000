@@ -16,7 +16,7 @@
 
 ## CRITICAL MANDATE #3: PHYSICAL HARDWARE MONOLITH CONSTRAINTS
 - **Sealed Physical Enclosure**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
-- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (`MotionDetector`, default threshold 0.35 m/s²) and acoustic double-taps.
+- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (`MotionDetector`, default threshold 1.0 m/s²) and acoustic double-taps.
 - **24/7 Screen On**: Screen dimming or power saving is STRICTLY FORBIDDEN. Standby/sleep mode turns off ONLY the central red LED (`layer-center-on`). The faceplate remains 100% visible 24/7 via Screen Wake Lock and looping silent keep-awake video.
 - **Location Context**: Line 355 in `backend/core/llm.py` must ALWAYS preserve: `"Your current location is Miami Beach."`.
 
