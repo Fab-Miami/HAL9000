@@ -153,11 +153,14 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v9':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v9). Triggering remote reload...")
+                        if client_ver != 'v10':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v10). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v9 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v10 client architecture connected.")
+                        if 'sleeping' in msg:
+                            self.is_client_sleeping = bool(msg.get('sleeping'))
+                            log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
 
                     if msg.get('type') == 'telemetry':
                         log(f"📱 [Client Telemetry] {msg.get('message')}")
@@ -244,6 +247,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"☀️ [Standby] Verified wake phrase: \"{user_transcript}\"! Waking HAL from standby.")
                 self.is_client_sleeping = False
                 await self.send(text_data="WAKE")
+                await self.send(text_data="THINKING")
             else:
                 await self.send(text_data="THINKING")
 

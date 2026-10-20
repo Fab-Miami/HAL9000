@@ -214,10 +214,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v9 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v10 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v9',
+        version: 'v10',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -236,6 +236,9 @@ function connectWebSocket() {
           halAudio.finishStream();
           if (pendingSleep && !halAudio.isPlaying) {
             goToSleep(true);
+          }
+          if (currentState === State.SLEEPING) {
+            halAudio.setListeningActive(true);
           }
         } else if (msg === 'THINKING') {
           if (currentState !== State.SLEEPING) {
@@ -317,9 +320,12 @@ const halAudio = new HalAudio({
       if (pendingSleep) {
         log('🌙 [HAL Monolith] Speech playback completed. Entering Standby now.');
         goToSleep(true);
-      } else {
+      } else if (currentState !== State.SLEEPING) {
         setHalState(State.LISTENING);
         resetSleepTimer();
+      } else {
+        // Standby sleep mode: re-engage listening for wake phrases
+        halAudio.setListeningActive(true);
       }
     }
   },

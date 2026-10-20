@@ -41,9 +41,6 @@ export class HalAudio {
     this.playbackEndTime = 0;
     this.speechActiveDuration = 0;
 
-    // Enclosure Tap Detection in Standby
-    this.firstTapTime = 0;
-    this.firstTapPeak = 0;
   }
 
   async initialize() {
@@ -196,38 +193,8 @@ export class HalAudio {
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
     this.onAudioLevel(ringLevel);
 
-    // =======================================================================
-    // STANDBY DOUBLE-TAP ACOUSTIC WAKE DETECTION
-    // =======================================================================
+    // In standby/sleep mode, only capture speech turns when vocal energy clearly exceeds ambient threshold
     if (this.sleeping) {
-      const now = performance.now();
-      const crestFactor = maxPeak / (rms + 0.0001);
-      const isImpulse = (maxPeak > 0.20 && crestFactor > 2.6) || (maxPeak > 0.35 && (rms - this.noiseFloor) > 0.04);
-
-      if (isImpulse) {
-        const timeSinceFirstTap = now - this.firstTapTime;
-        if (this.firstTapTime > 0 && timeSinceFirstTap >= 140 && timeSinceFirstTap <= 850) {
-          const peakRatio = Math.min(this.firstTapPeak, maxPeak) / Math.max(this.firstTapPeak, maxPeak);
-          if (peakRatio >= 0.40) {
-            this.onLog(`🥁 [HalAudio] Verified DOUBLE TAP on enclosure! (Interval: ${Math.round(timeSinceFirstTap)}ms, Match: ${(peakRatio * 100).toFixed(0)}%). Waking HAL.`);
-            this.firstTapTime = 0;
-            this.firstTapPeak = 0;
-            this.onWake('double_tap');
-            return;
-          } else {
-            this.firstTapTime = now;
-            this.firstTapPeak = maxPeak;
-          }
-        } else if (timeSinceFirstTap > 850 || this.firstTapTime === 0) {
-          this.firstTapTime = now;
-          this.firstTapPeak = maxPeak;
-        }
-      } else if (this.firstTapTime > 0 && (now - this.firstTapTime) > 850) {
-        this.firstTapTime = 0;
-        this.firstTapPeak = 0;
-      }
-
-      // In standby, stream wake turn if voice exceeds threshold ("HAL wake up")
       if (voiceDelta <= 0.012 && !this.isSpeaking) {
         return;
       }
