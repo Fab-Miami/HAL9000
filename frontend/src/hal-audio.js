@@ -38,6 +38,8 @@ export class HalAudio {
     this.activeSources = [];
     this.streamFinished = false;
     this.playbackMeterInterval = null;
+    this.playbackEndTime = 0;
+    this.speechActiveDuration = 0;
 
     // Enclosure Tap Detection in Standby
     this.firstTapTime = 0;
@@ -150,16 +152,12 @@ export class HalAudio {
     const rms = Math.sqrt(sum / downsampled.length);
 
     // =======================================================================
-    // PHYSICAL MUTING & BARGE-IN DURING HAL PLAYBACK
+    // PHYSICAL MUTING DURING HAL PLAYBACK & 300ms ACOUSTIC REVERB DECAY
     // =======================================================================
-    if (this.isPlaying) {
+    if (this.isPlaying || (performance.now() - this.playbackEndTime < 300)) {
       // Audio capture is strictly MUTED so HAL never hears his own voice.
-      // But if user speaks loudly over HAL (RMS > 0.045), trigger instant barge-in!
-      if (rms > 0.045) {
-        this.onLog(`⚡ [HalAudio] User voice barge-in detected during speech! (RMS: ${rms.toFixed(3)}). Cutting output.`);
-        this.stopPlayback();
-        this.onBargeIn();
-      }
+      // Eliminates 100% of self-interruption, acoustic feedback, and echo loops.
+      // Physical barge-in is handled via accelerometer knocks on the chassis.
       return;
     }
 
@@ -228,6 +226,7 @@ export class HalAudio {
     if (hasVocalEnergy) {
       if (!this.isSpeaking) {
         this.isSpeaking = true;
+        this.speechActiveDuration = 0;
         this.turnBuffer = [];
         // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
         for (let i = 0; i < this.preRollBuffer.length; i++) {
@@ -236,6 +235,7 @@ export class HalAudio {
         this.preRollBuffer = [];
       }
       this.lastVoiceTime = now;
+      this.speechActiveDuration += pcmChunk.length / 16000;
       this.turnBuffer.push(pcmChunk);
     } else {
       if (this.isSpeaking) {
@@ -246,7 +246,7 @@ export class HalAudio {
 
         if (elapsedSinceVoice >= requiredDelay) {
           // 1.8s (or 2.5s) of natural silence elapsed -> Finalize turn!
-          this._finalizeTurn();
+          this._finalizeTurn(elapsedSinceVoice);
         }
       } else {
         // Ambient silence: keep rolling 0.3s pre-roll buffer (~4 chunks)
@@ -258,11 +258,18 @@ export class HalAudio {
     }
   }
 
-  _finalizeTurn() {
+  _finalizeTurn(elapsedSinceVoice = 1800) {
     this.isSpeaking = false;
     this.onAudioLevel(0.0);
 
     if (this.turnBuffer.length === 0) return;
+
+    // Reject phantom clicks or ultra-short noises (< 0.25s actual vocal duration)
+    if (this.speechActiveDuration < 0.25) {
+      this.onLog(`🤫 [HalAudio] Discarded transient noise blip (${this.speechActiveDuration.toFixed(2)}s active energy).`);
+      this.turnBuffer = [];
+      return;
+    }
 
     // Concatenate all Int16 chunks
     let totalSamples = 0;
@@ -270,15 +277,7 @@ export class HalAudio {
       totalSamples += this.turnBuffer[i].length;
     }
 
-    const durationSeconds = totalSamples / 16000;
-    // Reject phantom clicks or ultra-short noises (< 0.4s)
-    if (durationSeconds < 0.40) {
-      this.onLog(`🤫 [HalAudio] Discarded short noise blip (${durationSeconds.toFixed(2)}s).`);
-      this.turnBuffer = [];
-      return;
-    }
-
-    const fullPcm = new Int16Array(totalSamples);
+    let fullPcm = new Int16Array(totalSamples);
     let offset = 0;
     for (let i = 0; i < this.turnBuffer.length; i++) {
       fullPcm.set(this.turnBuffer[i], offset);
@@ -286,9 +285,17 @@ export class HalAudio {
     }
     this.turnBuffer = [];
 
+    // Trim trailing dead silence from buffer, keeping a clean 0.15s cushion
+    const trimMs = Math.max(0, elapsedSinceVoice - 150);
+    const trimSamples = Math.floor(trimMs * 16); // 16 samples per ms at 16kHz
+    if (trimSamples > 0 && fullPcm.length > trimSamples + 4800) {
+      fullPcm = fullPcm.subarray(0, fullPcm.length - trimSamples);
+    }
+
+    const durationSeconds = fullPcm.length / 16000;
     // Package into clean WAV container for Gemini
     const wavBytes = this._pcmToWav(fullPcm, 16000);
-    this.onLog(`🗣️ [HalAudio] Turn finalized after 1.8s silence (${durationSeconds.toFixed(1)}s audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);
+    this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);
     this.onTurnComplete(wavBytes);
   }
 
@@ -340,6 +347,10 @@ export class HalAudio {
       if (this.streamFinished && this.activeSources.length === 0) {
         this.isPlaying = false;
         this.scheduledTime = 0;
+        this.playbackEndTime = performance.now();
+        this.turnBuffer = [];
+        this.preRollBuffer = [];
+        this.isSpeaking = false;
         this.onPlaybackStateChange(false);
       }
     };
@@ -350,6 +361,10 @@ export class HalAudio {
     if (this.activeSources.length === 0) {
       this.isPlaying = false;
       this.scheduledTime = 0;
+      this.playbackEndTime = performance.now();
+      this.turnBuffer = [];
+      this.preRollBuffer = [];
+      this.isSpeaking = false;
       this.onPlaybackStateChange(false);
     } else {
       const remainingMs = Math.max(100, Math.round(((this.scheduledTime - (this.audioContext ? this.audioContext.currentTime : 0)) * 1000) + 200));
@@ -357,6 +372,10 @@ export class HalAudio {
         if (this.isPlaying && this.activeSources.length === 0) {
           this.isPlaying = false;
           this.scheduledTime = 0;
+          this.playbackEndTime = performance.now();
+          this.turnBuffer = [];
+          this.preRollBuffer = [];
+          this.isSpeaking = false;
           this.onPlaybackStateChange(false);
         }
       }, remainingMs);
@@ -365,6 +384,7 @@ export class HalAudio {
 
   stopPlayback() {
     this.streamFinished = true;
+    this.playbackEndTime = performance.now();
     for (let i = 0; i < this.activeSources.length; i++) {
       try {
         this.activeSources[i].stop();
@@ -373,6 +393,9 @@ export class HalAudio {
     }
     this.activeSources = [];
     this.scheduledTime = 0;
+    this.turnBuffer = [];
+    this.preRollBuffer = [];
+    this.isSpeaking = false;
 
     if (this.isPlaying) {
       this.isPlaying = false;
