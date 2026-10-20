@@ -117,7 +117,7 @@ export class HalAudio {
     this.sleeping = !!sleeping;
     this.turnBuffer = [];
     this.isSpeaking = false;
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 2500 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1600 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -193,12 +193,6 @@ export class HalAudio {
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
     this.onAudioLevel(ringLevel);
 
-    // In standby/sleep mode, only capture speech turns when vocal energy clearly exceeds ambient threshold
-    if (this.sleeping) {
-      if (voiceDelta <= 0.012 && !this.isSpeaking) {
-        return;
-      }
-    }
 
     // =======================================================================
     // TURN-TAKING ACCUMULATION & 1.8s SILENCE DETECTION
@@ -241,10 +235,10 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        const requiredDelay = this.sleeping ? 2500 : this.SILENCE_DELAY_MS;
+        const requiredDelay = this.sleeping ? 1600 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
-          // 1.8s (or 2.5s) of natural silence elapsed -> Finalize turn!
+          // 1.8s (or 1.6s in standby) of natural silence elapsed -> Finalize turn!
           this._finalizeTurn(elapsedSinceVoice);
         }
       } else {

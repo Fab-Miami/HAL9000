@@ -93,11 +93,11 @@ def is_hal_wake_word(text: str) -> bool:
 
     # 2. Isolated "HAL" call:
     # "hal", "hey hal", "ok hal", "hello hal", "hi hal", "hal are you awake", "hal are you there"
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?hal(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl)(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
         return True
 
     # 3. Direct addressed command starting with "HAL, ...":
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?hal\b', clean, re.IGNORECASE):
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl)\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 7:
             return True
@@ -153,11 +153,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v11':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v11). Triggering remote reload...")
+                        if client_ver != 'v12':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v12). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v11 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v12 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
