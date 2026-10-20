@@ -117,7 +117,7 @@ export class HalAudio {
     this.sleeping = !!sleeping;
     this.turnBuffer = [];
     this.isSpeaking = false;
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1600 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1100 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -221,7 +221,7 @@ export class HalAudio {
           this.turnBuffer.push(pcmChunk);
         } else {
           this.preRollBuffer.push(pcmChunk);
-          if (this.preRollBuffer.length > 4) {
+          if (this.preRollBuffer.length > 6) {
             this.preRollBuffer.shift();
           }
         }
@@ -235,16 +235,16 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        const requiredDelay = this.sleeping ? 1600 : this.SILENCE_DELAY_MS;
+        const requiredDelay = this.sleeping ? 1100 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
-          // 1.8s (or 1.6s in standby) of natural silence elapsed -> Finalize turn!
+          // 1.8s (or 1.1s in standby) of natural silence elapsed -> Finalize turn!
           this._finalizeTurn(elapsedSinceVoice);
         }
       } else {
-        // Ambient silence: keep rolling 0.3s pre-roll buffer (~4 chunks)
+        // Ambient silence: keep rolling 0.5s pre-roll buffer (~6 chunks)
         this.preRollBuffer.push(pcmChunk);
-        if (this.preRollBuffer.length > 4) {
+        if (this.preRollBuffer.length > 6) {
           this.preRollBuffer.shift();
         }
       }

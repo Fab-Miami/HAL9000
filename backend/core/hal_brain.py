@@ -372,6 +372,7 @@ async def transcribe_audio(wav_bytes: bytes) -> str:
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
         prompt = (
             "Transcribe the spoken audio recording verbatim. "
+            "The user is speaking to HAL 9000 (common commands and wake phrases include 'HAL wake up', 'Wake up HAL', 'Hey HAL', 'HAL', 'Wake up'). "
             "Output ONLY the exact words spoken by the human. "
             "Do not include commentary, explanations, quotes, or timestamps. "
             "Do not guess, assume, or hallucinate words. "

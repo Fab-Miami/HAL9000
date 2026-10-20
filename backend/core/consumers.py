@@ -86,18 +86,19 @@ def is_hal_wake_word(text: str) -> bool:
     clean = re.sub(r'\s+', ' ', clean).strip()
 
     # 1. Direct wake up command: (up to 8 words total)
-    if re.search(r'\bwake\s*up\b|\bawake\b', clean, re.IGNORECASE):
+    # Matches "wake up", "wake up hal", "hal wake up", "wipe up hole" (acoustic inflection), "woke up", "awake", etc.
+    if re.search(r'\b(?:wake\s*up|wipe\s*up|wait\s*up|woke\s*up|awake)\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 8:
             return True
 
     # 2. Isolated "HAL" call:
-    # "hal", "hey hal", "ok hal", "hello hal", "hi hal", "hal are you awake", "hal are you there"
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl)(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
+    # "hal", "hey hal", "ok hal", "hello hal", "hi hal", "hal are you awake", "hal are you there", "hole", "howl"
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl|hole|haul)(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
         return True
 
     # 3. Direct addressed command starting with "HAL, ...":
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl)\b', clean, re.IGNORECASE):
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl|hole|haul)\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 7:
             return True
