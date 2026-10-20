@@ -5,9 +5,6 @@
  */
 
 import { HalAudio } from './hal-audio.js';
-import NoSleep from 'nosleep.js';
-
-const noSleep = new NoSleep();
 
 // DOM Elements
 const layerEverythingOff = document.getElementById('layer-everything-off');
@@ -115,7 +112,6 @@ function wakeUp() {
   resetSleepTimer();
   requestScreenWakeLock();
   ensureKeepAwakeVideoPlaying();
-  try { noSleep.enable(); } catch {}
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'sleep_state', sleeping: false }));
   }
@@ -135,7 +131,6 @@ function goToSleep(force = false) {
   // CRITICAL MANDATE #2: Screen stays ON 24/7 in standby! Re-assert wake lock & keep-awake video immediately!
   requestScreenWakeLock();
   ensureKeepAwakeVideoPlaying();
-  try { noSleep.enable(); } catch {}
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'sleep_state', sleeping: true }));
   }
@@ -222,10 +217,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v12 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v13 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v12',
+        version: 'v13',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -521,10 +516,16 @@ initKeepAwakeVideo();
 // MASTER INITIALIZATION GESTURE (ACTIVATED BY TOUCHING OVERLAY)
 // ===========================================================================
 let isSystemInitialized = false;
+let isInitializing = false;
+
+// Clear any legacy auto-init flag from localStorage so cold reloads never attempt ungestured audio
+try {
+  localStorage.removeItem('hal_initialized');
+} catch {}
 
 async function initializeSystem() {
-  if (isSystemInitialized) return;
-  isSystemInitialized = true;
+  if (isSystemInitialized || isInitializing) return;
+  isInitializing = true;
   log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
 
   // 1. Ensure Screen Wake Lock & Keep-Awake video are active BEFORE any async permissions
@@ -544,34 +545,41 @@ async function initializeSystem() {
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
 
     // 5. Dismiss overlay now that permissions were granted and system is operational
-    if (initOverlay) {
-      initOverlay.classList.add('fade-out');
+    const overlay = document.getElementById('init-overlay');
+    if (overlay) {
+      overlay.classList.add('fade-out');
       setTimeout(() => {
-        if (initOverlay && initOverlay.parentNode) initOverlay.remove();
+        if (overlay && overlay.parentNode) overlay.remove();
       }, 400);
     }
 
+    isSystemInitialized = true;
     log('✅ [HAL Monolith] Fully operational and standing by on Fab\'s desk.');
-    localStorage.setItem('hal_initialized', '1');
-    try { noSleep.enable(); } catch {}
   } catch (err) {
     isSystemInitialized = false;
     log(`❌ [HAL Monolith] Initialization error: ${err.message}`);
-    if (initOverlay) {
-      initOverlay.classList.remove('fade-out');
+    const overlay = document.getElementById('init-overlay');
+    if (overlay) {
+      overlay.classList.remove('fade-out');
     }
+  } finally {
+    isInitializing = false;
   }
 }
 
 function onInitializeGesture(e) {
-  // CRITICAL: Immediately lock screen awake on ANY user interaction
-  initKeepAwakeVideo();
-  requestScreenWakeLock();
-  try { noSleep.enable(); } catch {}
+  // If system is already initialized and the overlay is dismissed, just keep awake
+  if (isSystemInitialized && !document.getElementById('init-overlay')) {
+    ensureKeepAwakeVideoPlaying();
+    requestScreenWakeLock();
+    return;
+  }
 
-  if (isSystemInitialized) return;
-  if (e && e.cancelable) e.preventDefault();
+  log('👆 [HAL Monolith] Activation tap received.');
 
+  // CRITICAL FOR IOS SAFARI:
+  // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct
+  // user gesture call stack BEFORE any async/await; otherwise WebKit revokes user activation!
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
     DeviceMotionEvent.requestPermission()
       .then(permissionState => {
@@ -582,35 +590,29 @@ function onInitializeGesture(e) {
       });
   }
 
+  // Synchronously resume Web Audio pipeline within user gesture
+  if (halAudio && halAudio.audioContext && halAudio.audioContext.state === 'suspended') {
+    halAudio.audioContext.resume().catch(() => {});
+  }
+
+  initKeepAwakeVideo();
+  requestScreenWakeLock();
+
   initializeSystem();
 }
 
 if (initOverlay) {
+  initOverlay.addEventListener('pointerdown', onInitializeGesture);
   initOverlay.addEventListener('click', onInitializeGesture);
-  initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
+  initOverlay.addEventListener('touchend', onInitializeGesture);
 }
 
 // Global tap fallback so touching anywhere on the screen triggers initialization & re-asserts keep-awake
-window.addEventListener('click', (e) => {
-  ensureKeepAwakeVideoPlaying();
-  onInitializeGesture(e);
-});
-window.addEventListener('touchend', (e) => {
-  ensureKeepAwakeVideoPlaying();
-  onInitializeGesture(e);
-}, { passive: false });
-
-// Attach motion listener immediately so enclosure knocks can wake and initialize system behind glass
-window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+window.addEventListener('click', onInitializeGesture);
+window.addEventListener('touchend', onInitializeGesture);
 
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
-
-// Auto-initialize immediately on startup/reload if previously authorized
-if (localStorage.getItem('hal_initialized') === '1') {
-  log('⚡ [HAL Monolith] Auto-initializing system from stored authorization (24/7 keep-awake engaged)...');
-  initializeSystem();
-}
 
 // Lock orientation to portrait
 if (screen.orientation && screen.orientation.lock) {

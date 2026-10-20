@@ -86,7 +86,7 @@ def is_hal_wake_word(text: str) -> bool:
     clean = re.sub(r'\s+', ' ', clean).strip()
 
     # 1. Direct wake up command: (up to 8 words total)
-    if re.search(r'\bwake\s*up\b', clean, re.IGNORECASE):
+    if re.search(r'\bwake\s*up\b|\bawake\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 8:
             return True
@@ -153,11 +153,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v12':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v12). Triggering remote reload...")
+                        if client_ver != 'v13':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v13). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v12 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v13 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
