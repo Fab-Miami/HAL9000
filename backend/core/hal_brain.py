@@ -218,6 +218,7 @@ def save_turn(client_id: str, gemini_history_contents, user_transcript: str = ""
                     elif hasattr(part, 'inline_data') and part.inline_data:
                         text_parts.append("[User Spoken Audio]")
             combined = " ".join(text_parts).strip()
+            combined = re.sub(r'\[SYSTEM NOTIFICATION:[^\]]*\]\s*', '', combined).strip()
             if combined:
                 raw_items.append({'role': role, 'text': combined})
 
