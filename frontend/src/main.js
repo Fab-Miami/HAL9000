@@ -5,6 +5,9 @@
  */
 
 import { HalAudio } from './hal-audio.js';
+import NoSleep from 'nosleep.js';
+
+const noSleep = new NoSleep();
 
 // DOM Elements
 const layerEverythingOff = document.getElementById('layer-everything-off');
@@ -112,6 +115,7 @@ function wakeUp() {
   resetSleepTimer();
   requestScreenWakeLock();
   ensureKeepAwakeVideoPlaying();
+  try { noSleep.enable(); } catch {}
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'sleep_state', sleeping: false }));
   }
@@ -124,10 +128,14 @@ function goToSleep(force = false) {
     return;
   }
   pendingSleep = false;
-  log('🌙 [HAL Monolith] Entering Standby (Listening for enclosure knock or double-tap).');
+  log('🌙 [HAL Monolith] Entering Standby (Listening for wake word).');
   if (persistentLedOn) setPersistentLed(false);
   if (halAudio) halAudio.setSleeping(true);
   setHalState(State.SLEEPING);
+  // CRITICAL MANDATE #2: Screen stays ON 24/7 in standby! Re-assert wake lock & keep-awake video immediately!
+  requestScreenWakeLock();
+  ensureKeepAwakeVideoPlaying();
+  try { noSleep.enable(); } catch {}
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'sleep_state', sleeping: true }));
   }
@@ -214,10 +222,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v10 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v11 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v10',
+        version: 'v11',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -373,6 +381,12 @@ function handleDeviceMotion(event) {
       lastKnockTime = now;
       log(`💥 [Motion] Enclosure knock detected (${magnitude.toFixed(2)} m/s²)!`);
 
+      if (!isSystemInitialized) {
+        log('💥 [Motion] Knock on uninitialized system -> Auto-starting system...');
+        initializeSystem();
+        return;
+      }
+
       // Knock ONLY wakes up HAL from standby. Never interrupts him while speaking!
       if (currentState === State.SLEEPING) {
         triggerLedTag('wink');
@@ -414,6 +428,19 @@ function initKeepAwakeVideo() {
     keepAwakeVideo.style.pointerEvents = 'none';
     keepAwakeVideo.style.zIndex = '-999';
     keepAwakeVideo.src = SILENT_KEEP_AWAKE_MP4;
+
+    keepAwakeVideo.onpause = () => {
+      ensureKeepAwakeVideoPlaying();
+    };
+    keepAwakeVideo.onended = () => {
+      ensureKeepAwakeVideoPlaying();
+    };
+    keepAwakeVideo.ontimeupdate = () => {
+      if (keepAwakeVideo.currentTime > 0.5) {
+        keepAwakeVideo.currentTime = 0;
+      }
+    };
+
     document.body.appendChild(keepAwakeVideo);
 
     const playPromise = keepAwakeVideo.play();
@@ -525,6 +552,8 @@ async function initializeSystem() {
     }
 
     log('✅ [HAL Monolith] Fully operational and standing by on Fab\'s desk.');
+    localStorage.setItem('hal_initialized', '1');
+    try { noSleep.enable(); } catch {}
   } catch (err) {
     isSystemInitialized = false;
     log(`❌ [HAL Monolith] Initialization error: ${err.message}`);
@@ -538,13 +567,11 @@ function onInitializeGesture(e) {
   // CRITICAL: Immediately lock screen awake on ANY user interaction
   initKeepAwakeVideo();
   requestScreenWakeLock();
+  try { noSleep.enable(); } catch {}
 
   if (isSystemInitialized) return;
   if (e && e.cancelable) e.preventDefault();
 
-  // CRITICAL FOR IOS SAFARI:
-  // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct
-  // user gesture call stack BEFORE any async/await; otherwise WebKit revokes user activation!
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
     DeviceMotionEvent.requestPermission()
       .then(permissionState => {
@@ -573,8 +600,17 @@ window.addEventListener('touchend', (e) => {
   onInitializeGesture(e);
 }, { passive: false });
 
+// Attach motion listener immediately so enclosure knocks can wake and initialize system behind glass
+window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
+
+// Auto-initialize immediately on startup/reload if previously authorized
+if (localStorage.getItem('hal_initialized') === '1') {
+  log('⚡ [HAL Monolith] Auto-initializing system from stored authorization (24/7 keep-awake engaged)...');
+  initializeSystem();
+}
 
 // Lock orientation to portrait
 if (screen.orientation && screen.orientation.lock) {
