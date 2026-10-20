@@ -236,6 +236,7 @@ export class HalAudio {
     if (hasVocalEnergy) {
       if (!this.isSpeaking) {
         this.isSpeaking = true;
+        this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
         this.turnBuffer = [];
         // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
         for (let i = 0; i < this.preRollBuffer.length; i++) {
@@ -267,37 +268,41 @@ export class HalAudio {
   }
 
   _finalizeTurn(elapsedSinceVoice = 1800) {
-    this.isSpeaking = false;
-    this.onAudioLevel(0.0);
+    try {
+      this.isSpeaking = false;
+      this.onAudioLevel(0.0);
 
-    if (this.turnBuffer.length === 0) return;
+      if (this.turnBuffer.length === 0) return;
 
-    // Concatenate all Int16 chunks
-    let totalSamples = 0;
-    for (let i = 0; i < this.turnBuffer.length; i++) {
-      totalSamples += this.turnBuffer[i].length;
+      // Concatenate all Int16 chunks
+      let totalSamples = 0;
+      for (let i = 0; i < this.turnBuffer.length; i++) {
+        totalSamples += this.turnBuffer[i].length;
+      }
+
+      let fullPcm = new Int16Array(totalSamples);
+      let offset = 0;
+      for (let i = 0; i < this.turnBuffer.length; i++) {
+        fullPcm.set(this.turnBuffer[i], offset);
+        offset += this.turnBuffer[i].length;
+      }
+      this.turnBuffer = [];
+
+      // Trim trailing dead silence from buffer, keeping a clean 0.15s cushion
+      const trimMs = Math.max(0, elapsedSinceVoice - 150);
+      const trimSamples = Math.floor(trimMs * 16); // 16 samples per ms at 16kHz
+      if (trimSamples > 0 && fullPcm.length > trimSamples + 4800) {
+        fullPcm = fullPcm.subarray(0, fullPcm.length - trimSamples);
+      }
+
+      const durationSeconds = fullPcm.length / 16000;
+      // Package into clean WAV container for Gemini
+      const wavBytes = this._pcmToWav(fullPcm, 16000);
+      this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);
+      this.onTurnComplete(wavBytes);
+    } catch (e) {
+      this.onLog(`❌ [HalAudio] Turn finalization error: ${e.message}`);
     }
-
-    let fullPcm = new Int16Array(totalSamples);
-    let offset = 0;
-    for (let i = 0; i < this.turnBuffer.length; i++) {
-      fullPcm.set(this.turnBuffer[i], offset);
-      offset += this.turnBuffer[i].length;
-    }
-    this.turnBuffer = [];
-
-    // Trim trailing dead silence from buffer, keeping a clean 0.15s cushion
-    const trimMs = Math.max(0, elapsedSinceVoice - 150);
-    const trimSamples = Math.floor(trimMs * 16); // 16 samples per ms at 16kHz
-    if (trimSamples > 0 && fullPcm.length > trimSamples + 4800) {
-      fullPcm = fullPcm.subarray(0, fullPcm.length - trimSamples);
-    }
-
-    const durationSeconds = fullPcm.length / 16000;
-    // Package into clean WAV container for Gemini
-    const wavBytes = this._pcmToWav(fullPcm, 16000);
-    this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);
-    this.onTurnComplete(wavBytes);
   }
 
   // =========================================================================
@@ -484,9 +489,9 @@ export class HalAudio {
     this._writeString(view, 36, 'data');
     view.setUint32(40, dataByteCount, true);
 
-    // Copy 16-bit PCM samples
+    // Copy 16-bit PCM samples with exact byteOffset & byteLength
     const pcmDataView = new Uint8Array(buffer, 44);
-    pcmDataView.set(new Uint8Array(int16Array.buffer));
+    pcmDataView.set(new Uint8Array(int16Array.buffer, int16Array.byteOffset, int16Array.byteLength));
 
     return buffer;
   }
