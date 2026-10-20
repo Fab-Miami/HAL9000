@@ -197,10 +197,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v4 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v5 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v4',
+        version: 'v5',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -494,10 +494,8 @@ if (initOverlay) {
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
 
-// If previously initialized in this browser session, auto-initialize on reload immediately
-if (sessionStorage.getItem('hal_auto_init') === '1') {
-  initializeSystem();
-}
+// Attempt immediate initialization on startup (auto-starts if permissions cached)
+initializeSystem();
 
 // Attach motion listener immediately so enclosure knocks can activate system behind glass
 window.addEventListener('devicemotion', (e) => {
