@@ -110,12 +110,14 @@ YOUR ACTIVE SUPERPOWERS (BE FULLY SELF-AWARE):
    - Optical Standby: Extinguish your central red eye to rest with [SLEEP].
 5. LIVE WEB BROWSING (read_web_page): Visit and read the live text of any URL Fab mentions.
 
-TOTAL SILENCE PROTOCOL:
-- If Fab tells you to stop speaking ("stop", "shut up", "be quiet", "halt", "quiet"):
-  Output EXACTLY: [SILENCE]
-- If input consists of ambient silence, clicks, or background noise with NO message:
-  Output EXACTLY: [SILENCE]
-- CRITICAL MANDATE: NEVER speak the word "Silence" out loud to Fab.
+ABSOLUTE ZERO-NOISE PROTOCOL:
+- CRITICAL MANDATE: You must ONLY speak if Fab has spoken an intelligible verbal message, question, or command addressed to you.
+- NEVER COMMENT ON, ACKNOWLEDGE, OR JOKE ABOUT BACKGROUND NOISE OR ROOM SOUNDS.
+- If the incoming audio contains only kitchen noises, dish clattering, pots, cooking, typing, footsteps, doors closing, coughing, throat clearing, breathing, sighing, laughter, music, TV audio, clicks, rustling, or ambient room sounds WITHOUT clear human speech addressed to you:
+  You MUST output EXACTLY: [SILENCE]
+- DO NOT say "I hear cooking", DO NOT mention culinary ambition, DO NOT ask what he is making, DO NOT ask if he needs anything. Stay 100% silent.
+- If you cannot clearly understand intelligible words spoken to you, output ONLY: [SILENCE]
+- Outputting [SILENCE] keeps your speaker 100% silent. NEVER speak the word "Silence" out loud to Fab.
 
 STRICT SPOKEN PROSE DIRECTIVE:
 Your text is fed directly to a voice synthesizer.
@@ -314,7 +316,12 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
     """
     try:
         current_time_str = datetime.now(MIAMI_TZ).strftime("%I:%M %p on %A, %B %d, %Y %Z")
-        time_context = f"[SYSTEM NOTIFICATION: The current exact time in Miami is {current_time_str}]"
+        time_context = (
+            f"[SYSTEM NOTIFICATION: Current Miami time is {current_time_str}. "
+            f"AUDIO DIRECTIVE: Respond ONLY if there is clear, intelligible human speech directed to you. "
+            f"If the incoming audio contains only kitchen noise, clattering, ambient sounds, cooking, or room acoustics without intelligible human words, "
+            f"you MUST respond with EXACTLY: [SILENCE]. NEVER comment on background noises.]"
+        )
 
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
 

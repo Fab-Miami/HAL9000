@@ -180,16 +180,17 @@ export class HalAudio {
       }
     }
 
-    // Calibrated sensitivity for iPhone behind glass inside monolith enclosure
-    const noiseGate = Math.max(0.005, this.noiseFloor * 1.25 + 0.003);
+    // Calibrated sensitivity for iPhone behind glass inside monolith enclosure:
+    // Dynamic noise gate rejects ambient room hum, air conditioning, and distant rustle.
+    const noiseGate = Math.max(0.006, this.noiseFloor * 1.30 + 0.0035);
     const voiceDelta = rms - noiseGate;
 
     // =======================================================================
     // UNIFIED RING LEVEL FACTOR (0.0 = OFF / SILENCE, 0.40 - 1.0 = ACTIVE SPEECH)
     // Both optical feedback and turn-taking VAD are connected to this EXACT factor!
     // =======================================================================
-    const ringLevel = (voiceDelta > 0.0007)
-      ? Math.min(1.0, 0.40 + (voiceDelta - 0.0007) * 45.0)
+    const ringLevel = (voiceDelta > 0.0020)
+      ? Math.min(1.0, 0.40 + (voiceDelta - 0.0020) * 35.0)
       : 0.0;
 
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
@@ -242,19 +243,33 @@ export class HalAudio {
     const hasVocalEnergy = ringLevel > 0;
 
     if (hasVocalEnergy) {
+      this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
       if (!this.isSpeaking) {
-        this.isSpeaking = true;
-        this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
-        this.turnBuffer = [];
-        // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
-        for (let i = 0; i < this.preRollBuffer.length; i++) {
-          this.turnBuffer.push(this.preRollBuffer[i]);
+        // Require at least 2 consecutive frames (~170ms) of sustained acoustic energy
+        // to initiate a turn. This rejects isolated transient clicks, utensil clinks, and noise spikes!
+        if (this.consecutiveVoiceFrames >= 2) {
+          this.isSpeaking = true;
+          this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
+          this.turnBuffer = [];
+          // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
+          for (let i = 0; i < this.preRollBuffer.length; i++) {
+            this.turnBuffer.push(this.preRollBuffer[i]);
+          }
+          this.preRollBuffer = [];
+          this.lastVoiceTime = now;
+          this.turnBuffer.push(pcmChunk);
+        } else {
+          this.preRollBuffer.push(pcmChunk);
+          if (this.preRollBuffer.length > 4) {
+            this.preRollBuffer.shift();
+          }
         }
-        this.preRollBuffer = [];
+      } else {
+        this.lastVoiceTime = now;
+        this.turnBuffer.push(pcmChunk);
       }
-      this.lastVoiceTime = now;
-      this.turnBuffer.push(pcmChunk);
     } else {
+      this.consecutiveVoiceFrames = 0;
       if (this.isSpeaking) {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
@@ -305,6 +320,11 @@ export class HalAudio {
       }
 
       const durationSeconds = fullPcm.length / 16000;
+      if (durationSeconds < 0.5) {
+        this.onLog(`🔇 [HalAudio] Discarded brief noise glitch (${durationSeconds.toFixed(2)}s).`);
+        this.isListeningActive = true;
+        return;
+      }
       // Package into clean WAV container for Gemini
       const wavBytes = this._pcmToWav(fullPcm, 16000);
       this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);

@@ -269,12 +269,22 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                     if "[SILENCE]" in sentence.upper():
                         is_silent_response = True
+                        log("🤫 [HalConsumer] [SILENCE] protocol triggered in sentence. Remaining silent.")
+                        while not sentence_queue.empty():
+                            try:
+                                sentence_queue.get_nowait()
+                                sentence_queue.task_done()
+                            except Exception:
+                                break
                         break
 
                     sentence = await self._process_hardware_directives(sentence)
                     if sentence:
                         full_response_text += sentence + " "
                         await sentence_queue.put(sentence)
+
+                if is_silent_response:
+                    break
 
             # Flush any remaining tail text
             if not is_silent_response and accumulated_text.strip():
@@ -298,11 +308,12 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
 
             # Asynchronously persist updated chat history (including user transcript) to SQLite
-            try:
-                history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data, user_transcript)
-            except Exception as e:
-                log(f"⚠️ [HalConsumer] Memory persistence note: {e}")
+            if not is_silent_response:
+                try:
+                    history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
+                    await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data, user_transcript)
+                except Exception as e:
+                    log(f"⚠️ [HalConsumer] Memory persistence note: {e}")
 
             # Notify client that voice playback generation has finished
             log("🏁 [HalConsumer] Sending DONE signal to client.")
