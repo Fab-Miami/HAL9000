@@ -78,7 +78,9 @@ function setHalState(newState) {
       layerRingOn.style.opacity = '0.0';
     }
     if (layer3LedOn) {
-      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+      if (!layer3LedOn.className.includes('led-anim-')) {
+        layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+      }
     }
   }
 }
@@ -155,6 +157,7 @@ function triggerLedTag(tag) {
   }
 
   clearLedAnimations();
+  layer3LedOn.style.removeProperty('opacity');
   layer3LedOn.style.setProperty('--persistent-led', persistentLedOn ? '1.0' : '0.0');
   void layer3LedOn.offsetWidth; // Reflow to restart animation
 
@@ -197,10 +200,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v7 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v8 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v7',
+        version: 'v8',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));

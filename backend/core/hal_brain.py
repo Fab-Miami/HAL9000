@@ -354,3 +354,51 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
     except Exception as e:
         print(f"❌ [Gemini Error]: {e}")
         yield "I am experiencing an internal communication anomaly with my neural engine."
+
+async def transcribe_audio(wav_bytes: bytes) -> str:
+    """
+    Transcribes user's spoken audio bytes using gemini-3.5-flash-lite in the background.
+    Runs concurrently with Gemini chat response generation and Kokoro TTS so 0.0s latency is added.
+    """
+    try:
+        audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
+        prompt = (
+            "Transcribe this audio recording of a user speaking to HAL 9000. "
+            "Output ONLY the exact, verbatim words spoken by the user. "
+            "Do not include commentary, explanations, quotes, or timestamps. "
+            "If the audio contains no discernible speech (only ambient noise or clicks), output: [SILENCE]"
+        )
+        response = await client.aio.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt, audio_part],
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+            )
+        )
+        if response and response.text:
+            transcript = response.text.strip()
+            if transcript.startswith('"') and transcript.endswith('"'):
+                transcript = transcript[1:-1].strip()
+            print(f"🎙️ [Transcribe] User Spoke: \"{transcript}\"")
+            return transcript
+    except Exception as e:
+        print(f"⚠️ [Transcribe Error]: {e}")
+    return ""
+
+def update_chat_history_with_transcript(chat_session, transcript: str):
+    """
+    Updates the most recent user turn in the chat session's internal history
+    with the verbatim transcript so future LLM turns have exact conversational context.
+    """
+    if not transcript or not transcript.strip() or transcript.strip().upper() == "[SILENCE]":
+        return
+
+    clean_text = transcript.strip()
+    for hist_attr in ('_curated_history', '_comprehensive_history', '_history'):
+        h_list = getattr(chat_session, hist_attr, None)
+        if h_list and isinstance(h_list, list):
+            for content in reversed(h_list):
+                if getattr(content, 'role', None) == 'user':
+                    content.parts = [types.Part.from_text(text=clean_text)]
+                    break
+

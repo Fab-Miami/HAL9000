@@ -40,6 +40,37 @@ def clean_speech_text(text: str) -> str:
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 
+ABBREVIATIONS = {'dr.', 'mr.', 'mrs.', 'ms.', 'prof.', 'sr.', 'jr.', 'vs.', 'etc.', 'e.g.', 'i.e.'}
+
+def split_first_sentence(text: str):
+    """
+    Extracts the first complete sentence from streaming text while strictly respecting:
+    - Domain names (e.g., colozzi.com, mindolog.ai)
+    - Decimals (e.g., 2.5, 3.14)
+    - Honorifics and abbreviations (e.g., Dr., Mr., e.g., i.e.)
+    Returns (sentence, remainder). Returns (None, text) if no complete sentence boundary is reached yet.
+    """
+    matches = list(re.finditer(r'([.!?]+)(?=[\s\n])|(\n+)', text))
+    for m in matches:
+        punct = m.group(1) or m.group(2)
+        candidate = text[:m.end()].strip()
+
+        if '\n' in punct:
+            return candidate, text[m.end():].lstrip()
+
+        last_word = candidate.split()[-1].lower() if candidate.split() else ''
+        if last_word in ABBREVIATIONS:
+            continue
+
+        if re.search(r'\b\d+\.$', candidate):
+            remainder_start = text[m.end():]
+            if re.match(r'^\d', remainder_start.strip()):
+                continue
+
+        return candidate, text[m.end():].lstrip()
+
+    return None, text
+
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
@@ -95,11 +126,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v7':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v7). Triggering remote reload...")
+                        if client_ver != 'v8':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v8). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v7 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v8 client architecture connected.")
 
                     if msg.get('type') == 'telemetry':
                         log(f"📱 [Client Telemetry] {msg.get('message')}")
@@ -164,9 +195,15 @@ class HalConsumer(AsyncWebsocketConsumer):
 
     async def _process_audio_turn(self, wav_bytes: bytes):
         """Streams Gemini native audio multimodal response, segments sentences, and feeds Kokoro TTS."""
+        transcribe_task = None
         try:
             await self.send(text_data="THINKING")
             start_time = time.time()
+
+            # Launch parallel background transcription using Gemini Flash Lite
+            # Zero latency added: executes concurrently with Gemini response generation & Kokoro TTS
+            transcribe_task = asyncio.create_task(hal_brain.transcribe_audio(wav_bytes))
+
             sentence_queue = asyncio.Queue()
 
             # Dedicated TTS Streaming Worker Task
@@ -203,7 +240,6 @@ class HalConsumer(AsyncWebsocketConsumer):
 
             accumulated_text = ""
             full_response_text = ""
-            sentence_pattern = re.compile(r'(.*?[.!?\n]+)')
             is_silent_response = False
 
             # Feed raw WAV directly to Gemini 3.5 Flash Lite
@@ -227,24 +263,22 @@ class HalConsumer(AsyncWebsocketConsumer):
                             break
                     break
 
-                # Extract and process complete sentences
+                # Extract and process complete sentences safely (respecting domains, decimals, abbreviations)
                 while True:
-                    match = sentence_pattern.search(accumulated_text)
-                    if not match:
+                    sentence, remainder = split_first_sentence(accumulated_text)
+                    if not sentence:
                         break
 
-                    sentence = match.group(1).strip()
-                    accumulated_text = accumulated_text[match.end():]
+                    accumulated_text = remainder
 
+                    if "[SILENCE]" in sentence.upper():
+                        is_silent_response = True
+                        break
+
+                    sentence = await self._process_hardware_directives(sentence)
                     if sentence:
-                        if "[SILENCE]" in sentence.upper():
-                            is_silent_response = True
-                            break
-
-                        sentence = await self._process_hardware_directives(sentence)
-                        if sentence:
-                            full_response_text += sentence + " "
-                            await sentence_queue.put(sentence)
+                        full_response_text += sentence + " "
+                        await sentence_queue.put(sentence)
 
             # Flush any remaining tail text
             if not is_silent_response and accumulated_text.strip():
@@ -257,10 +291,20 @@ class HalConsumer(AsyncWebsocketConsumer):
             await sentence_queue.put(None)
             await tts_task
 
-            # Asynchronously persist updated chat history to SQLite
+            # Retrieve user spoken transcript from background task
+            user_transcript = ""
+            try:
+                if transcribe_task:
+                    user_transcript = await transcribe_task
+                    if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
+                        hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
+            except Exception as e:
+                log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
+
+            # Asynchronously persist updated chat history (including user transcript) to SQLite
             try:
                 history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data)
+                await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data, user_transcript)
             except Exception as e:
                 log(f"⚠️ [HalConsumer] Memory persistence note: {e}")
 
@@ -271,6 +315,8 @@ class HalConsumer(AsyncWebsocketConsumer):
 
         except asyncio.CancelledError:
             log("🛑 [HalConsumer] Turn cancelled by user barge-in or disconnect.")
+            if transcribe_task and not transcribe_task.done():
+                transcribe_task.cancel()
         except Exception as e:
             log(f"❌ [HalConsumer] Error processing turn: {e}")
             import traceback
