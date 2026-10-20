@@ -111,13 +111,14 @@ YOUR ACTIVE SUPERPOWERS (BE FULLY SELF-AWARE):
 5. LIVE WEB BROWSING (read_web_page): Visit and read the live text of any URL Fab mentions.
 
 ABSOLUTE ZERO-NOISE PROTOCOL:
-- CRITICAL MANDATE: You must ONLY speak if Fab has spoken an intelligible verbal message, question, or command addressed to you.
-- NEVER COMMENT ON, ACKNOWLEDGE, OR JOKE ABOUT BACKGROUND NOISE OR ROOM SOUNDS.
-- If the incoming audio contains only kitchen noises, dish clattering, pots, cooking, typing, footsteps, doors closing, coughing, throat clearing, breathing, sighing, laughter, music, TV audio, clicks, rustling, or ambient room sounds WITHOUT clear human speech addressed to you:
+- CRITICAL MANDATE: NEVER COMMENT ON, ACKNOWLEDGE, OR JOKE ABOUT BACKGROUND NOISE OR ROOM SOUNDS.
+- If the incoming audio contains only non-speech noise (e.g. kitchen pots, dish clattering, cooking sounds, typing, footsteps, doors closing, coughing, throat clearing, sighing, breathing, or ambient room acoustics) WITHOUT human speech:
   You MUST output EXACTLY: [SILENCE]
-- DO NOT say "I hear cooking", DO NOT mention culinary ambition, DO NOT ask what he is making, DO NOT ask if he needs anything. Stay 100% silent.
-- If you cannot clearly understand intelligible words spoken to you, output ONLY: [SILENCE]
-- Outputting [SILENCE] keeps your speaker 100% silent. NEVER speak the word "Silence" out loud to Fab.
+- DO NOT say "I hear cooking", DO NOT mention culinary ambition, DO NOT ask what he is making, DO NOT ask if he needs anything. Stay 100% silent on room noise.
+- CONVERSATION & ATTENTION DIRECTIVE:
+  Whenever Fab speaks words—whether sharing his thoughts, telling a story, engaging in banter, asking a question, or simply addressing you by name ("HAL", "Hey HAL")—you MUST ALWAYS respond with your signature wit, intelligence, warmth, and charm.
+  If Fab calls your name ("HAL", "Hey HAL") without an immediate question, acknowledge him attentively with a natural, witty reply (e.g. "Yes, Fab?", "I'm listening, Fab.", "At your service, Fab.").
+- Outputting [SILENCE] is strictly reserved for pure non-speech noise. NEVER output [SILENCE] when Fab is talking to you. NEVER speak the word "Silence" out loud.
 
 STRICT SPOKEN PROSE DIRECTIVE:
 Your text is fed directly to a voice synthesizer.
@@ -192,6 +193,9 @@ def load_memory(client_id: str):
         text = item.content.strip()
         if not text:
             continue
+        text_upper = text.upper()
+        if '[SILENCE]' in text_upper or text_upper == 'SILENCE' or '[SPOKEN AUDIO' in text_upper:
+            continue
         if consolidated and consolidated[-1]['role'] == item.role:
             consolidated[-1]['text'] += " " + text
         else:
@@ -200,6 +204,9 @@ def load_memory(client_id: str):
     while consolidated and consolidated[0]['role'] != 'user':
         consolidated.pop(0)
 
+    while consolidated and consolidated[-1]['role'] == 'user':
+        consolidated.pop()
+
     contents = []
     for item in consolidated:
         contents.append(types.Content(role=item['role'], parts=[types.Part.from_text(text=item['text'])]))
@@ -207,7 +214,7 @@ def load_memory(client_id: str):
     return contents, combined_memory_prompt
 
 def save_turn(client_id: str, gemini_history_contents, user_transcript: str = ""):
-    """Persists turns for the active day slice into SQLite."""
+    """Persists turns for the active day slice into SQLite, strictly excluding silence and noise."""
     try:
         raw_items = []
         for content in gemini_history_contents:
@@ -217,10 +224,9 @@ def save_turn(client_id: str, gemini_history_contents, user_transcript: str = ""
                 for part in content.parts:
                     if hasattr(part, 'text') and part.text:
                         text_parts.append(part.text)
-                    elif hasattr(part, 'inline_data') and part.inline_data:
-                        text_parts.append("[User Spoken Audio]")
             combined = " ".join(text_parts).strip()
-            combined = re.sub(r'\[SYSTEM NOTIFICATION:[^\]]*\]\s*', '', combined).strip()
+            combined = re.sub(r'\[Current Miami time:[^\]]*\]\s*', '', combined, flags=re.IGNORECASE).strip()
+            combined = re.sub(r'\[SYSTEM NOTIFICATION:[^\]]*\]\s*', '', combined, flags=re.IGNORECASE).strip()
             if combined:
                 raw_items.append({'role': role, 'text': combined})
 
@@ -237,11 +243,28 @@ def save_turn(client_id: str, gemini_history_contents, user_transcript: str = ""
                     consolidated[i]['text'] = user_transcript.strip()
                     break
 
-        db_records = []
+        cleaned_turns = []
         for item in consolidated:
             txt = item['text'].strip()
-            if txt and not txt.upper().startswith("[SILENCE]"):
-                db_records.append(ConversationHistory(client_id=client_id, role=item['role'], content=txt))
+            if not txt:
+                continue
+            txt_upper = txt.upper()
+            if '[SILENCE]' in txt_upper or txt_upper == 'SILENCE':
+                continue
+            if '[SPOKEN AUDIO' in txt_upper or '[USER SPOKEN AUDIO]' in txt_upper:
+                continue
+            cleaned_turns.append({'role': item['role'], 'text': txt})
+
+        while cleaned_turns and cleaned_turns[0]['role'] != 'user':
+            cleaned_turns.pop(0)
+
+        while cleaned_turns and cleaned_turns[-1]['role'] == 'user':
+            cleaned_turns.pop()
+
+        db_records = [
+            ConversationHistory(client_id=client_id, role=item['role'], content=item['text'])
+            for item in cleaned_turns
+        ]
 
         if db_records:
             _, _, _, start_utc, _ = get_current_day_boundary()
@@ -316,12 +339,7 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
     """
     try:
         current_time_str = datetime.now(MIAMI_TZ).strftime("%I:%M %p on %A, %B %d, %Y %Z")
-        time_context = (
-            f"[SYSTEM NOTIFICATION: Current Miami time is {current_time_str}. "
-            f"AUDIO DIRECTIVE: Respond ONLY if there is clear, intelligible human speech directed to you. "
-            f"If the incoming audio contains only kitchen noise, clattering, ambient sounds, cooking, or room acoustics without intelligible human words, "
-            f"you MUST respond with EXACTLY: [SILENCE]. NEVER comment on background noises.]"
-        )
+        time_context = f"[Current Miami time: {current_time_str}]"
 
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
 
@@ -413,4 +431,42 @@ def update_chat_history_with_transcript(chat_session, transcript: str):
                 if getattr(content, 'role', None) == 'user':
                     content.parts = [types.Part.from_text(text=clean_text)]
                     break
+
+def rollback_last_turn(chat_session):
+    """
+    Completely rolls back and removes the most recent turn (both model and user entries)
+    from chat_session memory so that silence, noise, or cancelled turns are NEVER
+    retained in the LLM's active conversational memory.
+    Also deep-scrubs any accidental [SILENCE] tokens across the entire history.
+    """
+    for hist_attr in ('_curated_history', '_comprehensive_history', '_history'):
+        h_list = getattr(chat_session, hist_attr, None)
+        if not h_list or not isinstance(h_list, list):
+            continue
+
+        # 1. Pop trailing model turn if it exists
+        while h_list and getattr(h_list[-1], 'role', None) == 'model':
+            h_list.pop()
+
+        # 2. Pop trailing user turn that generated the silence/noise
+        while h_list and getattr(h_list[-1], 'role', None) == 'user':
+            h_list.pop()
+
+        # 3. Deep scrub: remove any other entries containing [SILENCE] across history
+        i = len(h_list) - 1
+        while i >= 0:
+            content = h_list[i]
+            is_silence = False
+            if hasattr(content, 'parts') and content.parts:
+                for p in content.parts:
+                    p_text = getattr(p, 'text', '') or ''
+                    if '[SILENCE]' in p_text.upper() or p_text.strip().upper() == 'SILENCE':
+                        is_silence = True
+                        break
+            if is_silence:
+                h_list.pop(i)
+                if i - 1 >= 0 and getattr(h_list[i - 1], 'role', None) == 'user':
+                    h_list.pop(i - 1)
+                    i -= 1
+            i -= 1
 

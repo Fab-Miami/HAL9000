@@ -309,6 +309,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                             sentence_queue.task_done()
                         except Exception:
                             break
+                    hal_brain.rollback_last_turn(self.chat_session)
                     break
 
                 # Extract and process complete sentences safely (respecting domains, decimals, abbreviations)
@@ -328,6 +329,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                                 sentence_queue.task_done()
                             except Exception:
                                 break
+                        hal_brain.rollback_last_turn(self.chat_session)
                         break
 
                     sentence = await self._process_hardware_directives(sentence)
@@ -341,26 +343,40 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Flush any remaining tail text
             if not is_silent_response and accumulated_text.strip():
                 clean_tail = await self._process_hardware_directives(accumulated_text.strip())
-                if clean_tail and "[SILENCE]" not in clean_tail.upper():
-                    full_response_text += clean_tail
-                    await sentence_queue.put(clean_tail)
+                if clean_tail:
+                    if "[SILENCE]" in clean_tail.upper():
+                        is_silent_response = True
+                        log("🤫 [HalConsumer] [SILENCE] protocol triggered in tail text. Remaining silent.")
+                        hal_brain.rollback_last_turn(self.chat_session)
+                    else:
+                        full_response_text += clean_tail
+                        await sentence_queue.put(clean_tail)
+
+            if not is_silent_response and not full_response_text.strip():
+                is_silent_response = True
+                log("🤫 [HalConsumer] Model produced empty vocal response. Rolling back turn.")
+                hal_brain.rollback_last_turn(self.chat_session)
 
             # Stop TTS worker and await completion
             await sentence_queue.put(None)
             await tts_task
 
-            # Retrieve user spoken transcript from background task
-            user_transcript = ""
-            try:
-                if transcribe_task:
-                    user_transcript = await transcribe_task
-                    if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
-                        hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
-            except Exception as e:
-                log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
+            if is_silent_response:
+                # Ensure chat_session is clean: no silence, no noise turn in memory
+                hal_brain.rollback_last_turn(self.chat_session)
+                log("🧹 [HalConsumer] Cleaned chat_session memory: silent/noise turn completely purged.")
+            else:
+                # Retrieve user spoken transcript from background task
+                user_transcript = ""
+                try:
+                    if transcribe_task:
+                        user_transcript = await transcribe_task
+                        if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
+                            hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
+                except Exception as e:
+                    log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
 
-            # Asynchronously persist updated chat history (including user transcript) to SQLite
-            if not is_silent_response:
+                # Asynchronously persist updated chat history (including user transcript) to SQLite
                 try:
                     history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
                     await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data, user_transcript)
