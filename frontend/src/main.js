@@ -197,10 +197,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v5 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v6 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v5',
+        version: 'v6',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -442,21 +442,13 @@ let isSystemInitialized = false;
 async function initializeSystem() {
   if (isSystemInitialized) return;
   isSystemInitialized = true;
-  sessionStorage.setItem('hal_auto_init', '1');
   log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
-
-  if (initOverlay) {
-    initOverlay.classList.add('fade-out');
-    setTimeout(() => {
-      if (initOverlay && initOverlay.parentNode) initOverlay.remove();
-    }, 400);
-  }
 
   try {
     // 1. Connect WebSocket
     connectWebSocket();
 
-    // 2. Initialize Unified Web Audio Engine
+    // 2. Initialize Unified Web Audio Engine (Microphone permission prompt)
     await halAudio.initialize();
     setHalState(State.LISTENING);
     resetSleepTimer();
@@ -468,10 +460,21 @@ async function initializeSystem() {
     // 4. Accelerometer knock sensor
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
 
+    // 5. Dismiss overlay now that permissions were granted and system is operational
+    if (initOverlay) {
+      initOverlay.classList.add('fade-out');
+      setTimeout(() => {
+        if (initOverlay && initOverlay.parentNode) initOverlay.remove();
+      }, 400);
+    }
+
     log('✅ [HAL Monolith] Fully operational and standing by on Fab\'s desk.');
   } catch (err) {
     isSystemInitialized = false;
     log(`❌ [HAL Monolith] Initialization error: ${err.message}`);
+    if (initOverlay) {
+      initOverlay.classList.remove('fade-out');
+    }
   }
 }
 
@@ -479,10 +482,19 @@ function onInitializeGesture(e) {
   if (isSystemInitialized) return;
   if (e && e.cancelable) e.preventDefault();
 
-  // iOS Safari requires DeviceMotionEvent permission to be requested synchronously inside gesture
+  // CRITICAL FOR IOS SAFARI:
+  // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct
+  // user gesture call stack BEFORE any async/await; otherwise WebKit revokes user activation!
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-    DeviceMotionEvent.requestPermission().catch(() => {});
+    DeviceMotionEvent.requestPermission()
+      .then(permissionState => {
+        log(`📱 [Motion] iOS DeviceMotion permission: ${permissionState}`);
+      })
+      .catch(err => {
+        log(`⚠️ [Motion] Permission request error: ${err.message}`);
+      });
   }
+
   initializeSystem();
 }
 
@@ -491,20 +503,12 @@ if (initOverlay) {
   initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
 }
 
+// Global tap fallback so touching anywhere on the screen triggers initialization
+window.addEventListener('click', onInitializeGesture);
+window.addEventListener('touchend', onInitializeGesture, { passive: false });
+
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
-
-// Attempt immediate initialization on startup (auto-starts if permissions cached)
-initializeSystem();
-
-// Attach motion listener immediately so enclosure knocks can activate system behind glass
-window.addEventListener('devicemotion', (e) => {
-  if (!isSystemInitialized) {
-    onInitializeGesture(e);
-  } else {
-    handleDeviceMotion(e);
-  }
-}, { passive: true });
 
 // Lock orientation to portrait
 if (screen.orientation && screen.orientation.lock) {
