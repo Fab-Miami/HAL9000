@@ -498,6 +498,18 @@ if (initOverlay) {
   initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
 }
 
+// Connect WebSocket immediately so backend telemetry & remote control work 24/7
+connectWebSocket();
+
+// Attach motion listener immediately so enclosure knocks can activate system behind glass
+window.addEventListener('devicemotion', (e) => {
+  if (!isSystemInitialized) {
+    onInitializeGesture(e);
+  } else {
+    handleDeviceMotion(e);
+  }
+}, { passive: true });
+
 // Lock orientation to portrait
 if (screen.orientation && screen.orientation.lock) {
   screen.orientation.lock('portrait').catch(() => {});
