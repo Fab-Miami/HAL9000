@@ -11,8 +11,8 @@
 
 ## CRITICAL MANDATE #2: PHYSICAL HARDWARE MONOLITH CONSTRAINTS
 - **Sealed Physical Enclosure**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
-- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (threshold 1.0 m/s²) and acoustic double-taps for wake.
-- **24/7 Screen On**: Screen dimming or power saving is STRICTLY FORBIDDEN. Standby/sleep mode turns off ONLY the central red LED (`layer-center-on`). The faceplate remains 100% visible 24/7 via Screen Wake Lock and looping silent keep-awake video.
+- **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (threshold 1.0 m/s²) on the aluminum enclosure and wake words ("HAL wake up").
+- **24/7 Screen On & Standby 50% Faceplate Fade**: The phone display MUST stay powered on 24/7 via Screen Wake Lock, NoSleep.js, and silent keep-awake video (never allow iOS to sleep/auto-lock). In standby/sleep mode, the central red LED (`layer-center-on`) turns OFF, and the faceplate background (`#layer-everything-off`) deliberately fades down to 50% opacity (`opacity: 0.5 !important; transition: opacity 2s ease-in-out 0.25s !important;`). KEEP THIS 50% FADE PERMANENTLY.
 - **Location Context**: System prompt context must ALWAYS preserve: `"Your current location is Miami Beach."`.
 - **Minimal Clean Architecture**: Strict maximum of 3 to 4 cohesive files total across frontend and backend. No fragmented bloated files or duplicate audio pipelines.
 

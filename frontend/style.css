@@ -363,15 +363,16 @@ body.mode-enclosure #hal-stage {
 
 
 /* ----------------------------------------------------
-   Standby Mode (Faceplate 100% Visible 24/7, Central Eye OFF)
-   Screen dimming is STRICTLY FORBIDDEN by Critical Mandate #2.
+   Standby Mode (Sleeping Mode: hal2026_everything_off.png)
+   Slow fade out from 100% to 50% in 2 seconds once display switches to off (PERMANENT DIRECTIVE)
    ---------------------------------------------------- */
 body.sleep-mode {
   background-color: #000000;
 }
 
 body.sleep-mode #layer-everything-off {
-  opacity: 1.0 !important; /* Faceplate stays 100% visible 24/7! Never black or dimmed */
+  opacity: 0.5 !important;
+  transition: opacity 2s ease-in-out 0.25s !important;
 }
 
 body.sleep-mode #layer-center-on {
