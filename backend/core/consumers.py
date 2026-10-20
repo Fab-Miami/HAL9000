@@ -167,6 +167,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         # 2. Sleep tags: [SLEEP]
         if "[SLEEP]" in text.upper():
             log("🌙 [HalConsumer] Sleep command parsed.")
+            self._turn_should_sleep = True
             await self.send(text_data="SLEEP")
             text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
 
@@ -306,6 +307,9 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Notify client that voice playback generation has finished
             log("🏁 [HalConsumer] Sending DONE signal to client.")
             await self.send(text_data="DONE")
+            if getattr(self, '_turn_should_sleep', False):
+                self._turn_should_sleep = False
+                await self.send(text_data="SLEEP")
             log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
 
         except asyncio.CancelledError:

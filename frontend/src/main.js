@@ -101,7 +101,10 @@ function resetSleepTimer() {
   }
 }
 
+let pendingSleep = false;
+
 function wakeUp() {
+  pendingSleep = false;
   if (currentState !== State.SLEEPING) return;
   log('☀️ [HAL Monolith] Waking up from Standby (Central eye illuminated).');
   if (halAudio) halAudio.setSleeping(false);
@@ -114,11 +117,13 @@ function wakeUp() {
   }
 }
 
-function goToSleep() {
-  if (currentState === State.THINKING || currentState === State.SPEAKING) {
-    resetSleepTimer();
+function goToSleep(force = false) {
+  if (!force && (currentState === State.THINKING || currentState === State.SPEAKING)) {
+    log('🌙 [HAL Monolith] Sleep requested. Will enter Standby once speech finishes.');
+    pendingSleep = true;
     return;
   }
+  pendingSleep = false;
   log('🌙 [HAL Monolith] Entering Standby (Listening for enclosure knock or double-tap).');
   if (persistentLedOn) setPersistentLed(false);
   if (halAudio) halAudio.setSleeping(true);
@@ -229,6 +234,9 @@ function connectWebSocket() {
         if (msg === 'DONE') {
           log('🏁 [WS] Received DONE from server.');
           halAudio.finishStream();
+          if (pendingSleep && !halAudio.isPlaying) {
+            goToSleep(true);
+          }
         } else if (msg === 'THINKING') {
           setHalState(State.THINKING);
         } else if (msg === 'WAKE') {
@@ -297,13 +305,18 @@ const halAudio = new HalAudio({
     resetSleepTimer();
   },
 
-  // HAL voice playback finished -> Resume active listening immediately
+  // HAL voice playback finished -> Enter standby if sleep was requested, else resume listening
   onPlaybackStateChange: (isPlaying) => {
     if (isPlaying) {
       setHalState(State.SPEAKING);
     } else {
-      setHalState(State.LISTENING);
-      resetSleepTimer();
+      if (pendingSleep) {
+        log('🌙 [HAL Monolith] Speech playback completed. Entering Standby now.');
+        goToSleep(true);
+      } else {
+        setHalState(State.LISTENING);
+        resetSleepTimer();
+      }
     }
   },
 
