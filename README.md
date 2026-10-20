@@ -16,7 +16,7 @@
 [![Status: Operational](https://img.shields.io/badge/STATUS-OPERATIONAL-green.svg?style=for-the-badge&logo=statuspage)]()
 [![Architecture: Clean Monolith v8](https://img.shields.io/badge/ARCHITECTURE-V8%20CLEAN-red.svg?style=for-the-badge&logo=target)]()
 [![Engine: Gemini 3.5 Flash Lite Native Audio](https://img.shields.io/badge/BRAIN-GEMINI%203.5%20FLASH%20LITE-blue.svg?style=for-the-badge&logo=google)]()
-[![Voice: Kokoro ONNX HAL Voice](https://img.shields.io/badge/VOICE-KOKORO%20ONNX%20HAL%209000-orange.svg?style=for-the-badge&logo=soundcharts)]()
+[![Voice: Kokoro ONNX HAL Custom Made Voice](https://img.shields.io/badge/VOICE-KOKORO%20ONNX%20HAL%209000-orange.svg?style=for-the-badge&logo=soundcharts)]()
 
 </div>
 
@@ -44,8 +44,8 @@ graph TD
         RMS -->|Real-Time RMS| RING[Outer Acoustic Ring Pulse]
         RMS -->|1.8s Natural Silence| WAV_GEN[16kHz WAV Packager]
         WAV_GEN -->|Binary Audio Turn| WS_TX[WebSocket Client]
-        KNOCK[Accelerometer Sensor<br>1.0 m/s² Threshold] -->|Enclosure Knock| BARGE_IN[Voice Barge-In / Wake]
-        BARGE_IN -->|INTERRUPT| WS_TX
+        KNOCK[Accelerometer Sensor<br>1.0 m/s² Threshold] -->|Enclosure Knock| WAKE_EV[Standby Wake]
+        WAKE_EV --> WS_TX
         WS_RX[WebSocket Receiver] -->|24kHz PCM Chunks| SPK[AudioContext Scheduler]
         SPK -->|Playback Intensity| EYE[Central Red Core Pulse]
         WS_RX -->|TAG / Directives| LED3[3 Auxiliary Satellite LEDs]
@@ -69,7 +69,7 @@ graph TD
         MEM_SYNC -->|Active Turns & Transcripts| SQLITE[(SQLite 3-Tier Memory)]
     end
 
-    class MIC,RMS,RING,WAV_GEN,WS_TX,KNOCK,BARGE_IN,WS_RX,SPK,EYE,LED3 phone;
+    class MIC,RMS,RING,WAV_GEN,WS_TX,KNOCK,WAKE_EV,WS_RX,SPK,EYE,LED3 phone;
     class ASGI,DISPATCH,SENTENCE,KOKORO,WS_TX_SRV,TOOLS,MEM_SYNC server;
     class GEM_STREAM,GEM_TRANSCRIBE gemini;
     class SQLITE db;
@@ -82,7 +82,7 @@ graph TD
 ### 1. Gemini Native Multimodal Audio (Zero WebKit STT)
 - **Direct Neural Listening**: The microphone audio is captured via Web Audio API, cleanly downsampled to 16kHz 16-bit Mono PCM, and sent directly to Gemini 3.5 Flash Lite via `types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")`.
 - **Elimination of `webkitSpeechRecognition`**: Zero Apple dictation chimes ("BEEP BEEP"), zero iOS neural buffer lag, zero echo loops, and flawless native understanding of proper nouns ("Fab", "Colozzi", "Mindolog"), technical terminology, and vocal inflection.
-- **Physical Muting & Voice Barge-In**: Capture is strictly muted during HAL's speech. If Fab speaks or taps the chassis during playback, audio playback halts immediately (`INTERRUPT`) and listening resumes instantly with zero ghost buffers.
+- **Physical Muting & Strict Half-Duplex**: Audio capture is strictly disabled whenever HAL is thinking or speaking. HAL is never interrupted during his turn, completely eliminating self-interruption, echo loops, and accidental cutoffs. When playback completes, listening resumes instantly.
 - **Turn-Taking**: Natural vocal silence elapses after **1.8 seconds** (`SILENCE_DELAY_MS = 1800`) during active banter, and **2.5 seconds** when in standby.
 
 ### 2. Parallel User Transcription (Zero Added Latency)
@@ -143,22 +143,6 @@ HAL9000/
     │   └── tasks_api.py       # Google Tasks & Calendar integrations
     └── hal_server/            # Django ASGI / Channels configuration
 ```
-
----
-
-## 🚀 Deployment & Operations
-
-HAL runs as a production systemd daemon managed by Daphne on Hetzner:
-
-```bash
-# Deploy changes to production server
-ssh docdoc1@87.99.142.137 './deploy_hal9000.sh'
-
-# Monitor real-time telemetry and neural engine logs
-ssh docdoc1@87.99.142.137 'journalctl -u hal9000.service -f'
-```
-
-- **Remote Hot-Reload**: Client versions are strictly checked on connection (e.g. `v8`). When new frontend bundles are deployed, the backend automatically instructs active clients to perform a seamless remote reload.
 
 ---
 

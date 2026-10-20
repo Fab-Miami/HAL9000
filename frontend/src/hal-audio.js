@@ -5,12 +5,11 @@
  */
 
 export class HalAudio {
-  constructor({ onAudioLevel, onPlaybackLevel, onTurnComplete, onPlaybackStateChange, onBargeIn, onWake, onLog }) {
+  constructor({ onAudioLevel, onPlaybackLevel, onTurnComplete, onPlaybackStateChange, onWake, onLog }) {
     this.onAudioLevel = onAudioLevel || (() => {});
     this.onPlaybackLevel = onPlaybackLevel || (() => {});
     this.onTurnComplete = onTurnComplete || (() => {});
     this.onPlaybackStateChange = onPlaybackStateChange || (() => {});
-    this.onBargeIn = onBargeIn || (() => {});
     this.onWake = onWake || (() => {});
     this.onLog = onLog || console.log;
 
@@ -23,6 +22,7 @@ export class HalAudio {
 
     // Recording & Turn-Taking State
     this.isRecording = false;
+    this.isListeningActive = true;
     this.isPlaying = false;
     this.isSpeaking = false;
     this.sleeping = false;
@@ -123,11 +123,21 @@ export class HalAudio {
     this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 2500 : this.SILENCE_DELAY_MS}ms).`);
   }
 
+  setListeningActive(active) {
+    this.isListeningActive = !!active;
+    if (!this.isListeningActive) {
+      this.turnBuffer = [];
+      this.preRollBuffer = [];
+      this.isSpeaking = false;
+      this.onAudioLevel(0.0);
+    }
+  }
+
   // =========================================================================
   // INPUT PROCESSING: RMS METERING & 1.8s TURN-TAKING VAD
   // =========================================================================
   _handleInputAudio(event) {
-    if (!this.isRecording) return;
+    if (!this.isRecording || !this.isListeningActive) return;
 
     const inputData = event.inputBuffer.getChannelData(0);
     const sampleRate = this.audioContext.sampleRate;
@@ -152,12 +162,10 @@ export class HalAudio {
     const rms = Math.sqrt(sum / downsampled.length);
 
     // =======================================================================
-    // PHYSICAL MUTING DURING HAL PLAYBACK & 300ms ACOUSTIC REVERB DECAY
+    // PHYSICAL MUTING DURING HAL PLAYBACK & 400ms ACOUSTIC REVERB DECAY
     // =======================================================================
-    if (this.isPlaying || (performance.now() - this.playbackEndTime < 300)) {
+    if (this.isPlaying || (performance.now() - this.playbackEndTime < 400)) {
       // Audio capture is strictly MUTED so HAL never hears his own voice.
-      // Eliminates 100% of self-interruption, acoustic feedback, and echo loops.
-      // Physical barge-in is handled via accelerometer knocks on the chassis.
       return;
     }
 
@@ -270,6 +278,7 @@ export class HalAudio {
   _finalizeTurn(elapsedSinceVoice = 1800) {
     try {
       this.isSpeaking = false;
+      this.isListeningActive = false; // Immediately disable listening while HAL thinks and speaks
       this.onAudioLevel(0.0);
 
       if (this.turnBuffer.length === 0) return;

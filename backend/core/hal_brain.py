@@ -364,10 +364,11 @@ async def transcribe_audio(wav_bytes: bytes) -> str:
     try:
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
         prompt = (
-            "Transcribe this audio recording of a user speaking to HAL 9000. "
-            "Output ONLY the exact, verbatim words spoken by the user. "
+            "Transcribe the spoken audio recording verbatim. "
+            "Output ONLY the exact words spoken by the human. "
             "Do not include commentary, explanations, quotes, or timestamps. "
-            "If the audio contains no discernible speech (only ambient noise or clicks), output: [SILENCE]"
+            "Do not guess, assume, or hallucinate words. "
+            "If there is no clear human speech (only silence, clicks, or background noise), output EXACTLY: [SILENCE]"
         )
         response = await client.aio.models.generate_content(
             model=MODEL_NAME,
@@ -380,6 +381,8 @@ async def transcribe_audio(wav_bytes: bytes) -> str:
             transcript = response.text.strip()
             if transcript.startswith('"') and transcript.endswith('"'):
                 transcript = transcript[1:-1].strip()
+            if not transcript or transcript.upper() in ("[SILENCE]", "SILENCE", "[NO SPEECH]"):
+                return ""
             print(f"🎙️ [Transcribe] User Spoke: \"{transcript}\"")
             return transcript
     except Exception as e:
@@ -391,7 +394,7 @@ def update_chat_history_with_transcript(chat_session, transcript: str):
     Updates the most recent user turn in the chat session's internal history
     with the verbatim transcript so future LLM turns have exact conversational context.
     """
-    if not transcript or not transcript.strip() or transcript.strip().upper() == "[SILENCE]":
+    if not transcript or not transcript.strip() or transcript.strip().upper() in ("[SILENCE]", "SILENCE"):
         return
 
     clean_text = transcript.strip()

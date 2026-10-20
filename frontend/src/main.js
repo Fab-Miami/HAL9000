@@ -64,6 +64,15 @@ function setHalState(newState) {
   currentState = newState;
   log(`🔄 [State] Transition -> ${newState}`);
 
+  // Strict half-duplex gating: mic is ONLY active when in LISTENING or SLEEPING
+  if (halAudio) {
+    if (newState === State.LISTENING || newState === State.SLEEPING) {
+      halAudio.setListeningActive(true);
+    } else {
+      halAudio.setListeningActive(false);
+    }
+  }
+
   if (newState === State.SLEEPING) {
     document.body.classList.add('sleep-mode');
     // Standby: ONLY the central red LED is extinguished. Faceplate stays 100% visible 24/7!
@@ -200,10 +209,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v8 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v9 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v8',
+        version: 'v9',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -298,16 +307,6 @@ const halAudio = new HalAudio({
     }
   },
 
-  // User barge-in during speech -> Send interrupt to server
-  onBargeIn: () => {
-    log('⚡ [HAL Monolith] Voice barge-in detected. Halting speech playback.');
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send('INTERRUPT');
-    }
-    setHalState(State.LISTENING);
-    resetSleepTimer();
-  },
-
   // Standby double-tap acoustic wake
   onWake: (reason) => {
     log(`🥁 [HAL Monolith] Acoustic wake triggered (${reason}).`);
@@ -351,16 +350,10 @@ function handleDeviceMotion(event) {
       lastKnockTime = now;
       log(`💥 [Motion] Enclosure knock detected (${magnitude.toFixed(2)} m/s²)!`);
 
+      // Knock ONLY wakes up HAL from standby. Never interrupts him while speaking!
       if (currentState === State.SLEEPING) {
         triggerLedTag('wink');
         wakeUp();
-      } else if (currentState === State.SPEAKING) {
-        log('💥 [Motion] Knock barge-in during speech. Halting playback.');
-        halAudio.stopPlayback();
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send('INTERRUPT');
-        }
-        setHalState(State.LISTENING);
       }
     }
   }

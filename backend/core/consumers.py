@@ -115,22 +115,16 @@ class HalConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data=None, bytes_data=None):
         if text_data:
-            if text_data == "INTERRUPT":
-                log("🛑 [HalConsumer] Voice Barge-In signal received. Cancelling response generation.")
-                if self.processing_task and not self.processing_task.done():
-                    self.processing_task.cancel()
-                return
-
             try:
                 msg = json.loads(text_data)
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v8':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v8). Triggering remote reload...")
+                        if client_ver != 'v9':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v9). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v8 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v9 client architecture connected.")
 
                     if msg.get('type') == 'telemetry':
                         log(f"📱 [Client Telemetry] {msg.get('message')}")
@@ -146,13 +140,14 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"⚠️ [HalConsumer] JSON parse error: {e}")
 
         if bytes_data:
+            # Strict turn isolation: ignore any stray packets while a turn is actively processing
+            if self.processing_task and not self.processing_task.done():
+                log("⚠️ [HalConsumer] Ignored incoming audio packet: turn is currently in progress.")
+                return
+
             # Incoming finalized user audio turn (16kHz Mono WAV container)
             duration_s = len(bytes_data) / (16000 * 2)
             log(f"🎙️ [HalConsumer] Received audio turn payload: {len(bytes_data)} bytes (~{duration_s:.1f}s). Dispatching to Gemini...")
-
-            if self.processing_task and not self.processing_task.done():
-                self.processing_task.cancel()
-
             self.processing_task = asyncio.create_task(self._process_audio_turn(bytes_data))
 
     async def _process_hardware_directives(self, text: str) -> str:
@@ -314,7 +309,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
 
         except asyncio.CancelledError:
-            log("🛑 [HalConsumer] Turn cancelled by user barge-in or disconnect.")
+            log("🛑 [HalConsumer] Turn cancelled by client disconnect.")
             if transcribe_task and not transcribe_task.done():
                 transcribe_task.cancel()
         except Exception as e:
