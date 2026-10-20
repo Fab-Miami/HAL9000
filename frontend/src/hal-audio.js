@@ -175,10 +175,17 @@ export class HalAudio {
     // Calibrated sensitivity for iPhone behind glass inside monolith enclosure
     const noiseGate = Math.max(0.005, this.noiseFloor * 1.25 + 0.003);
     const voiceDelta = rms - noiseGate;
-    const intensity = voiceDelta > 0 ? Math.min(1.0, voiceDelta * 18.0) : 0.0;
+
+    // =======================================================================
+    // UNIFIED RING LEVEL FACTOR (0.0 = OFF / SILENCE, 0.40 - 1.0 = ACTIVE SPEECH)
+    // Both optical feedback and turn-taking VAD are connected to this EXACT factor!
+    // =======================================================================
+    const ringLevel = (voiceDelta > 0.0007)
+      ? Math.min(1.0, 0.40 + (voiceDelta - 0.0007) * 45.0)
+      : 0.0;
 
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
-    this.onAudioLevel(intensity);
+    this.onAudioLevel(ringLevel);
 
     // =======================================================================
     // STANDBY DOUBLE-TAP ACOUSTIC WAKE DETECTION
@@ -219,14 +226,16 @@ export class HalAudio {
 
     // =======================================================================
     // TURN-TAKING ACCUMULATION & 1.8s SILENCE DETECTION
+    // Synchronized 100% to the exact same acoustic factor as the optical ring:
+    // When the acoustic ring is blinking (ringLevel > 0), speech is active!
+    // When the acoustic ring turns off (ringLevel === 0), the 1.8s silence countdown begins.
     // =======================================================================
     const now = performance.now();
-    const hasVocalEnergy = voiceDelta > 0.008;
+    const hasVocalEnergy = ringLevel > 0;
 
     if (hasVocalEnergy) {
       if (!this.isSpeaking) {
         this.isSpeaking = true;
-        this.speechActiveDuration = 0;
         this.turnBuffer = [];
         // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
         for (let i = 0; i < this.preRollBuffer.length; i++) {
@@ -235,7 +244,6 @@ export class HalAudio {
         this.preRollBuffer = [];
       }
       this.lastVoiceTime = now;
-      this.speechActiveDuration += pcmChunk.length / 16000;
       this.turnBuffer.push(pcmChunk);
     } else {
       if (this.isSpeaking) {
@@ -263,13 +271,6 @@ export class HalAudio {
     this.onAudioLevel(0.0);
 
     if (this.turnBuffer.length === 0) return;
-
-    // Reject phantom clicks or ultra-short noises (< 0.25s actual vocal duration)
-    if (this.speechActiveDuration < 0.25) {
-      this.onLog(`🤫 [HalAudio] Discarded transient noise blip (${this.speechActiveDuration.toFixed(2)}s active energy).`);
-      this.turnBuffer = [];
-      return;
-    }
 
     // Concatenate all Int16 chunks
     let totalSamples = 0;

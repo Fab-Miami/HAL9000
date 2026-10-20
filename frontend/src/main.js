@@ -197,10 +197,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v3 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v4 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v3',
+        version: 'v4',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -257,19 +257,11 @@ function connectWebSocket() {
 // UNIFIED HAL AUDIO ENGINE INSTANTIATION
 // ===========================================================================
 const halAudio = new HalAudio({
-  // Vocal RMS feedback -> Pulses outer acoustic ring (#layer-ring-on)
-  onAudioLevel: (intensity) => {
-    if (currentState === State.LISTENING) {
-      if (intensity > 0.012) {
-        if (layerRingOn) {
-          const ringLevel = Math.min(1.0, 0.40 + (intensity - 0.012) * 3.2).toFixed(2);
-          layerRingOn.style.opacity = ringLevel;
-        }
-      } else {
-        if (layerRingOn && layerRingOn.style.opacity !== '0.0') {
-          layerRingOn.style.opacity = '0.0';
-        }
-      }
+  // Vocal RMS feedback -> Directly pulses outer acoustic ring (#layer-ring-on)
+  // Controlled 1:1 by unified ringLevel factor
+  onAudioLevel: (ringLevel) => {
+    if (currentState === State.LISTENING && layerRingOn) {
+      layerRingOn.style.opacity = ringLevel > 0 ? ringLevel.toFixed(2) : '0.0';
     }
   },
 
@@ -450,6 +442,7 @@ let isSystemInitialized = false;
 async function initializeSystem() {
   if (isSystemInitialized) return;
   isSystemInitialized = true;
+  sessionStorage.setItem('hal_auto_init', '1');
   log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
 
   if (initOverlay) {
@@ -500,6 +493,11 @@ if (initOverlay) {
 
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
+
+// If previously initialized in this browser session, auto-initialize on reload immediately
+if (sessionStorage.getItem('hal_auto_init') === '1') {
+  initializeSystem();
+}
 
 // Attach motion listener immediately so enclosure knocks can activate system behind glass
 window.addEventListener('devicemotion', (e) => {
