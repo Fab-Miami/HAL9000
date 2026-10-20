@@ -366,6 +366,7 @@ const SILENT_KEEP_AWAKE_MP4 = 'data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb21
 
 let keepAwakeVideo = null;
 let wakeLockSentinel = null;
+let isAcquiringWakeLock = false;
 
 function initKeepAwakeVideo() {
   if (keepAwakeVideo) {
@@ -377,7 +378,9 @@ function initKeepAwakeVideo() {
     keepAwakeVideo.setAttribute('playsinline', '');
     keepAwakeVideo.setAttribute('webkit-playsinline', '');
     keepAwakeVideo.setAttribute('muted', '');
+    keepAwakeVideo.setAttribute('autoplay', '');
     keepAwakeVideo.muted = true;
+    keepAwakeVideo.autoplay = true;
     keepAwakeVideo.loop = true;
     keepAwakeVideo.style.position = 'fixed';
     keepAwakeVideo.style.top = '0';
@@ -389,27 +392,58 @@ function initKeepAwakeVideo() {
     keepAwakeVideo.style.zIndex = '-999';
     keepAwakeVideo.src = SILENT_KEEP_AWAKE_MP4;
     document.body.appendChild(keepAwakeVideo);
-    keepAwakeVideo.play().catch(() => {});
-  } catch (e) {}
+
+    const playPromise = keepAwakeVideo.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => log('📺 [KeepAwake] Silent video playing (iOS screen sleep blocked 24/7).'))
+        .catch((err) => log(`⚠️ [KeepAwake] Video play pending gesture: ${err.message}`));
+    }
+  } catch (e) {
+    log(`⚠️ [KeepAwake] Video element init error: ${e.message}`);
+  }
 }
 
 function ensureKeepAwakeVideoPlaying() {
-  if (keepAwakeVideo && keepAwakeVideo.paused) {
-    keepAwakeVideo.play().catch(() => {});
+  if (!keepAwakeVideo) {
+    initKeepAwakeVideo();
+    return;
+  }
+  if (keepAwakeVideo.paused) {
+    const playPromise = keepAwakeVideo.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => log('📺 [KeepAwake] Silent video resumed.'))
+        .catch(() => {});
+    }
   }
 }
 
 async function requestScreenWakeLock() {
+  if (isAcquiringWakeLock) return;
   if ('wakeLock' in navigator) {
     try {
       if (wakeLockSentinel && !wakeLockSentinel.released) return;
+      isAcquiringWakeLock = true;
       wakeLockSentinel = await navigator.wakeLock.request('screen');
-      log('🔒 [WakeLock] Screen Wake Lock acquired.');
+      log('🔒 [WakeLock] Screen Wake Lock acquired (24/7 display lock engaged).');
       wakeLockSentinel.addEventListener('release', () => {
+        log('🔓 [WakeLock] Screen Wake Lock released by OS. Scheduling re-acquisition...');
         wakeLockSentinel = null;
-        setTimeout(requestScreenWakeLock, 1000);
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            requestScreenWakeLock();
+          }
+        }, 1000);
       });
-    } catch (e) {}
+    } catch (e) {
+      log(`⚠️ [WakeLock] API note: ${e.name} - ${e.message} (Keep-Awake video maintains screen ON).`);
+      wakeLockSentinel = null;
+    } finally {
+      isAcquiringWakeLock = false;
+    }
+  } else {
+    log('ℹ️ [WakeLock] Native API unavailable on this browser; Keep-Awake video maintains 24/7 screen ON.');
   }
   ensureKeepAwakeVideoPlaying();
 }
@@ -430,6 +464,9 @@ setInterval(() => {
   }
 }, 15000);
 
+// Initialize Keep-Awake element immediately on load
+initKeepAwakeVideo();
+
 // ===========================================================================
 // MASTER INITIALIZATION GESTURE (ACTIVATED BY TOUCHING OVERLAY)
 // ===========================================================================
@@ -440,18 +477,18 @@ async function initializeSystem() {
   isSystemInitialized = true;
   log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
 
+  // 1. Ensure Screen Wake Lock & Keep-Awake video are active BEFORE any async permissions
+  initKeepAwakeVideo();
+  requestScreenWakeLock();
+
   try {
-    // 1. Connect WebSocket
+    // 2. Connect WebSocket
     connectWebSocket();
 
-    // 2. Initialize Unified Web Audio Engine (Microphone permission prompt)
+    // 3. Initialize Unified Web Audio Engine (Microphone permission prompt)
     await halAudio.initialize();
     setHalState(State.LISTENING);
     resetSleepTimer();
-
-    // 3. Screen Wake Lock & Video Keep-Awake
-    initKeepAwakeVideo();
-    requestScreenWakeLock();
 
     // 4. Accelerometer knock sensor
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
@@ -475,6 +512,10 @@ async function initializeSystem() {
 }
 
 function onInitializeGesture(e) {
+  // CRITICAL: Immediately lock screen awake on ANY user interaction
+  initKeepAwakeVideo();
+  requestScreenWakeLock();
+
   if (isSystemInitialized) return;
   if (e && e.cancelable) e.preventDefault();
 
@@ -499,9 +540,15 @@ if (initOverlay) {
   initOverlay.addEventListener('touchend', onInitializeGesture, { passive: false });
 }
 
-// Global tap fallback so touching anywhere on the screen triggers initialization
-window.addEventListener('click', onInitializeGesture);
-window.addEventListener('touchend', onInitializeGesture, { passive: false });
+// Global tap fallback so touching anywhere on the screen triggers initialization & re-asserts keep-awake
+window.addEventListener('click', (e) => {
+  ensureKeepAwakeVideoPlaying();
+  onInitializeGesture(e);
+});
+window.addEventListener('touchend', (e) => {
+  ensureKeepAwakeVideoPlaying();
+  onInitializeGesture(e);
+}, { passive: false });
 
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
