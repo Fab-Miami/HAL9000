@@ -69,6 +69,8 @@ def split_first_sentence(text: str):
 
         return candidate, text[m.end():].lstrip()
 
+    return None, text
+
 def is_hal_wake_word(text: str) -> bool:
     """
     Validates whether spoken transcript matches calibrated HAL wake phrases from standby.
