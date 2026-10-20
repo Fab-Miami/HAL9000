@@ -95,11 +95,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v2':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver}). Triggering remote reload...")
+                        if client_ver != 'v3':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v3). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v2 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v3 client architecture connected.")
 
                     if msg.get('type') == 'telemetry':
                         log(f"📱 [Client Telemetry] {msg.get('message')}")
