@@ -69,7 +69,38 @@ def split_first_sentence(text: str):
 
         return candidate, text[m.end():].lstrip()
 
-    return None, text
+def is_hal_wake_word(text: str) -> bool:
+    """
+    Validates whether spoken transcript matches calibrated HAL wake phrases from standby.
+    In sleep mode, HAL ONLY wakes on direct wake commands:
+    - 'HAL wake up', 'Wake up HAL', 'Wake up', 'Hey HAL wake up', 'OK HAL wake up'
+    - Isolated 'HAL', 'Hey HAL'
+    - Direct command starting with HAL ('HAL, what time is it')
+    Rejects general ambient speech, side conversations, and kitchen noise.
+    """
+    if not text:
+        return False
+    clean = re.sub(r'[.,!?;:]', '', text.strip().lower())
+    clean = re.sub(r'\s+', ' ', clean).strip()
+
+    # 1. Direct wake up command: (up to 8 words total)
+    if re.search(r'\bwake\s*up\b', clean, re.IGNORECASE):
+        words = clean.split()
+        if len(words) <= 8:
+            return True
+
+    # 2. Isolated "HAL" call:
+    # "hal", "hey hal", "ok hal", "hello hal", "hi hal", "hal are you awake", "hal are you there"
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?hal(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
+        return True
+
+    # 3. Direct addressed command starting with "HAL, ...":
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?hal\b', clean, re.IGNORECASE):
+        words = clean.split()
+        if len(words) <= 7:
+            return True
+
+    return False
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -193,12 +224,26 @@ class HalConsumer(AsyncWebsocketConsumer):
         """Streams Gemini native audio multimodal response, segments sentences, and feeds Kokoro TTS."""
         transcribe_task = None
         try:
-            await self.send(text_data="THINKING")
             start_time = time.time()
 
             # Launch parallel background transcription using Gemini Flash Lite
-            # Zero latency added: executes concurrently with Gemini response generation & Kokoro TTS
             transcribe_task = asyncio.create_task(hal_brain.transcribe_audio(wav_bytes))
+
+            # STANDBY WAKE WORD GATE:
+            # When HAL is in sleep mode, strictly require verified wake words!
+            # Side conversations, background speech, or room noise must NOT wake HAL.
+            if self.is_client_sleeping:
+                user_transcript = await transcribe_task
+                if not is_hal_wake_word(user_transcript):
+                    log(f"💤 [Standby] Ignored non-wake speech: \"{user_transcript or '[No Speech]'}\". Remaining in standby sleep mode.")
+                    await self.send(text_data="DONE")
+                    return
+
+                log(f"☀️ [Standby] Verified wake phrase: \"{user_transcript}\"! Waking HAL from standby.")
+                self.is_client_sleeping = False
+                await self.send(text_data="WAKE")
+            else:
+                await self.send(text_data="THINKING")
 
             sentence_queue = asyncio.Queue()
 

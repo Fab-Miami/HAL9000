@@ -238,7 +238,9 @@ function connectWebSocket() {
             goToSleep(true);
           }
         } else if (msg === 'THINKING') {
-          setHalState(State.THINKING);
+          if (currentState !== State.SLEEPING) {
+            setHalState(State.THINKING);
+          }
         } else if (msg === 'WAKE') {
           wakeUp();
         } else if (msg === 'SLEEP') {
@@ -295,14 +297,16 @@ const halAudio = new HalAudio({
   // User finished speaking (1.8s silence detected) -> Send audio turn to Gemini
   onTurnComplete: (wavBytes) => {
     if (persistentLedOn) setPersistentLed(false);
-    triggerLedTag('listen-done');
-    setHalState(State.THINKING);
+    if (currentState !== State.SLEEPING) {
+      triggerLedTag('listen-done');
+      setHalState(State.THINKING);
+      resetSleepTimer();
+    }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
       log(`📤 [HalAudio] Transmitting audio turn (${wavBytes.byteLength} bytes) to Gemini.`);
       ws.send(wavBytes);
     }
-    resetSleepTimer();
   },
 
   // HAL voice playback finished -> Enter standby if sleep was requested, else resume listening
