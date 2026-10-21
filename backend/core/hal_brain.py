@@ -74,7 +74,7 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
     """
     Transcribes audio locally on Hetzner CPU using faster-whisper.
     Runs at strictly $0.00 cloud cost with zero Gemini API calls.
-    Used for standby wake verification and SQLite DB turn logging.
+    STRICT MANDATE: USED ONLY FOR STANDBY WAKE WORD DETECTION. NEVER CALLED IN ACTIVE BANTER.
     """
     if local_whisper is None or not wav_bytes:
         return ""
@@ -94,10 +94,34 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
         full_text = " ".join(texts).strip()
         if full_text:
-            print(f"🎙️ [Local Whisper] Speech detected: \"{full_text}\" ($0.00 cloud cost)")
+            print(f"🎙️ [Standby Whisper] Wake phrase detected: \"{full_text}\" ($0.00 cloud cost)")
         return full_text
     except Exception as e:
         print(f"⚠️ [Whisper Error]: {e}")
+        return ""
+
+async def transcribe_audio_gemini(wav_bytes: bytes) -> str:
+    """
+    Transcribes active user speech using Gemini 3.5 Flash-Lite in background task (~$0.00018/turn).
+    0% CPU load on Hetzner. Decoupled from live audio playback.
+    """
+    if not wav_bytes or len(wav_bytes) < 400:
+        return ""
+    try:
+        audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
+        prompt = "Transcribe the spoken words verbatim. Do not describe sounds, do not add commentary. Output only the exact words spoken, or output [SILENCE] if no human speech."
+        resp = await client.aio.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt, audio_part]
+        )
+        if resp and resp.text:
+            text = resp.text.strip()
+            if text and text.upper() not in ("[SILENCE]", "SILENCE", "[NO SPEECH]"):
+                print(f"📝 [Gemini 3.5 Transcript]: \"{text}\"")
+                return text
+        return ""
+    except Exception as e:
+        print(f"⚠️ [Gemini Transcription Error]: {e}")
         return ""
 
 async def synthesize_tts_stream(text: str):

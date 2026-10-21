@@ -255,9 +255,9 @@ class HalConsumer(AsyncWebsocketConsumer):
                 user_transcript = local_transcript
             else:
                 await self.send(text_data="THINKING")
-                # In active conversation: transcribe locally on Hetzner CPU concurrently with Kokoro TTS for SQLite logging.
-                # Strictly ZERO duplicate Gemini API calls ($0.00 cost for transcription).
-                transcribe_task = asyncio.create_task(asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes))
+                # In active conversation: transcribe in the background with Gemini 3.5 Flash-Lite
+                # STRICT MANDATE: Whisper is NEVER invoked during active conversation (0% CPU on Hetzner)!
+                transcribe_task = asyncio.create_task(hal_brain.transcribe_audio_gemini(wav_bytes))
 
             sentence_queue = asyncio.Queue()
 
