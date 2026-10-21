@@ -75,32 +75,28 @@ def is_hal_wake_word(text: str) -> bool:
     """
     Strict validation of wake phrases from standby.
     Only wakes on intentional, unambiguous addresses to HAL:
-    - 'HAL wake up', 'Wake up HAL', 'Wake up'
-    - 'HAL', 'Hey HAL', 'OK HAL', 'Hello HAL', 'Good morning/evening HAL'
-    - Direct command starting with 'HAL, ...' or 'Hey HAL, ...'
-    Strictly excludes ambiguous single words, non-speech noise, or room chatter.
+    1. Direct wake-up phrases: 'wake up hal', 'hal wake up', 'wake up'
+    2. Explicit multi-word greetings: 'hey hal', 'hello hal', 'hi hal', 'ok hal', 'good evening/morning/afternoon hal'
+    STRICTLY FORBIDDEN:
+    - Single word "HAL" (causes false positives from room noise)
+    - Starting with bare "HAL, ..." (e.g. "HAL, what time is it")
     """
     if not text:
         return False
     clean = re.sub(r'[.,!?;:\"\'\-]', '', text.strip().lower())
     clean = re.sub(r'\s+', ' ', clean).strip()
 
-    # 1. Direct wake up commands:
+    # 1. Direct wake up commands: "wake up hal", "hal wake up", "wake up"
     if re.search(r'\b(?:wake\s*up\s*hal|hal\s*wake\s*up|wake\s*up)\b', clean, re.IGNORECASE):
         words = clean.split()
-        if len(words) <= 8:
+        if len(words) <= 6:
             return True
 
-    # 2. Direct "HAL" / "Hey HAL" / "Good evening HAL" calls:
-    prefix = r"(?:(?:hey|ok|okay|hi|hello|good\s+(?:morning|evening|afternoon))\s+)?"
-    if re.search(rf"^{prefix}hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up))?$", clean, re.IGNORECASE):
+    # 2. Explicit multi-word greeting directed to HAL:
+    # Requires a greeting word BEFORE "hal" (never bare "hal" or "hal, ...")
+    greeting_prefix = r"(?:hey|ok|okay|hi|hello|good\s+(?:morning|evening|afternoon))"
+    if re.search(rf"^{greeting_prefix}\s+hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up|please))?$", clean, re.IGNORECASE):
         return True
-
-    # 3. Direct addressed command starting with "HAL, ..." or "Hey HAL, ...":
-    if re.search(rf"^{prefix}hal\b", clean, re.IGNORECASE):
-        words = clean.split()
-        if len(words) >= 2 and len(words) <= 12:
-            return True
 
     return False
 
