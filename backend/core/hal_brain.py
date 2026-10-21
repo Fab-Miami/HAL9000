@@ -50,8 +50,8 @@ except Exception as e:
 # FASTER-WHISPER ENGINE (HETZNER CPU LOCAL WAKE GATE & TRANSCRIPTION: $0.00)
 # ===========================================================================
 try:
-    print("👂 [Whisper] Loading local faster-whisper (base.en) on CPU...")
-    local_whisper = WhisperModel("base.en", device="cpu", compute_type="int8", cpu_threads=2)
+    print("👂 [Whisper] Loading local faster-whisper (small.en) on CPU...")
+    local_whisper = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=3)
     print("✅ [Whisper] Local faster-whisper ready ($0.00 Standby Gate).")
 except Exception as e:
     print(f"⚠️ [Whisper] Init failure: {e}")

@@ -115,9 +115,11 @@ export class HalAudio {
 
   setSleeping(sleeping) {
     this.sleeping = !!sleeping;
-    this.turnBuffer = [];
-    this.isSpeaking = false;
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1800 : this.SILENCE_DELAY_MS}ms).`);
+    if (this.sleeping) {
+      this.turnBuffer = [];
+      this.isSpeaking = false;
+    }
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 850 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -210,6 +212,7 @@ export class HalAudio {
         // to initiate a turn. This rejects isolated transient clicks, utensil clinks, and noise spikes!
         if (this.consecutiveVoiceFrames >= 2) {
           this.isSpeaking = true;
+          this.turnStartTime = now;
           this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
           this.turnBuffer = [];
           // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
@@ -228,6 +231,12 @@ export class HalAudio {
       } else {
         this.lastVoiceTime = now;
         this.turnBuffer.push(pcmChunk);
+        // Standby protection: if user speaks continuously or repeats wake phrases for >2.8s,
+        // force finalize so audio doesn't buffer endlessly waiting for silence!
+        if (this.sleeping && (now - this.turnStartTime >= 2800)) {
+          this._finalizeTurn(250);
+          return;
+        }
       }
     } else {
       this.consecutiveVoiceFrames = 0;
@@ -235,10 +244,11 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        const requiredDelay = this.sleeping ? 1800 : this.SILENCE_DELAY_MS;
+        // In standby mode: wake word only needs 850ms of quiet!
+        // In active conversation: 1800ms natural conversational pause.
+        const requiredDelay = this.sleeping ? 850 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
-          // 1.8s of natural silence elapsed -> Finalize turn!
           this._finalizeTurn(elapsedSinceVoice);
         }
       } else {
@@ -281,7 +291,7 @@ export class HalAudio {
       }
 
       const durationSeconds = fullPcm.length / 16000;
-      const minDuration = this.sleeping ? 0.70 : 0.45;
+      const minDuration = this.sleeping ? 0.45 : 0.45;
       if (durationSeconds < minDuration) {
         this.onLog(`🔇 [HalAudio] Discarded brief noise glitch (${durationSeconds.toFixed(2)}s).`);
         this.isListeningActive = true;

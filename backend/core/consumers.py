@@ -82,7 +82,7 @@ def is_hal_wake_word(text: str) -> bool:
     """
     if not text:
         return False
-    clean = re.sub(r'[.,!?;:]', '', text.strip().lower())
+    clean = re.sub(r'[.,!?;:\"\'\-]', '', text.strip().lower())
     clean = re.sub(r'\s+', ' ', clean).strip()
 
     # 1. Direct wake up commands:
@@ -153,11 +153,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v13':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v13). Triggering remote reload...")
+                        if client_ver != 'v14':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v14). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v13 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v14 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
@@ -371,24 +371,27 @@ class HalConsumer(AsyncWebsocketConsumer):
             await sentence_queue.put(None)
             await tts_task
 
-            # Retrieve user spoken transcript from background task if running
-            if transcribe_task:
-                try:
-                    user_transcript = await transcribe_task
-                except Exception as e:
-                    log(f"⚠️ [HalConsumer] Local transcription retrieval error: {e}")
-
             if is_silent_response:
+                # Cancel local transcription task immediately if still running
+                if transcribe_task and not transcribe_task.done():
+                    transcribe_task.cancel()
                 # Restore history checkpoint to strictly discard this silent turn without touching prior memory
                 hal_brain.restore_history_checkpoint(self.chat_session, history_checkpoint)
                 log("🧹 [HalConsumer] Restored chat_session checkpoint: silent turn completely purged.")
             else:
+                # Retrieve user spoken transcript from background task if running
+                if transcribe_task:
+                    try:
+                        user_transcript = await transcribe_task
+                    except Exception as e:
+                        log(f"⚠️ [HalConsumer] Local transcription retrieval error: {e}")
+
                 # Update LLM in-memory history with user transcript if available
-                if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
+                if user_transcript and user_transcript.strip() and user_transcript.strip().upper() not in ("[SILENCE]", "SILENCE"):
                     hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
 
                 # Persist turn to SQLite
-                display_user_text = user_transcript if (user_transcript and user_transcript.upper() != "[SILENCE]") else "[Spoken Audio]"
+                display_user_text = user_transcript if (user_transcript and user_transcript.upper() not in ("[SILENCE]", "SILENCE")) else "[Spoken Audio]"
                 display_model_text = full_response_text.strip() if full_response_text.strip() else ("[SLEEP]" if self._turn_should_sleep else "")
                 if display_model_text:
                     await asyncio.to_thread(hal_brain.save_turn, self.client_id, display_user_text, display_model_text)
