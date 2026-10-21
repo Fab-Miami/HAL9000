@@ -1,5 +1,5 @@
 /**
- * HAL 9000 Monolith Controller
+ * HAL 9000 Console Controller
  * Coordinates the optical faceplate, 24/7 screen wake lock, accelerometer knock sensor,
  * native WebSocket transport, and HalAudio engine.
  */
@@ -14,7 +14,7 @@ const layerRingOn = document.getElementById('layer-ring-on');
 const initOverlay = document.getElementById('init-overlay');
 const halContainer = document.getElementById('hal-container');
 
-// Calibrated vertical offset for physical aluminum monolith enclosure
+// Calibrated vertical offset for physical aluminum console enclosure
 if (halContainer) {
   halContainer.style.transform = 'translateY(-146.67px)';
 }
@@ -58,7 +58,7 @@ function log(msg) {
 }
 
 // ===========================================================================
-// MONOLITH STATE MACHINE & OPTICAL FACEPLATE
+// HAL 9000 STATE MACHINE & OPTICAL FACEPLATE
 // ===========================================================================
 function setHalState(newState) {
   currentState = newState;
@@ -106,7 +106,7 @@ let pendingSleep = false;
 function wakeUp() {
   pendingSleep = false;
   if (currentState !== State.SLEEPING) return;
-  log('☀️ [HAL Monolith] Waking up from Standby (Central eye illuminated).');
+  log('☀️ [HAL 9000] Waking up from Standby (Central eye illuminated).');
   setPersistentLed(false);
   clearLedAnimations();
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
@@ -122,12 +122,12 @@ function wakeUp() {
 
 function goToSleep(force = false) {
   if (!force && (currentState === State.THINKING || currentState === State.SPEAKING)) {
-    log('🌙 [HAL Monolith] Sleep requested. Will enter Standby once speech finishes.');
+    log('🌙 [HAL 9000] Sleep requested. Will enter Standby once speech finishes.');
     pendingSleep = true;
     return;
   }
   pendingSleep = false;
-  log('🌙 [HAL Monolith] Entering Standby (Listening for wake word).');
+  log('🌙 [HAL 9000] Entering Standby (Listening for wake word).');
   if (persistentLedOn) setPersistentLed(false);
   if (halAudio) halAudio.setSleeping(true);
   setHalState(State.SLEEPING);
@@ -335,7 +335,7 @@ const halAudio = new HalAudio({
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
 
       if (pendingSleep) {
-        log('🌙 [HAL Monolith] Speech playback completed. Entering Standby now.');
+        log('🌙 [HAL 9000] Speech playback completed. Entering Standby now.');
         goToSleep(true);
       } else if (currentState !== State.SLEEPING) {
         setHalState(State.LISTENING);
@@ -349,7 +349,7 @@ const halAudio = new HalAudio({
 
   // Standby double-tap acoustic wake
   onWake: (reason) => {
-    log(`🥁 [HAL Monolith] Acoustic wake triggered (${reason}).`);
+    log(`🥁 [HAL 9000] Acoustic wake triggered (${reason}).`);
     triggerLedTag('wink');
     wakeUp();
   },
@@ -358,7 +358,7 @@ const halAudio = new HalAudio({
 });
 
 // ===========================================================================
-// HARDWARE ACCELEROMETER KNOCK SENSOR (PHYSICAL MONOLITH INTERACTION)
+// HARDWARE ACCELEROMETER KNOCK SENSOR (PHYSICAL CONSOLE INTERACTION)
 // ===========================================================================
 let lastKnockTime = 0;
 let lastX = 0, lastY = 0, lastZ = 0;
@@ -540,7 +540,7 @@ try {
 async function initializeSystem() {
   if (isSystemInitialized || isInitializing) return;
   isInitializing = true;
-  log('🚀 [HAL Monolith] Initializing audio, sensors, and network...');
+  log('🚀 [HAL 9000] Initializing audio, sensors, and network...');
 
   // 1. Ensure Screen Wake Lock & Keep-Awake video are active BEFORE any async permissions
   initKeepAwakeVideo();
@@ -568,10 +568,10 @@ async function initializeSystem() {
     }
 
     isSystemInitialized = true;
-    log('✅ [HAL Monolith] Fully operational and standing by on Fab\'s desk.');
+    log('✅ [HAL 9000] Fully operational and standing by on Fab\'s desk.');
   } catch (err) {
     isSystemInitialized = false;
-    log(`❌ [HAL Monolith] Initialization error: ${err.message}`);
+    log(`❌ [HAL 9000] Initialization error: ${err.message}`);
     const overlay = document.getElementById('init-overlay');
     if (overlay) {
       overlay.classList.remove('fade-out');
@@ -589,7 +589,7 @@ function onInitializeGesture(e) {
     return;
   }
 
-  log('👆 [HAL Monolith] Activation tap received.');
+  log('👆 [HAL 9000] Activation tap received.');
 
   // CRITICAL FOR IOS SAFARI:
   // DeviceMotionEvent.requestPermission() MUST be invoked synchronously within the direct

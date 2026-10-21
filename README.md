@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🔴 HAL 9000
-**Fully Autonomous, Multimodal Desktop Monolith & Real-Time AI Companion**
+**Fully Autonomous, Multimodal Desktop Console & Real-Time AI Companion**
 
 <br>
 
@@ -14,7 +14,7 @@
 <br>
 
 [![Status: Operational](https://img.shields.io/badge/STATUS-OPERATIONAL-green.svg?style=for-the-badge&logo=statuspage)]()
-[![Architecture: Clean Monolith v8](https://img.shields.io/badge/ARCHITECTURE-V8%20CLEAN-red.svg?style=for-the-badge&logo=target)]()
+[![Architecture: Clean Architecture v15](https://img.shields.io/badge/ARCHITECTURE-V15%20CLEAN-red.svg?style=for-the-badge&logo=target)]()
 [![Engine: Gemini 3.5 Flash Lite Native Audio](https://img.shields.io/badge/BRAIN-GEMINI%203.5%20FLASH%20LITE-blue.svg?style=for-the-badge&logo=google)]()
 [![Voice: Kokoro ONNX HAL Custom Made Voice](https://img.shields.io/badge/VOICE-KOKORO%20ONNX%20HAL%209000-orange.svg?style=for-the-badge&logo=soundcharts)]()
 
@@ -26,7 +26,7 @@
 
 **HAL 9000** brings the iconic artificial intelligence from *2001: A Space Odyssey* into physical reality as an autonomous, witty desktop companion and digital butler for Fab's desk in Miami Beach.
 
-The system combines a **custom sealed aluminum desktop monolith** housing an iPhone sensory node behind a curved glass fisheye lens with a high-performance **Hetzner remote mainframe** running native multimodal audio comprehension, real-time Kokoro-ONNX neural speech synthesis, 3-tier episodic memory, and real-world tools.
+The system combines a **custom sealed aluminum desktop console enclosure** housing an iPhone sensory node behind a curved glass fisheye lens with a high-performance **Hetzner remote mainframe** running native multimodal audio comprehension, real-time Kokoro-ONNX neural speech synthesis, 3-tier episodic memory, and real-world tools.
 
 ---
 
@@ -39,7 +39,7 @@ graph TD
     classDef gemini fill:#0b3c5d,stroke:#328cc1,stroke-width:2px,color:#fff;
     classDef db fill:#2c1b4d,stroke:#9b59b6,stroke-width:2px,color:#fff;
 
-    subgraph "📱 Physical Monolith Enclosure (iOS Safari / Web Audio API)"
+    subgraph "📱 Physical Console Enclosure (iOS Safari / Web Audio API)"
         MIC[iPhone Mic Tap] -->|Downsample 16kHz Mono| RMS[Vocal RMS Detector]
         RMS -->|Real-Time RMS| RING[Outer Acoustic Ring Pulse]
         RMS -->|1.8s Natural Silence| WAV_GEN[16kHz WAV Packager]
@@ -90,8 +90,8 @@ graph TD
 - **Zero Audio in Database**: The user's exact words are persisted into SQLite `ConversationHistory` without storing any heavy audio binaries.
 - Session chat memory is automatically updated with the user's transcript for subsequent conversational recall.
 
-### 3. Physical Monolith Enclosure Constraints
-- **Sealed Desktop Chassis**: The iPhone is mounted inside a sealed aluminum monolith behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
+### 3. Physical Desktop Console Constraints
+- **Sealed Desktop Chassis**: The iPhone is mounted inside a sealed aluminum desktop console enclosure behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
 - **No Touchscreen Access**: Physical interaction is exclusively acoustic or vibrational via accelerometer knock sensing (threshold `1.0 m/s²`) and acoustic double-taps.
 - **24/7 Screen Always-On**: Screen dimming or power saving is strictly forbidden. Optical Standby turns off **only** the central red LED (`#layer-center-on`). The brushed-aluminum faceplate remains 100% visible 24/7 via the Screen Wake Lock API and a continuous looping keep-awake video.
 - **Location Context**: Miami Beach local time and location are injected into every turn context.
@@ -131,7 +131,7 @@ HAL9000/
 ├── frontend/
 │   ├── src/
 │   │   ├── hal-audio.js       # Web Audio pipeline: 16kHz capture, downsampler, RMS meter, 24kHz player
-│   │   └── main.js            # Monolith state machine, optical layers, accelerometer knock, WebSockets
+│   │   └── main.js            # HAL 9000 state machine, optical layers, accelerometer knock, WebSockets
 │   ├── style.css              # Faceplate optics, keyframe animations, responsive fisheye layout
 │   └── index.html             # 4 optical layers (Off, 3-LED, Center Eye, Acoustic Ring)
 │

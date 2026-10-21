@@ -179,7 +179,7 @@ export class HalAudio {
       }
     }
 
-    // Calibrated sensitivity for iPhone behind glass inside monolith enclosure:
+    // Calibrated sensitivity for iPhone behind glass inside desktop enclosure:
     // Dynamic noise gate rejects ambient room hum, air conditioning, and distant rustle.
     const noiseGate = Math.max(0.006, this.noiseFloor * 1.30 + 0.0035);
     const voiceDelta = rms - noiseGate;

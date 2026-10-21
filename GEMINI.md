@@ -11,8 +11,8 @@
 - **Turn-Taking & Silence Detection**: Handled on the iPhone via vocal RMS. Turns finalize after strictly 1.8 seconds of natural silence during active conversation (`SILENCE_DELAY_MS = 1800`), and 2.5 seconds in standby.
 - **Optical Feedback**: The outer acoustic ring (`#layer-ring-on` / `hal2026_ring_on.png`) visibly blinks and pulses in real time with the user's vocal volume RMS while speaking.
 
-## CRITICAL MANDATE #2: PHYSICAL HARDWARE MONOLITH CONSTRAINTS
-- **Sealed Physical Enclosure**: The iPhone is permanently mounted inside a sealed aluminum desktop monolith behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
+## CRITICAL MANDATE #2: PHYSICAL HARDWARE DESKTOP CONSOLE CONSTRAINTS
+- **Sealed Physical Enclosure**: The iPhone is permanently mounted inside a sealed 3D desktop console enclosure behind a curved glass fisheye lens on Fab's desk in Miami Beach, permanently connected to wall power.
 - **No Touchscreen Access**: The screen is physically inaccessible behind glass. Physical interaction is handled exclusively via accelerometer knocks (threshold 1.0 m/s²) on the aluminum enclosure and wake words ("HAL wake up").
 - **24/7 Screen On & Standby 50% Faceplate Fade**: The phone display MUST stay powered on 24/7 via Screen Wake Lock, NoSleep.js, and silent keep-awake video (never allow iOS to sleep/auto-lock). In standby/sleep mode, the central red LED (`layer-center-on`) turns OFF, and the faceplate background (`#layer-everything-off`) deliberately fades down to 50% opacity (`opacity: 0.5 !important; transition: opacity 2s ease-in-out 0.25s !important;`). KEEP THIS 50% FADE PERMANENTLY.
 - **Location Context**: System prompt context must ALWAYS preserve: `"Your current location is Miami Beach."`.
