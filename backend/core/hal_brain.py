@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from kokoro_onnx import Kokoro
+from faster_whisper import WhisperModel
 
 from .models import ConversationHistory, DailySummary, CoreMemoryProfile, ConversationSummary
 from .tasks_api import get_shopping_list_tasks, add_task_to_shopping_list, remove_task_from_shopping_list
@@ -44,6 +45,60 @@ try:
 except Exception as e:
     print(f"💀 [Kokoro] Critical init failure: {e}")
     kokoro = None
+
+# ===========================================================================
+# FASTER-WHISPER ENGINE (HETZNER CPU LOCAL WAKE GATE & TRANSCRIPTION: $0.00)
+# ===========================================================================
+try:
+    print("👂 [Whisper] Loading local faster-whisper (base.en) on CPU...")
+    local_whisper = WhisperModel("base.en", device="cpu", compute_type="int8", cpu_threads=2)
+    print("✅ [Whisper] Local faster-whisper ready ($0.00 Standby Gate).")
+except Exception as e:
+    print(f"⚠️ [Whisper] Init failure: {e}")
+    local_whisper = None
+
+def wav_bytes_to_float32(wav_bytes: bytes) -> np.ndarray:
+    """Extracts raw 16kHz float32 audio samples from WAV or PCM bytes."""
+    try:
+        with wave.open(io.BytesIO(wav_bytes), 'rb') as wf:
+            frames = wf.readframes(wf.getnframes())
+            return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    except Exception:
+        # Fallback: strip standard 44-byte WAV header if present
+        data = wav_bytes[44:] if (len(wav_bytes) > 44 and wav_bytes[:4] == b'RIFF') else wav_bytes
+        if len(data) % 2 != 0:
+            data = data[:-1]
+        return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+
+def transcribe_local_pcm(wav_bytes: bytes) -> str:
+    """
+    Transcribes audio locally on Hetzner CPU using faster-whisper.
+    Runs at strictly $0.00 cloud cost with zero Gemini API calls.
+    Used for standby wake verification and SQLite DB turn logging.
+    """
+    if local_whisper is None or not wav_bytes:
+        return ""
+    try:
+        audio = wav_bytes_to_float32(wav_bytes)
+        if len(audio) == 0:
+            return ""
+
+        segments, _ = local_whisper.transcribe(
+            audio,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
+            language="en",
+            beam_size=1,
+            initial_prompt="HAL, Hey HAL, HAL wake up, Fab Colozzi."
+        )
+        texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
+        full_text = " ".join(texts).strip()
+        if full_text:
+            print(f"🎙️ [Local Whisper] Speech detected: \"{full_text}\" ($0.00 cloud cost)")
+        return full_text
+    except Exception as e:
+        print(f"⚠️ [Whisper Error]: {e}")
+        return ""
 
 async def synthesize_tts_stream(text: str):
     """
@@ -348,38 +403,6 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
         print(f"❌ [Gemini Error]: {e}")
         yield "I am experiencing an internal communication anomaly with my neural engine."
 
-async def transcribe_audio(wav_bytes: bytes) -> str:
-    """
-    Transcribes user's spoken audio bytes using gemini-3.5-flash-lite in the background.
-    Runs concurrently with Gemini chat response generation and Kokoro TTS so 0.0s latency is added.
-    """
-    try:
-        audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
-        prompt = (
-            "Transcribe the human speech in this audio recording verbatim. "
-            "Output ONLY the exact words spoken by the human. "
-            "Do not include commentary, explanations, quotes, or timestamps. "
-            "Do not guess, assume, or hallucinate words. "
-            "If the audio contains only ambient noise, breathing, clicks, TV background, or no clear, distinct human speech, output EXACTLY: [SILENCE]"
-        )
-        response = await client.aio.models.generate_content(
-            model=MODEL_NAME,
-            contents=[prompt, audio_part],
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-            )
-        )
-        if response and response.text:
-            transcript = response.text.strip()
-            if transcript.startswith('"') and transcript.endswith('"'):
-                transcript = transcript[1:-1].strip()
-            if not transcript or transcript.upper() in ("[SILENCE]", "SILENCE", "[NO SPEECH]"):
-                return ""
-            print(f"🎙️ [Transcribe] User Spoke: \"{transcript}\"")
-            return transcript
-    except Exception as e:
-        print(f"⚠️ [Transcribe Error]: {e}")
-    return ""
 
 def update_chat_history_with_transcript(chat_session, transcript: str):
     """

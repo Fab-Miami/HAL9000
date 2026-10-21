@@ -76,8 +76,8 @@ def is_hal_wake_word(text: str) -> bool:
     Strict validation of wake phrases from standby.
     Only wakes on intentional, unambiguous addresses to HAL:
     - 'HAL wake up', 'Wake up HAL', 'Wake up'
-    - 'HAL', 'Hey HAL', 'OK HAL', 'Hello HAL'
-    - Direct command starting with 'HAL, ...'
+    - 'HAL', 'Hey HAL', 'OK HAL', 'Hello HAL', 'Good morning/evening HAL'
+    - Direct command starting with 'HAL, ...' or 'Hey HAL, ...'
     Strictly excludes ambiguous single words, non-speech noise, or room chatter.
     """
     if not text:
@@ -91,14 +91,15 @@ def is_hal_wake_word(text: str) -> bool:
         if len(words) <= 8:
             return True
 
-    # 2. Direct "HAL" / "Hey HAL" calls:
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up))?$', clean, re.IGNORECASE):
+    # 2. Direct "HAL" / "Hey HAL" / "Good evening HAL" calls:
+    prefix = r"(?:(?:hey|ok|okay|hi|hello|good\s+(?:morning|evening|afternoon))\s+)?"
+    if re.search(rf"^{prefix}hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up))?$", clean, re.IGNORECASE):
         return True
 
-    # 3. Direct addressed command starting with "HAL, ...":
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b', clean, re.IGNORECASE):
+    # 3. Direct addressed command starting with "HAL, ..." or "Hey HAL, ...":
+    if re.search(rf"^{prefix}hal\b", clean, re.IGNORECASE):
         words = clean.split()
-        if len(words) >= 2 and len(words) <= 10:
+        if len(words) >= 2 and len(words) <= 12:
             return True
 
     return False
@@ -240,25 +241,27 @@ class HalConsumer(AsyncWebsocketConsumer):
                 await self.send(text_data="DONE")
                 return
 
-            # Launch parallel background transcription using Gemini Flash Lite
-            transcribe_task = asyncio.create_task(hal_brain.transcribe_audio(wav_bytes))
-
-            # STANDBY WAKE WORD GATE:
-            # When HAL is in sleep mode, strictly require verified wake words!
-            # Side conversations, background speech, or room noise must NOT wake HAL.
+            # STANDBY WAKE WORD GATE (100% Local Hetzner CPU - $0.00 Cloud Cost):
+            # When HAL is in sleep mode, strictly verify wake words locally BEFORE calling Gemini!
+            # TV chatter, ambient room noise, or background speech are rejected with ZERO cloud LLM tokens.
+            user_transcript = ""
             if self.is_client_sleeping:
-                user_transcript = await transcribe_task
-                if not is_hal_wake_word(user_transcript):
-                    log(f"💤 [Standby] Ignored non-wake speech: \"{user_transcript or '[No Speech]'}\". Remaining in standby sleep mode.")
+                local_transcript = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
+                if not is_hal_wake_word(local_transcript):
+                    log(f"💤 [Standby] Ignored non-wake audio: \"{local_transcript or '[No Speech]'}\" ($0.00 cost). Remaining asleep.")
                     await self.send(text_data="DONE")
                     return
 
-                log(f"☀️ [Standby] Verified wake phrase: \"{user_transcript}\"! Waking HAL from standby.")
+                log(f"☀️ [Standby] Verified wake phrase: \"{local_transcript}\"! Waking HAL from standby.")
                 self.is_client_sleeping = False
                 await self.send(text_data="WAKE")
                 await self.send(text_data="THINKING")
+                user_transcript = local_transcript
             else:
                 await self.send(text_data="THINKING")
+                # In active conversation: transcribe locally on Hetzner CPU concurrently with Kokoro TTS for SQLite logging.
+                # Strictly ZERO duplicate Gemini API calls ($0.00 cost for transcription).
+                transcribe_task = asyncio.create_task(asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes))
 
             sentence_queue = asyncio.Queue()
 
@@ -368,13 +371,12 @@ class HalConsumer(AsyncWebsocketConsumer):
             await sentence_queue.put(None)
             await tts_task
 
-            # Retrieve user spoken transcript from background task
-            user_transcript = ""
-            try:
-                if transcribe_task:
+            # Retrieve user spoken transcript from background task if running
+            if transcribe_task:
+                try:
                     user_transcript = await transcribe_task
-            except Exception as e:
-                log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
+                except Exception as e:
+                    log(f"⚠️ [HalConsumer] Local transcription retrieval error: {e}")
 
             if is_silent_response:
                 # Restore history checkpoint to strictly discard this silent turn without touching prior memory
