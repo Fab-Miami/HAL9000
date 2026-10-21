@@ -95,6 +95,9 @@ export class HalAudio {
     this.sourceNode.connect(this.scriptNode);
     this.scriptNode.connect(this.audioContext.destination);
 
+    // CRITICAL FOR IOS SAFARI: Anchor scriptNode to window to prevent WebKit GC
+    window._halAudioScriptNode = this.scriptNode;
+
     this.isRecording = true;
     this.onLog('🎙️ [HalAudio] Web Audio pipeline operational (16kHz capture, 1.8s turn-taking, 24kHz output).');
   }
@@ -124,7 +127,12 @@ export class HalAudio {
 
   setListeningActive(active) {
     this.isListeningActive = !!active;
-    if (!this.isListeningActive) {
+    if (this.isListeningActive) {
+      // Ensure AudioContext is actively running and not suspended by iOS
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+    } else {
       this.turnBuffer = [];
       this.preRollBuffer = [];
       this.isSpeaking = false;
@@ -346,6 +354,22 @@ export class HalAudio {
       this.onPlaybackStateChange(true);
     }
 
+    // Safety Watchdog: If no new chunk arrives within 2.5s and all active sources finished,
+    // automatically unfreeze isPlaying so HAL never stays stuck in playback!
+    if (this._playbackWatchdog) clearTimeout(this._playbackWatchdog);
+    this._playbackWatchdog = setTimeout(() => {
+      if (this.isPlaying && this.activeSources.length === 0) {
+        this.onLog('⚠️ [HalAudio] Watchdog: Recovered from unfinalized playback state.');
+        this.isPlaying = false;
+        this.scheduledTime = 0;
+        this.playbackEndTime = performance.now();
+        this.turnBuffer = [];
+        this.preRollBuffer = [];
+        this.isSpeaking = false;
+        this.onPlaybackStateChange(false);
+      }
+    }, 2500);
+
     source.onended = () => {
       const idx = this.activeSources.indexOf(source);
       if (idx > -1) {
@@ -365,6 +389,7 @@ export class HalAudio {
   }
 
   finishStream() {
+    if (this._playbackWatchdog) clearTimeout(this._playbackWatchdog);
     this.streamFinished = true;
     if (this.activeSources.length === 0) {
       this.isPlaying = false;
@@ -391,6 +416,7 @@ export class HalAudio {
   }
 
   stopPlayback() {
+    if (this._playbackWatchdog) clearTimeout(this._playbackWatchdog);
     this.streamFinished = true;
     this.playbackEndTime = performance.now();
     for (let i = 0; i < this.activeSources.length; i++) {

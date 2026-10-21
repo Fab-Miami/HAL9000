@@ -363,9 +363,18 @@ class HalConsumer(AsyncWebsocketConsumer):
                     is_silent_response = True
                     log("🤫 [HalConsumer] Model produced empty vocal response. Treating as silent.")
 
-            # Stop TTS worker and await completion
+            # Stop TTS worker and await completion of speech generation
             await sentence_queue.put(None)
             await tts_task
+
+            # CRITICAL MANDATE: Send DONE immediately when speech generation is complete!
+            # Never block client playback or state transitions waiting for background CPU transcription.
+            log("🏁 [HalConsumer] Sending DONE signal to client.")
+            await self.send(text_data="DONE")
+            if self._turn_should_sleep:
+                self._turn_should_sleep = False
+                await self.send(text_data="SLEEP")
+            log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
 
             if is_silent_response:
                 # Cancel local transcription task immediately if still running
@@ -375,30 +384,24 @@ class HalConsumer(AsyncWebsocketConsumer):
                 hal_brain.restore_history_checkpoint(self.chat_session, history_checkpoint)
                 log("🧹 [HalConsumer] Restored chat_session checkpoint: silent turn completely purged.")
             else:
-                # Retrieve user spoken transcript from background task if running
-                if transcribe_task:
-                    try:
-                        user_transcript = await transcribe_task
-                    except Exception as e:
-                        log(f"⚠️ [HalConsumer] Local transcription retrieval error: {e}")
+                # Asynchronous background persistence: process user transcript & save to SQLite without blocking client
+                async def _save_turn_background(t_task, model_text):
+                    u_transcript = ""
+                    if t_task:
+                        try:
+                            u_transcript = await t_task
+                        except Exception as e:
+                            log(f"⚠️ [HalConsumer] Local transcription retrieval error: {e}")
 
-                # Update LLM in-memory history with user transcript if available
-                if user_transcript and user_transcript.strip() and user_transcript.strip().upper() not in ("[SILENCE]", "SILENCE"):
-                    hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
+                    if u_transcript and u_transcript.strip() and u_transcript.strip().upper() not in ("[SILENCE]", "SILENCE"):
+                        hal_brain.update_chat_history_with_transcript(self.chat_session, u_transcript)
 
-                # Persist turn to SQLite
-                display_user_text = user_transcript if (user_transcript and user_transcript.upper() not in ("[SILENCE]", "SILENCE")) else "[Spoken Audio]"
-                display_model_text = full_response_text.strip() if full_response_text.strip() else ("[SLEEP]" if self._turn_should_sleep else "")
-                if display_model_text:
-                    await asyncio.to_thread(hal_brain.save_turn, self.client_id, display_user_text, display_model_text)
+                    display_user_text = u_transcript if (u_transcript and u_transcript.upper() not in ("[SILENCE]", "SILENCE")) else "[Spoken Audio]"
+                    display_model_text = model_text.strip() if model_text.strip() else ""
+                    if display_model_text:
+                        await asyncio.to_thread(hal_brain.save_turn, self.client_id, display_user_text, display_model_text)
 
-            # Notify client that voice playback generation has finished
-            log("🏁 [HalConsumer] Sending DONE signal to client.")
-            await self.send(text_data="DONE")
-            if self._turn_should_sleep:
-                self._turn_should_sleep = False
-                await self.send(text_data="SLEEP")
-            log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
+                asyncio.create_task(_save_turn_background(transcribe_task, full_response_text))
 
         except asyncio.CancelledError:
             log("🛑 [HalConsumer] Turn cancelled by client disconnect.")

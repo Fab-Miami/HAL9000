@@ -625,6 +625,15 @@ if (initOverlay) {
 window.addEventListener('click', onInitializeGesture);
 window.addEventListener('touchend', onInitializeGesture);
 
+// Periodic AudioContext and Keep-Awake Heartbeat (guarantees iOS Safari never leaves mic suspended)
+setInterval(() => {
+  if (halAudio && halAudio.isRecording && halAudio.isListeningActive) {
+    if (halAudio.audioContext && halAudio.audioContext.state === 'suspended') {
+      halAudio.audioContext.resume().catch(() => {});
+    }
+  }
+}, 3000);
+
 // Connect WebSocket immediately so backend telemetry & remote control work 24/7
 connectWebSocket();
 
