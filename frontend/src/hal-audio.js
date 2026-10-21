@@ -119,7 +119,7 @@ export class HalAudio {
       this.turnBuffer = [];
       this.isSpeaking = false;
     }
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 850 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 500 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -231,10 +231,10 @@ export class HalAudio {
       } else {
         this.lastVoiceTime = now;
         this.turnBuffer.push(pcmChunk);
-        // Standby protection: if user speaks continuously or repeats wake phrases for >2.8s,
+        // Standby protection: if user speaks continuously or repeats wake phrases for >2.2s,
         // force finalize so audio doesn't buffer endlessly waiting for silence!
-        if (this.sleeping && (now - this.turnStartTime >= 2800)) {
-          this._finalizeTurn(250);
+        if (this.sleeping && (now - this.turnStartTime >= 2200)) {
+          this._finalizeTurn(200);
           return;
         }
       }
@@ -244,9 +244,9 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        // In standby mode: wake word only needs 850ms of quiet!
+        // In standby mode: wake word only needs 500ms of quiet!
         // In active conversation: 1800ms natural conversational pause.
-        const requiredDelay = this.sleeping ? 850 : this.SILENCE_DELAY_MS;
+        const requiredDelay = this.sleeping ? 500 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
           this._finalizeTurn(elapsedSinceVoice);
@@ -283,15 +283,16 @@ export class HalAudio {
       }
       this.turnBuffer = [];
 
-      // Trim trailing dead silence from buffer, keeping a clean 0.15s cushion
-      const trimMs = Math.max(0, elapsedSinceVoice - 150);
+      // Trim trailing dead silence from buffer, keeping a clean cushion
+      const cushionMs = this.sleeping ? 100 : 150;
+      const trimMs = Math.max(0, elapsedSinceVoice - cushionMs);
       const trimSamples = Math.floor(trimMs * 16); // 16 samples per ms at 16kHz
       if (trimSamples > 0 && fullPcm.length > trimSamples + 4800) {
         fullPcm = fullPcm.subarray(0, fullPcm.length - trimSamples);
       }
 
       const durationSeconds = fullPcm.length / 16000;
-      const minDuration = this.sleeping ? 0.45 : 0.45;
+      const minDuration = this.sleeping ? 0.35 : 0.45;
       if (durationSeconds < minDuration) {
         this.onLog(`🔇 [HalAudio] Discarded brief noise glitch (${durationSeconds.toFixed(2)}s).`);
         this.isListeningActive = true;

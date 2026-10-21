@@ -107,6 +107,9 @@ function wakeUp() {
   pendingSleep = false;
   if (currentState !== State.SLEEPING) return;
   log('☀️ [HAL Monolith] Waking up from Standby (Central eye illuminated).');
+  setPersistentLed(false);
+  clearLedAnimations();
+  if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (halAudio) halAudio.setSleeping(false);
   setHalState(State.LISTENING);
   resetSleepTimer();
@@ -217,10 +220,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v14 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v15 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v14',
+        version: 'v15',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -259,8 +262,12 @@ function connectWebSocket() {
           if (!isNaN(vol)) halAudio.setVolume(vol);
         } else if (msg.startsWith('LED:')) {
           const val = msg.substring(4).trim().toUpperCase();
-          if (val === 'ON') setPersistentLed(true);
-          else if (val === 'OFF') setPersistentLed(false);
+          if (val === 'ON') triggerLedTag('warm');
+          else if (val === 'OFF') {
+            setPersistentLed(false);
+            clearLedAnimations();
+            if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+          }
           else triggerLedTag(val);
         } else if (msg.startsWith('TAG:')) {
           triggerLedTag(msg.substring(4).trim());
@@ -300,9 +307,12 @@ const halAudio = new HalAudio({
     }
   },
 
-  // User finished speaking (1.8s silence detected) -> Send audio turn to Gemini
+  // User finished speaking -> Send audio turn to Gemini
   onTurnComplete: (wavBytes) => {
-    if (persistentLedOn) setPersistentLed(false);
+    setPersistentLed(false);
+    clearLedAnimations();
+    if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+
     if (currentState !== State.SLEEPING) {
       triggerLedTag('listen-done');
       setHalState(State.THINKING);
@@ -320,6 +330,10 @@ const halAudio = new HalAudio({
     if (isPlaying) {
       setHalState(State.SPEAKING);
     } else {
+      setPersistentLed(false);
+      clearLedAnimations();
+      if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
+
       if (pendingSleep) {
         log('🌙 [HAL Monolith] Speech playback completed. Entering Standby now.');
         goToSleep(true);
