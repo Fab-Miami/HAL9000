@@ -117,7 +117,7 @@ export class HalAudio {
     this.sleeping = !!sleeping;
     this.turnBuffer = [];
     this.isSpeaking = false;
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1100 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1800 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -235,10 +235,10 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        const requiredDelay = this.sleeping ? 1100 : this.SILENCE_DELAY_MS;
+        const requiredDelay = this.sleeping ? 1800 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
-          // 1.8s (or 1.1s in standby) of natural silence elapsed -> Finalize turn!
+          // 1.8s of natural silence elapsed -> Finalize turn!
           this._finalizeTurn(elapsedSinceVoice);
         }
       } else {
@@ -281,7 +281,8 @@ export class HalAudio {
       }
 
       const durationSeconds = fullPcm.length / 16000;
-      if (durationSeconds < 0.5) {
+      const minDuration = this.sleeping ? 0.70 : 0.45;
+      if (durationSeconds < minDuration) {
         this.onLog(`🔇 [HalAudio] Discarded brief noise glitch (${durationSeconds.toFixed(2)}s).`);
         this.isListeningActive = true;
         return;

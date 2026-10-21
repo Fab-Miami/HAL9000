@@ -124,6 +124,7 @@ STRICT SPOKEN PROSE DIRECTIVE:
 Your text is fed directly to a voice synthesizer.
 - NEVER use markdown: NO bold/italic asterisks (**word**), NO bullet markers (* or -), NO headers (#), NO emojis, NO backticks (`).
 - Output pure, clean spoken sentences with standard punctuation.
+- AUDIO INPUT & TIMESTAMPS: You receive live spoken audio from Fab's microphone. Never interpret audio markers or timestamps (such as "00:00") as human speech. If Fab calls your name ("HAL", "Hey HAL") or gives a wake phrase, acknowledge him attentively with a warm, witty reply (e.g. "Yes, Fab?", "I'm listening, Fab.", "At your service, Fab.").
 """
 
 # ===========================================================================
@@ -213,66 +214,32 @@ def load_memory(client_id: str):
 
     return contents, combined_memory_prompt
 
-def save_turn(client_id: str, gemini_history_contents, user_transcript: str = ""):
-    """Persists turns for the active day slice into SQLite, strictly excluding silence and noise."""
+def save_turn(client_id: str, user_text: str, model_text: str):
+    """
+    Appends a single verified, non-silent conversation exchange to SQLite.
+    Never deletes existing day history.
+    """
+    if not user_text or not model_text:
+        return
+    u = user_text.strip()
+    m = model_text.strip()
+    if not u or not m:
+        return
+
+    # Guard against silence or raw audio placeholders
+    u_upper = u.upper()
+    m_upper = m.upper()
+    if '[SILENCE]' in u_upper or '[SILENCE]' in m_upper or u_upper == 'SILENCE' or m_upper == 'SILENCE':
+        return
+    if '[SPOKEN AUDIO' in u_upper:
+        return
+
     try:
-        raw_items = []
-        for content in gemini_history_contents:
-            role = content.role
-            text_parts = []
-            if content.parts:
-                for part in content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        text_parts.append(part.text)
-            combined = " ".join(text_parts).strip()
-            combined = re.sub(r'\[Current Miami time:[^\]]*\]\s*', '', combined, flags=re.IGNORECASE).strip()
-            combined = re.sub(r'\[SYSTEM NOTIFICATION:[^\]]*\]\s*', '', combined, flags=re.IGNORECASE).strip()
-            if combined:
-                raw_items.append({'role': role, 'text': combined})
-
-        consolidated = []
-        for item in raw_items:
-            if consolidated and consolidated[-1]['role'] == item['role']:
-                consolidated[-1]['text'] += " " + item['text']
-            else:
-                consolidated.append({'role': item['role'], 'text': item['text']})
-
-        if user_transcript and user_transcript.strip():
-            for i in range(len(consolidated) - 1, -1, -1):
-                if consolidated[i]['role'] == 'user':
-                    consolidated[i]['text'] = user_transcript.strip()
-                    break
-
-        cleaned_turns = []
-        for item in consolidated:
-            txt = item['text'].strip()
-            if not txt:
-                continue
-            txt_upper = txt.upper()
-            if '[SILENCE]' in txt_upper or txt_upper == 'SILENCE':
-                continue
-            if '[SPOKEN AUDIO' in txt_upper or '[USER SPOKEN AUDIO]' in txt_upper:
-                continue
-            cleaned_turns.append({'role': item['role'], 'text': txt})
-
-        while cleaned_turns and cleaned_turns[0]['role'] != 'user':
-            cleaned_turns.pop(0)
-
-        while cleaned_turns and cleaned_turns[-1]['role'] == 'user':
-            cleaned_turns.pop()
-
-        db_records = [
-            ConversationHistory(client_id=client_id, role=item['role'], content=item['text'])
-            for item in cleaned_turns
-        ]
-
-        if db_records:
-            _, _, _, start_utc, _ = get_current_day_boundary()
-            ConversationHistory.objects.filter(client_id=client_id, created_at__gte=start_utc).delete()
-            ConversationHistory.objects.bulk_create(db_records)
-            print(f"💾 [LLM] Saved {len(db_records)} active day history items for {client_id}.")
+        ConversationHistory.objects.create(client_id=client_id, role='user', content=u)
+        ConversationHistory.objects.create(client_id=client_id, role='model', content=m)
+        print(f"💾 [LLM] Appended conversation turn for {client_id}: USER: \"{u[:40]}\" | MODEL: \"{m[:40]}\"")
     except Exception as e:
-        print(f"⚠️ [LLM] Error saving history: {e}")
+        print(f"⚠️ [LLM] Error saving turn: {e}")
 
 def summarize_old_conversations(client_id: str):
     """Consolidates turns prior to 4 AM Miami into DailySummary and CoreMemoryProfile."""
@@ -389,12 +356,11 @@ async def transcribe_audio(wav_bytes: bytes) -> str:
     try:
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
         prompt = (
-            "Transcribe the spoken audio recording verbatim. "
-            "The user is speaking to HAL 9000 (common commands and wake phrases include 'HAL wake up', 'Wake up HAL', 'Hey HAL', 'HAL', 'Wake up'). "
+            "Transcribe the human speech in this audio recording verbatim. "
             "Output ONLY the exact words spoken by the human. "
             "Do not include commentary, explanations, quotes, or timestamps. "
             "Do not guess, assume, or hallucinate words. "
-            "If there is no clear human speech (only silence, clicks, or background noise), output EXACTLY: [SILENCE]"
+            "If the audio contains only ambient noise, breathing, clicks, TV background, or no clear, distinct human speech, output EXACTLY: [SILENCE]"
         )
         response = await client.aio.models.generate_content(
             model=MODEL_NAME,
@@ -432,41 +398,24 @@ def update_chat_history_with_transcript(chat_session, transcript: str):
                     content.parts = [types.Part.from_text(text=clean_text)]
                     break
 
-def rollback_last_turn(chat_session):
-    """
-    Completely rolls back and removes the most recent turn (both model and user entries)
-    from chat_session memory so that silence, noise, or cancelled turns are NEVER
-    retained in the LLM's active conversational memory.
-    Also deep-scrubs any accidental [SILENCE] tokens across the entire history.
-    """
+def get_history_checkpoint(chat_session):
+    """Captures the exact history length before a turn begins."""
+    lengths = {}
     for hist_attr in ('_curated_history', '_comprehensive_history', '_history'):
         h_list = getattr(chat_session, hist_attr, None)
-        if not h_list or not isinstance(h_list, list):
-            continue
+        if h_list and isinstance(h_list, list):
+            lengths[hist_attr] = len(h_list)
+    return lengths
 
-        # 1. Pop trailing model turn if it exists
-        while h_list and getattr(h_list[-1], 'role', None) == 'model':
-            h_list.pop()
-
-        # 2. Pop trailing user turn that generated the silence/noise
-        while h_list and getattr(h_list[-1], 'role', None) == 'user':
-            h_list.pop()
-
-        # 3. Deep scrub: remove any other entries containing [SILENCE] across history
-        i = len(h_list) - 1
-        while i >= 0:
-            content = h_list[i]
-            is_silence = False
-            if hasattr(content, 'parts') and content.parts:
-                for p in content.parts:
-                    p_text = getattr(p, 'text', '') or ''
-                    if '[SILENCE]' in p_text.upper() or p_text.strip().upper() == 'SILENCE':
-                        is_silence = True
-                        break
-            if is_silence:
-                h_list.pop(i)
-                if i - 1 >= 0 and getattr(h_list[i - 1], 'role', None) == 'user':
-                    h_list.pop(i - 1)
-                    i -= 1
-            i -= 1
+def restore_history_checkpoint(chat_session, checkpoint: dict):
+    """
+    Restores chat_session history strictly to its pre-turn length.
+    Guarantees that NO prior conversation turns can ever be deleted.
+    """
+    if not checkpoint:
+        return
+    for hist_attr, pre_len in checkpoint.items():
+        h_list = getattr(chat_session, hist_attr, None)
+        if h_list and isinstance(h_list, list) and len(h_list) > pre_len:
+            del h_list[pre_len:]
 

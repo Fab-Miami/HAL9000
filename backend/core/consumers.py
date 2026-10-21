@@ -73,34 +73,32 @@ def split_first_sentence(text: str):
 
 def is_hal_wake_word(text: str) -> bool:
     """
-    Validates whether spoken transcript matches calibrated HAL wake phrases from standby.
-    In sleep mode, HAL ONLY wakes on direct wake commands:
-    - 'HAL wake up', 'Wake up HAL', 'Wake up', 'Hey HAL wake up', 'OK HAL wake up'
-    - Isolated 'HAL', 'Hey HAL'
-    - Direct command starting with HAL ('HAL, what time is it')
-    Rejects general ambient speech, side conversations, and kitchen noise.
+    Strict validation of wake phrases from standby.
+    Only wakes on intentional, unambiguous addresses to HAL:
+    - 'HAL wake up', 'Wake up HAL', 'Wake up'
+    - 'HAL', 'Hey HAL', 'OK HAL', 'Hello HAL'
+    - Direct command starting with 'HAL, ...'
+    Strictly excludes ambiguous single words, non-speech noise, or room chatter.
     """
     if not text:
         return False
     clean = re.sub(r'[.,!?;:]', '', text.strip().lower())
     clean = re.sub(r'\s+', ' ', clean).strip()
 
-    # 1. Direct wake up command: (up to 8 words total)
-    # Matches "wake up", "wake up hal", "hal wake up", "wipe up hole" (acoustic inflection), "woke up", "awake", etc.
-    if re.search(r'\b(?:wake\s*up|wipe\s*up|wait\s*up|woke\s*up|awake)\b', clean, re.IGNORECASE):
+    # 1. Direct wake up commands:
+    if re.search(r'\b(?:wake\s*up\s*hal|hal\s*wake\s*up|wake\s*up)\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 8:
             return True
 
-    # 2. Isolated "HAL" call:
-    # "hal", "hey hal", "ok hal", "hello hal", "hi hal", "hal are you awake", "hal are you there", "hole", "howl"
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl|hole|haul)(?:\s+(?:are\s+you\s+(?:there|awake)|listen|up))?$', clean, re.IGNORECASE):
+    # 2. Direct "HAL" / "Hey HAL" calls:
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello)\s+)?hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up))?$', clean, re.IGNORECASE):
         return True
 
     # 3. Direct addressed command starting with "HAL, ...":
-    if re.search(r'^(?:(?:hey|ok|okay|hi|hello|please)\s+)?(?:hal|al|howl|hole|haul)\b', clean, re.IGNORECASE):
+    if re.search(r'^(?:(?:hey|ok|okay|hi|hello)\s+)?hal\b', clean, re.IGNORECASE):
         words = clean.split()
-        if len(words) <= 7:
+        if len(words) >= 2 and len(words) <= 10:
             return True
 
     return False
@@ -205,7 +203,6 @@ class HalConsumer(AsyncWebsocketConsumer):
         if "[SLEEP]" in text.upper():
             log("🌙 [HalConsumer] Sleep command parsed.")
             self._turn_should_sleep = True
-            await self.send(text_data="SLEEP")
             text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
 
         # 3. Direct LED Hardware commands: [LED: ON], [LED: OFF]
@@ -231,6 +228,17 @@ class HalConsumer(AsyncWebsocketConsumer):
         transcribe_task = None
         try:
             start_time = time.time()
+            self._turn_should_sleep = False
+
+            # Capture history checkpoint before this turn adds anything to memory
+            history_checkpoint = hal_brain.get_history_checkpoint(self.chat_session)
+
+            # Standby audio length gate: in sleep mode, reject brief clips < 0.70s (clicks, coughs, room rustle)
+            duration_s = len(wav_bytes) / (16000 * 2)
+            if self.is_client_sleeping and duration_s < 0.70:
+                log(f"🔇 [Standby] Discarded brief audio packet ({duration_s:.2f}s < 0.70s threshold). Remaining asleep.")
+                await self.send(text_data="DONE")
+                return
 
             # Launch parallel background transcription using Gemini Flash Lite
             transcribe_task = asyncio.create_task(hal_brain.transcribe_audio(wav_bytes))
@@ -309,7 +317,6 @@ class HalConsumer(AsyncWebsocketConsumer):
                             sentence_queue.task_done()
                         except Exception:
                             break
-                    hal_brain.rollback_last_turn(self.chat_session)
                     break
 
                 # Extract and process complete sentences safely (respecting domains, decimals, abbreviations)
@@ -329,7 +336,6 @@ class HalConsumer(AsyncWebsocketConsumer):
                                 sentence_queue.task_done()
                             except Exception:
                                 break
-                        hal_brain.rollback_last_turn(self.chat_session)
                         break
 
                     sentence = await self._process_hardware_directives(sentence)
@@ -347,46 +353,48 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if "[SILENCE]" in clean_tail.upper():
                         is_silent_response = True
                         log("🤫 [HalConsumer] [SILENCE] protocol triggered in tail text. Remaining silent.")
-                        hal_brain.rollback_last_turn(self.chat_session)
                     else:
                         full_response_text += clean_tail
                         await sentence_queue.put(clean_tail)
 
             if not is_silent_response and not full_response_text.strip():
-                is_silent_response = True
-                log("🤫 [HalConsumer] Model produced empty vocal response. Rolling back turn.")
-                hal_brain.rollback_last_turn(self.chat_session)
+                if self._turn_should_sleep:
+                    log("🌙 [HalConsumer] Silent sleep acknowledged.")
+                else:
+                    is_silent_response = True
+                    log("🤫 [HalConsumer] Model produced empty vocal response. Treating as silent.")
 
             # Stop TTS worker and await completion
             await sentence_queue.put(None)
             await tts_task
 
-            if is_silent_response:
-                # Ensure chat_session is clean: no silence, no noise turn in memory
-                hal_brain.rollback_last_turn(self.chat_session)
-                log("🧹 [HalConsumer] Cleaned chat_session memory: silent/noise turn completely purged.")
-            else:
-                # Retrieve user spoken transcript from background task
-                user_transcript = ""
-                try:
-                    if transcribe_task:
-                        user_transcript = await transcribe_task
-                        if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
-                            hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
-                except Exception as e:
-                    log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
+            # Retrieve user spoken transcript from background task
+            user_transcript = ""
+            try:
+                if transcribe_task:
+                    user_transcript = await transcribe_task
+            except Exception as e:
+                log(f"⚠️ [HalConsumer] Transcription retrieval error: {e}")
 
-                # Asynchronously persist updated chat history (including user transcript) to SQLite
-                try:
-                    history_data = getattr(self.chat_session, 'get_history', lambda: getattr(self.chat_session, '_history', []))()
-                    await asyncio.to_thread(hal_brain.save_turn, self.client_id, history_data, user_transcript)
-                except Exception as e:
-                    log(f"⚠️ [HalConsumer] Memory persistence note: {e}")
+            if is_silent_response:
+                # Restore history checkpoint to strictly discard this silent turn without touching prior memory
+                hal_brain.restore_history_checkpoint(self.chat_session, history_checkpoint)
+                log("🧹 [HalConsumer] Restored chat_session checkpoint: silent turn completely purged.")
+            else:
+                # Update LLM in-memory history with user transcript if available
+                if user_transcript and user_transcript.strip() and user_transcript.strip().upper() != "[SILENCE]":
+                    hal_brain.update_chat_history_with_transcript(self.chat_session, user_transcript)
+
+                # Persist turn to SQLite
+                display_user_text = user_transcript if (user_transcript and user_transcript.upper() != "[SILENCE]") else "[Spoken Audio]"
+                display_model_text = full_response_text.strip() if full_response_text.strip() else ("[SLEEP]" if self._turn_should_sleep else "")
+                if display_model_text:
+                    await asyncio.to_thread(hal_brain.save_turn, self.client_id, display_user_text, display_model_text)
 
             # Notify client that voice playback generation has finished
             log("🏁 [HalConsumer] Sending DONE signal to client.")
             await self.send(text_data="DONE")
-            if getattr(self, '_turn_should_sleep', False):
+            if self._turn_should_sleep:
                 self._turn_should_sleep = False
                 await self.send(text_data="SLEEP")
             log(f"⏱️ [HalConsumer] Audio turn processed in {time.time() - start_time:.2f}s.")
