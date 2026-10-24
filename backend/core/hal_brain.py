@@ -85,8 +85,7 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
 
         segments, _ = local_whisper.transcribe(
             audio,
-            vad_filter=True,
-            vad_parameters=dict(threshold=0.30, min_speech_duration_ms=180),
+            vad_filter=False,
             temperature=0.0,
             language="en",
             beam_size=1,

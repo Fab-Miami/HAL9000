@@ -73,37 +73,37 @@ def split_first_sentence(text: str):
 
 def is_hal_wake_word(text: str) -> bool:
     """
-    Strict validation of wake phrases from standby.
-    Only wakes on intentional, unambiguous addresses to HAL:
-    1. Direct wake-up phrases: 'wake up hal', 'hal wake up', 'wake up'
-    2. Explicit multi-word greetings: 'hey hal', 'hello hal', 'hi hal', 'ok hal', 'good evening/morning/afternoon hal'
-    STRICTLY FORBIDDEN:
-    - Single word "HAL" (causes false positives from room noise)
-    - Starting with bare "HAL, ..." (e.g. "HAL, what time is it")
+    Validates wake phrases from standby ($0.00 gate).
+    Wakes on any intentional address to HAL:
+    1. Direct wake-up commands: 'wake up hal', 'hal wake up', 'wake up'
+    2. Direct name call: 'HAL', 'HAL,', 'Hey HAL', 'Hi HAL', 'Hello HAL', 'OK HAL'
+    3. Direct address starting with HAL: 'HAL can you hear me', 'HAL what time is it'
     """
     if not text:
         return False
-    clean = re.sub(r'[.,!?;:\"\'\-]', '', text.strip().lower())
+    clean = re.sub(r'[.,!?;:\"\'\-]', ' ', text.strip().lower())
     clean = re.sub(r'\s+', ' ', clean).strip()
+    if not clean:
+        return False
 
-    # 1. Direct wake up commands: "wake up hal", "hal wake up", "wake up"
+    # 1. Wake up commands: "wake up hal", "hal wake up", "wake up"
     if re.search(r'\b(?:wake\s*up\s*hal|hal\s*wake\s*up|wake\s*up)\b', clean, re.IGNORECASE):
         words = clean.split()
         if len(words) <= 8:
             return True
 
-    # 2. Explicit multi-word greeting directed to HAL:
-    # Requires a greeting word BEFORE "hal" (never bare "hal" or "hal, ...")
-    # Supports common Whisper phonetic transcriptions of HAL (hal, how, al, pal, cal, hell, owl)
-    hal_phonetic = r"(?:hal|how|al|pal|cal|hell|owl)"
-    greeting_prefix = r"(?:hey|ok|okay|hi|hello|good\s+(?:morning|evening|afternoon))"
-    if re.search(rf"\b{greeting_prefix}\s+{hal_phonetic}\b", clean, re.IGNORECASE):
-        return True
-
-    # 3. Direct address to HAL with question or command: 'hal can you hear me', 'hal are you there', 'hal do you copy'
-    direct_cmd = r"(?:can\s+you|are\s+you|do\s+you|please|listen|wake|status|report)"
-    if re.search(rf"^{hal_phonetic}\s+{direct_cmd}\b", clean, re.IGNORECASE):
-        return True
+    # 2. Direct name call "HAL" alone, with greeting, or at start of sentence
+    words = clean.split()
+    if 'hal' in words:
+        # If 'hal' is the only word or with a greeting (len <= 4, e.g. "hal", "hey hal", "hello hal", "good morning hal")
+        if len(words) <= 4:
+            return True
+        # If phrase starts with hal (e.g. 'hal can you hear me', 'hal what time is it')
+        if words[0] == 'hal':
+            return True
+        # If phrase starts with greeting + hal (e.g. 'hey hal can you hear me')
+        if len(words) >= 2 and words[0] in ('hey', 'hi', 'hello', 'ok', 'okay') and words[1] == 'hal':
+            return True
 
     return False
 
