@@ -138,7 +138,7 @@ function wakeUp() {
     layerCenterOn.style.opacity = '1.0';
     eyeWakeTimer = setTimeout(() => {
       if (layerCenterOn) layerCenterOn.classList.remove('eye-waking');
-    }, 3000);
+    }, 3400);
   }
   triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
 
@@ -250,10 +250,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v20 3s Eye Fade Architecture).');
+      log('✅ [WS] Connected to HAL backend (v21 Sequenced Sleep/Wake Transitions).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v20',
+        version: 'v21',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));

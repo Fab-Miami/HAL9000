@@ -90,7 +90,7 @@ html, body {
 #layer-everything-off {
   z-index: 1;
   opacity: 1.0;
-  transition: opacity 0.15s ease-out;
+  transition: opacity 0.35s ease-out;
 }
 
 #layer-3-led-on {
@@ -221,7 +221,7 @@ html, body {
 }
 
 #layer-center-on.eye-waking {
-  animation: anim-eye-fade-in 3s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+  animation: anim-eye-fade-in 3s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both !important;
 }
 
 @keyframes anim-eye-fade-in {
@@ -406,7 +406,7 @@ body.sleep-mode {
 
 body.sleep-mode #layer-everything-off {
   opacity: 0.5 !important;
-  transition: opacity 2s ease-in-out 0.25s !important;
+  transition: opacity 0.5s ease-out 3.0s !important;
 }
 
 body.sleep-mode #layer-center-on {
