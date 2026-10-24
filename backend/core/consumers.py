@@ -96,14 +96,17 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
+    hal_tokens = r'(?:hal|hell|al)'
+    greetings = r'(?:hey|hi|hello|ok|okay)'
+
     # Direction 1: [HAL variation] + (optional please) + wake up
     # Matches: "hal wake up", "hey hal wake up", "hi hal wake up", "hello hal wake up", "ok hal wake up", "hal please wake up", etc.
-    if re.search(r'\b(?:(?:hey|hi|hello|ok|okay)\s+)?hal\s+(?:please\s+)?wake\s*up\b', clean, re.IGNORECASE):
+    if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+(?:please\s+)?wake\s*up\b', clean, re.IGNORECASE):
         return True
 
     # Direction 2: wake up + (optional please) + [HAL variation]
     # Matches: "wake up hal", "wake up please hal", "wake up hey hal", "wake up ok hal", etc.
-    if re.search(r'\bwake\s*up\s+(?:please\s+)?(?:(?:hey|hi|hello|ok|okay)\s+)?hal\b', clean, re.IGNORECASE):
+    if re.search(rf'\bwake\s*up\s+(?:please\s+)?(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
     return False
