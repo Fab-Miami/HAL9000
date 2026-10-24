@@ -75,7 +75,7 @@ function setHalState(newState) {
 
   if (newState === State.SLEEPING) {
     document.body.classList.add('sleep-mode');
-    // Standby: ONLY the central red LED is extinguished. Faceplate stays 100% visible 24/7!
+    // Standby: ALL LEDs strictly OFF (0.0 opacity). Faceplate background dims to 50% opacity via .sleep-mode CSS.
     if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
     if (layerRingOn) layerRingOn.style.opacity = '0.0';
     if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
@@ -220,10 +220,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v17 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v18 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v17',
+        version: 'v18',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -293,9 +293,10 @@ function connectWebSocket() {
 // ===========================================================================
 const halAudio = new HalAudio({
   // Vocal RMS feedback -> Directly pulses outer acoustic ring (#layer-ring-on)
-  // Controlled 1:1 by unified ringLevel factor (active in both LISTENING and SLEEPING standby)
+  // STRICT INVIOLABLE DIRECTIVE: Only pulses during active conversation (State.LISTENING).
+  // In Standby / Sleeping mode, all LEDs are strictly OFF (0.0 opacity). NO BLINKING IN STANDBY.
   onAudioLevel: (ringLevel) => {
-    if ((currentState === State.LISTENING || currentState === State.SLEEPING) && layerRingOn) {
+    if (currentState === State.LISTENING && layerRingOn) {
       layerRingOn.style.opacity = ringLevel > 0 ? ringLevel.toFixed(2) : '0.0';
     }
   },
