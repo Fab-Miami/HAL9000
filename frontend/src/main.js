@@ -75,14 +75,26 @@ function setHalState(newState) {
 
   if (newState === State.SLEEPING) {
     document.body.classList.add('sleep-mode');
+    document.body.classList.remove('state-thinking');
     // Standby: ALL LEDs strictly OFF (0.0 opacity). Faceplate background dims to 50% opacity via .sleep-mode CSS.
-    if (layerCenterOn) layerCenterOn.style.opacity = '0.0';
+    if (layerCenterOn) {
+      layerCenterOn.classList.remove('eye-wake-ignite');
+      layerCenterOn.style.opacity = '0.0';
+    }
     if (layerRingOn) layerRingOn.style.opacity = '0.0';
     if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   } else {
     document.body.classList.remove('sleep-mode');
+    if (newState === State.THINKING) {
+      document.body.classList.add('state-thinking');
+    } else {
+      document.body.classList.remove('state-thinking');
+    }
+
     // Active states: Central eye is illuminated
-    if (layerCenterOn) layerCenterOn.style.opacity = '1.0';
+    if (layerCenterOn) {
+      layerCenterOn.style.opacity = '1.0';
+    }
     if (newState !== State.LISTENING && layerRingOn) {
       layerRingOn.style.opacity = '0.0';
     }
@@ -111,7 +123,17 @@ function wakeUp() {
   clearLedAnimations();
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (halAudio) halAudio.setSleeping(false);
+
+  // Instantly wake the optical assembly: ignite central eye & acknowledge
   setHalState(State.LISTENING);
+  if (layerCenterOn) {
+    layerCenterOn.classList.remove('eye-wake-ignite');
+    void layerCenterOn.offsetWidth; // Force reflow so ignition flare triggers reliably
+    layerCenterOn.classList.add('eye-wake-ignite');
+    layerCenterOn.style.opacity = '1.0';
+  }
+  triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
+
   resetSleepTimer();
   requestScreenWakeLock();
   ensureKeepAwakeVideoPlaying();
@@ -220,10 +242,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v18 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v19 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v18',
+        version: 'v19',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));

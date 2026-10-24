@@ -216,8 +216,45 @@ html, body {
 
 #layer-center-on {
   z-index: 3;
-  opacity: 1.0; /* Standby: Center dot is strictly ON and STATIC */
+  opacity: 1.0;
   transition: opacity 0.08s ease-out;
+}
+
+#layer-center-on.eye-wake-ignite {
+  animation: anim-eye-ignite 0.45s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+
+@keyframes anim-eye-ignite {
+  0% {
+    opacity: 0.0;
+    transform: translateZ(0) scale(0.9);
+    filter: drop-shadow(0 0 0px rgba(255, 0, 0, 0));
+  }
+  35% {
+    opacity: 1.0;
+    transform: translateZ(0) scale(1.06);
+    filter: drop-shadow(0 0 16px rgba(255, 30, 0, 0.95)) brightness(1.25);
+  }
+  100% {
+    opacity: 1.0;
+    transform: translateZ(0) scale(1.0);
+    filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.4));
+  }
+}
+
+body.state-thinking #layer-center-on {
+  animation: anim-eye-thinking 1.8s ease-in-out infinite;
+}
+
+@keyframes anim-eye-thinking {
+  0%, 100% {
+    opacity: 0.82;
+    filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.35));
+  }
+  50% {
+    opacity: 1.0;
+    filter: drop-shadow(0 0 12px rgba(255, 30, 0, 0.8)) brightness(1.15);
+  }
 }
 
 #layer-ring-on {

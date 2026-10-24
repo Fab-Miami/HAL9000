@@ -100,6 +100,11 @@ def is_hal_wake_word(text: str) -> bool:
     if re.search(rf"\b{greeting_prefix}\s+{hal_phonetic}\b", clean, re.IGNORECASE):
         return True
 
+    # 3. Direct address to HAL with question or command: 'hal can you hear me', 'hal are you there', 'hal do you copy'
+    direct_cmd = r"(?:can\s+you|are\s+you|do\s+you|please|listen|wake|status|report)"
+    if re.search(rf"^{hal_phonetic}\s+{direct_cmd}\b", clean, re.IGNORECASE):
+        return True
+
     return False
 
 class HalConsumer(AsyncWebsocketConsumer):
@@ -151,11 +156,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v18':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v18). Triggering remote reload...")
+                        if client_ver != 'v19':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v19). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v18 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v19 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
@@ -256,6 +261,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"☀️ [Standby] Verified wake phrase: \"{local_transcript}\"! Waking HAL from standby.")
                 self.is_client_sleeping = False
                 await self.send(text_data="WAKE")
+                await self.send(text_data="LED:WINK")
                 await self.send(text_data="THINKING")
                 user_transcript = local_transcript
             else:
