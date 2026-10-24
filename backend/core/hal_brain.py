@@ -90,9 +90,11 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
             condition_on_previous_text=False,
             repetition_penalty=1.2,
             no_speech_threshold=0.5,
-            language="en",
-            beam_size=1,
-            initial_prompt="HAL, Hey HAL, HAL wake up, Fab Colozzi."
+            # INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
+            # initial_prompt MUST strictly contain full compound wake phrases only.
+            # NEVER include single-syllable "HAL," alone here, as Whisper will hallucinate
+            # it out of background TV/video chatter and trigger false wake-ups!
+            initial_prompt="HAL wake up. Hey HAL wake up. Wake up HAL."
         )
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
         full_text = " ".join(texts).strip()

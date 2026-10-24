@@ -71,14 +71,21 @@ def split_first_sentence(text: str):
 
     return None, text
 
+# ===========================================================================
+# STANDBY WAKE WORD VERIFICATION ($0.00 CLOUD GATE)
+# ===========================================================================
+# INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
+# Standby wake-up MUST STRICTLY REQUIRE BOTH HAL's identity AND the command "WAKE UP".
+# Under NO circumstances should a single-syllable "HAL", a lone greeting ("Hey HAL"),
+# or a generic "Wake up" trigger a wake-up.
+# Supported compound forms:
+# 1. [HAL variations] -> WAKE UP:
+#    - "HAL wake up", "Hey HAL wake up", "Hi HAL wake up", "Hello HAL wake up", "OK HAL wake up"
+#    - Optional courtesy: "HAL please wake up", "Hey HAL please wake up"
+# 2. WAKE UP -> [HAL variations]:
+#    - "Wake up HAL", "Wake up, HAL", "Wake up please HAL", "Wake up hey HAL"
+# ===========================================================================
 def is_hal_wake_word(text: str) -> bool:
-    """
-    Validates wake phrases from standby ($0.00 gate).
-    Wakes on any intentional address to HAL:
-    1. Direct wake-up commands: 'wake up hal', 'hal wake up', 'wake up'
-    2. Direct name call: 'HAL', 'HAL,', 'Hey HAL', 'Hi HAL', 'Hello HAL', 'OK HAL'
-    3. Direct address starting with HAL: 'HAL can you hear me', 'HAL what time is it'
-    """
     if not text:
         return False
     clean = re.sub(r'[.,!?;:\"\'\-]', ' ', text.strip().lower())
@@ -86,26 +93,18 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
-    # 1. Wake up commands: "wake up hal", "hal wake up", "wake up"
-    if re.search(r'\b(?:wake\s*up\s*hal|hal\s*wake\s*up|wake\s*up)\b', clean, re.IGNORECASE):
-        words = clean.split()
-        if len(words) <= 8:
-            return True
+    # Direction 1: [HAL variation] + (optional please) + wake up
+    # Matches: "hal wake up", "hey hal wake up", "hi hal wake up", "hello hal wake up", "ok hal wake up", "hal please wake up", etc.
+    if re.search(r'\b(?:(?:hey|hi|hello|ok|okay)\s+)?hal\s+(?:please\s+)?wake\s*up\b', clean, re.IGNORECASE):
+        return True
 
-    # 2. Direct name call "HAL" alone, with greeting, or at start of sentence
-    words = clean.split()
-    if 'hal' in words:
-        # If 'hal' is the only word or with a greeting (len <= 4, e.g. "hal", "hey hal", "hello hal", "good morning hal")
-        if len(words) <= 4:
-            return True
-        # If phrase starts with hal (e.g. 'hal can you hear me', 'hal what time is it')
-        if words[0] == 'hal':
-            return True
-        # If phrase starts with greeting + hal (e.g. 'hey hal can you hear me')
-        if len(words) >= 2 and words[0] in ('hey', 'hi', 'hello', 'ok', 'okay') and words[1] == 'hal':
-            return True
+    # Direction 2: wake up + (optional please) + [HAL variation]
+    # Matches: "wake up hal", "wake up please hal", "wake up hey hal", "wake up ok hal", etc.
+    if re.search(r'\bwake\s*up\s+(?:please\s+)?(?:(?:hey|hi|hello|ok|okay)\s+)?hal\b', clean, re.IGNORECASE):
+        return True
 
     return False
+
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -156,11 +155,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v22':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v22). Triggering remote reload...")
+                        if client_ver != 'v23':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v23). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v22 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v23 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
