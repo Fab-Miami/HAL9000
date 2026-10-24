@@ -220,29 +220,26 @@ html, body {
   transition: opacity 0.08s ease-out;
 }
 
-#layer-center-on.eye-wake-ignite {
-  animation: anim-eye-ignite 0.45s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+#layer-center-on.eye-waking {
+  animation: anim-eye-fade-in 3s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }
 
-@keyframes anim-eye-ignite {
+@keyframes anim-eye-fade-in {
   0% {
     opacity: 0.0;
-    transform: translateZ(0) scale(0.9);
     filter: drop-shadow(0 0 0px rgba(255, 0, 0, 0));
   }
-  35% {
-    opacity: 1.0;
-    transform: translateZ(0) scale(1.06);
-    filter: drop-shadow(0 0 16px rgba(255, 30, 0, 0.95)) brightness(1.25);
+  50% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 8px rgba(255, 30, 0, 0.5));
   }
   100% {
     opacity: 1.0;
-    transform: translateZ(0) scale(1.0);
     filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.4));
   }
 }
 
-body.state-thinking #layer-center-on {
+body.state-thinking #layer-center-on:not(.eye-waking) {
   animation: anim-eye-thinking 1.8s ease-in-out infinite;
 }
 
@@ -414,7 +411,7 @@ body.sleep-mode #layer-everything-off {
 
 body.sleep-mode #layer-center-on {
   opacity: 0 !important;
-  transition: opacity 0.25s ease-out !important;
+  transition: opacity 3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 body.sleep-mode #layer-ring-on {

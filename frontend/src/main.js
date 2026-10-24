@@ -78,6 +78,8 @@ function setHalState(newState) {
     document.body.classList.remove('state-thinking');
     // Standby: ALL LEDs strictly OFF (0.0 opacity). Faceplate background dims to 50% opacity via .sleep-mode CSS.
     if (layerCenterOn) {
+      clearTimeout(eyeWakeTimer);
+      layerCenterOn.classList.remove('eye-waking');
       layerCenterOn.classList.remove('eye-wake-ignite');
       layerCenterOn.style.opacity = '0.0';
     }
@@ -114,23 +116,29 @@ function resetSleepTimer() {
 }
 
 let pendingSleep = false;
+let eyeWakeTimer = null;
 
 function wakeUp() {
   pendingSleep = false;
   if (currentState !== State.SLEEPING) return;
-  log('☀️ [HAL 9000] Waking up from Standby (Central eye illuminated).');
+  log('☀️ [HAL 9000] Waking up from Standby (Central eye fading in over 3s).');
   setPersistentLed(false);
   clearLedAnimations();
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (halAudio) halAudio.setSleeping(false);
 
-  // Instantly wake the optical assembly: ignite central eye & acknowledge
+  // Optical assembly: 3-second smooth cinematic fade-in for the central eye
   setHalState(State.LISTENING);
   if (layerCenterOn) {
+    clearTimeout(eyeWakeTimer);
     layerCenterOn.classList.remove('eye-wake-ignite');
-    void layerCenterOn.offsetWidth; // Force reflow so ignition flare triggers reliably
-    layerCenterOn.classList.add('eye-wake-ignite');
+    layerCenterOn.classList.remove('eye-waking');
+    void layerCenterOn.offsetWidth; // Force reflow
+    layerCenterOn.classList.add('eye-waking');
     layerCenterOn.style.opacity = '1.0';
+    eyeWakeTimer = setTimeout(() => {
+      if (layerCenterOn) layerCenterOn.classList.remove('eye-waking');
+    }, 3000);
   }
   triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
 
