@@ -559,9 +559,11 @@ initKeepAwakeVideo();
 let isSystemInitialized = false;
 let isInitializing = false;
 
-// Clear any legacy auto-init flag from localStorage so cold reloads never attempt ungestured audio
+// If system was already authorized and running on console, attempt warm initialization
 try {
-  localStorage.removeItem('hal_initialized');
+  if (localStorage.getItem('hal_initialized') === 'true') {
+    initializeSystem();
+  }
 } catch {}
 
 async function initializeSystem() {
@@ -595,6 +597,9 @@ async function initializeSystem() {
     }
 
     isSystemInitialized = true;
+    try {
+      localStorage.setItem('hal_initialized', 'true');
+    } catch {}
     log('✅ [HAL 9000] Fully operational and standing by on Fab\'s desk.');
   } catch (err) {
     isSystemInitialized = false;

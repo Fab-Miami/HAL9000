@@ -252,7 +252,16 @@ class HalConsumer(AsyncWebsocketConsumer):
             # TV chatter, ambient room noise, or background speech are rejected with ZERO cloud LLM tokens.
             user_transcript = ""
             if self.is_client_sleeping:
-                local_transcript = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
+                try:
+                    local_transcript = await asyncio.wait_for(
+                        asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes),
+                        timeout=3.5
+                    )
+                except asyncio.TimeoutError:
+                    log("⚠️ [Standby] Local Whisper timed out (3.5s). Resetting.")
+                    await self.send(text_data="DONE")
+                    return
+
                 if not is_hal_wake_word(local_transcript):
                     log(f"💤 [Standby] Ignored non-wake audio: \"{local_transcript or '[No Speech]'}\" ($0.00 cost). Remaining asleep.")
                     await self.send(text_data="DONE")
