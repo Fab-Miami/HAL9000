@@ -87,6 +87,9 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
             audio,
             vad_filter=False,
             temperature=0.0,
+            condition_on_previous_text=False,
+            repetition_penalty=1.2,
+            no_speech_threshold=0.5,
             language="en",
             beam_size=1,
             initial_prompt="HAL, Hey HAL, HAL wake up, Fab Colozzi."
