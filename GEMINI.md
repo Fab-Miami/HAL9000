@@ -13,10 +13,13 @@
 - **STRICT ZERO OPTICAL BLINKING IN STANDBY (IF HAL SLEEPS, IT SLEEPS)**: When HAL is asleep in standby (`State.SLEEPING`), ALL LEDs ARE STRICTLY OFF (central red eye `#layer-center-on` = OFF, 3 auxiliary LEDs `#layer-3-led-on` = OFF, outer acoustic ring `#layer-ring-on` = OFF). Under NO circumstances should ANY LED blink, pulse, or illuminate while sleeping. The faceplate background (`#layer-everything-off`) deliberately fades down to 50% opacity (`opacity: 0.5 !important; transition: opacity 2s ease-in-out 0.25s !important;`). KEEP THIS 50% FADE AND ZERO-LED STANDBY PERMANENTLY.
 - **STANDBY WAKE WORD POLICY (MANDATORY COMPOUND PHRASES ONLY & ZERO INITIAL_PROMPT)**:
   Standby wake verification (`is_hal_wake_word`) MUST STRICTLY REQUIRE BOTH HAL's identity/variations AND the command "WAKE UP" (e.g. `[HAL variations] + WAKE UP` such as "HAL wake up", "Hey HAL wake up", "OK HAL wake up", OR `WAKE UP + [HAL variations]` such as "Wake up HAL", "Wake up please HAL"). NEVER allow a single-syllable "HAL" alone, a lone greeting ("Hey HAL"), or a generic "Wake up" without HAL to trigger a wake-up.
-  INVIOLABLE RULES FOR STANDBY WHISPER:
-  1. `vad_filter=True` is MANDATORY: Silero VAD must filter out non-speech room/video noise before decoding.
-  2. `initial_prompt` is STRICTLY AND PERMANENTLY FORBIDDEN: Passing any prompt to Whisper causes its autoregressive decoder to hallucinate the prompt tokens on ambient room noise or video sound.
+  INVIOLABLE RULES FOR STANDBY WHISPER (DO NOT VIOLATE UNDER ANY CIRCUMSTANCES):
+  1. `vad_filter=True` is MANDATORY AND MUST NEVER BE DISABLED (NEVER SET `vad_filter=False`):
+     Silero VAD is the sole gatekeeper that drops non-speech room noise, video/TV audio, music, and ambient acoustics BEFORE Whisper decoding. Disabling Silero VAD forces raw room noise into Whisper, breaking the system. NEVER, EVER SET `vad_filter=False` FOR ANY REASON.
+  2. `initial_prompt` is STRICTLY AND PERMANENTLY FORBIDDEN (NEVER PASS `initial_prompt`):
+     Passing any prompt to Whisper causes its autoregressive decoder to treat the prompt as preceding conversational context. When ambient room noise or video sound is processed, the decoder repeats or completes the prompt tokens, manufacturing false wake calls out of thin air.
   3. Acronym normalization: Whisper transcribes "HAL" as "H.A.L." without a prompt. The wake parser must normalize "H.A.L." to "hal" before matching.
+
 
 
 ## CRITICAL MANDATE #2: PHYSICAL HARDWARE DESKTOP CONSOLE CONSTRAINTS
