@@ -83,23 +83,26 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
         if len(audio) == 0:
             return ""
 
+        # INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
+        # 1. vad_filter=True is MANDATORY: Silero VAD drops ambient TV/video noise before decoding.
+        # 2. initial_prompt is STRICTLY FORBIDDEN: Whisper's autoregressive decoder repeats/completes
+        #    prompts on low-confidence noise, which hallucinates wake phrases out of thin air.
+        # 3. temperature=0.0 and beam_size=1 provide deterministic low-latency CPU transcription.
         segments, _ = local_whisper.transcribe(
             audio,
-            vad_filter=False,
+            vad_filter=True,
+            vad_parameters=dict(threshold=0.5, min_speech_duration_ms=250),
             temperature=0.0,
             condition_on_previous_text=False,
             repetition_penalty=1.2,
-            no_speech_threshold=0.5,
-            # INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
-            # initial_prompt MUST strictly contain full compound wake phrases only.
-            # NEVER include single-syllable "HAL," alone here, as Whisper will hallucinate
-            # it out of background TV/video chatter and trigger false wake-ups!
-            initial_prompt="HAL wake up. Hey HAL wake up. Wake up HAL."
+            no_speech_threshold=0.6,
+            language="en",
+            beam_size=1
         )
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
         full_text = " ".join(texts).strip()
         if full_text:
-            print(f"🎙️ [Standby Whisper] Wake phrase detected: \"{full_text}\" ($0.00 cloud cost)")
+            print(f"🎙️ [Standby Whisper] Detected: \"{full_text}\" ($0.00 cloud cost)")
         return full_text
     except Exception as e:
         print(f"⚠️ [Whisper Error]: {e}")

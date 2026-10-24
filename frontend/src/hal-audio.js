@@ -189,18 +189,14 @@ export class HalAudio {
 
     // Calibrated sensitivity for iPhone behind glass inside desktop enclosure:
     // Dynamic noise gate rejects ambient room hum, air conditioning, and distant rustle.
-    const baseGateFloor = this.sleeping ? 0.004 : 0.006;
-    const noiseMultiplier = this.sleeping ? 1.20 : 1.30;
-    const gateOffset = this.sleeping ? 0.0025 : 0.0035;
+    const baseGateFloor = this.sleeping ? 0.007 : 0.006;
+    const noiseMultiplier = this.sleeping ? 1.35 : 1.30;
+    const gateOffset = this.sleeping ? 0.0040 : 0.0035;
     const noiseGate = Math.max(baseGateFloor, this.noiseFloor * noiseMultiplier + gateOffset);
     const voiceDelta = rms - noiseGate;
 
-    // =======================================================================
-    // UNIFIED RING LEVEL FACTOR (0.0 = OFF / SILENCE, 0.40 - 1.0 = ACTIVE SPEECH)
-    // Both optical feedback and turn-taking VAD are connected to this EXACT factor!
-    // In standby: slightly more forgiving vocal threshold (0.0012) to detect wake phrases across the room.
-    // =======================================================================
-    const voiceThreshold = this.sleeping ? 0.0012 : 0.0020;
+    // In standby: require intentional vocal volume (0.0025) so ambient video chatter does not trigger turns.
+    const voiceThreshold = this.sleeping ? 0.0025 : 0.0020;
     const ringLevel = (voiceDelta > voiceThreshold)
       ? Math.min(1.0, 0.40 + (voiceDelta - voiceThreshold) * 35.0)
       : 0.0;

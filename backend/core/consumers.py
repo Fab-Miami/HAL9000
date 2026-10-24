@@ -88,7 +88,10 @@ def split_first_sentence(text: str):
 def is_hal_wake_word(text: str) -> bool:
     if not text:
         return False
-    clean = re.sub(r'[.,!?;:\"\'\-]', ' ', text.strip().lower())
+    # Normalize Whisper acronym variations: "H.A.L.", "H. A. L.", "H A L" -> "hal"
+    normalized = re.sub(r'\bh\s*\.?\s*a\s*\.?\s*l\.?\b', 'hal', text, flags=re.IGNORECASE)
+    clean = re.sub(r'[.,!?;:\"\'\-]', ' ', normalized.strip().lower())
+    clean = re.sub(r'\bh\s+a\s+l\b', 'hal', clean)
     clean = re.sub(r'\s+', ' ', clean).strip()
     if not clean:
         return False
@@ -104,6 +107,7 @@ def is_hal_wake_word(text: str) -> bool:
         return True
 
     return False
+
 
 
 class HalConsumer(AsyncWebsocketConsumer):
@@ -155,11 +159,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v23':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v23). Triggering remote reload...")
+                        if client_ver != 'v24':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v24). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v23 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v24 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
