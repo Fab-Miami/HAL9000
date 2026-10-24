@@ -206,10 +206,9 @@ class HalConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=f"VOLUME:{new_vol}")
             text = re.sub(r'\[?volume:\s*\d+\]?', '', text, flags=re.IGNORECASE).strip()
 
-        # 2. Sleep tags: [SLEEP] or direct model farewell/sleep statements
-        sleep_pattern = r'\[?SLEEP\]?|\b(?:extinguish\s+my\s+eye|going\s+to\s+sleep|entering\s+standby|shutting\s+down|powering\s+down)\b'
-        if re.search(sleep_pattern, text, re.IGNORECASE):
-            log("🌙 [HalConsumer] Sleep command parsed.")
+        # 2. Sleep tags: strictly [SLEEP]
+        if "[SLEEP]" in text.upper():
+            log("🌙 [HalConsumer] Sleep command parsed: [SLEEP]")
             self._turn_should_sleep = True
             text = re.sub(r'\[?SLEEP\]?', '', text, flags=re.IGNORECASE).strip()
 
@@ -387,17 +386,6 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Stop TTS worker and await completion of speech generation
             await sentence_queue.put(None)
             await tts_task
-
-            # Fallback: check accumulated response text for sleep intent if tag was omitted
-            if not self._turn_should_sleep:
-                full_lower = full_response_text.lower()
-                if any(phrase in full_lower for phrase in [
-                    "extinguish my eye", "go to sleep", "going to sleep",
-                    "entering standby", "goodnight, fab", "goodnight fab",
-                    "tests are complete"
-                ]):
-                    log("🌙 [HalConsumer] Sleep intent detected in model response text. Engaging standby.")
-                    self._turn_should_sleep = True
 
             # Send SLEEP before DONE so client registers pendingSleep before playback finishes
             if self._turn_should_sleep:
