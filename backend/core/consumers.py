@@ -89,13 +89,15 @@ def is_hal_wake_word(text: str) -> bool:
     # 1. Direct wake up commands: "wake up hal", "hal wake up", "wake up"
     if re.search(r'\b(?:wake\s*up\s*hal|hal\s*wake\s*up|wake\s*up)\b', clean, re.IGNORECASE):
         words = clean.split()
-        if len(words) <= 6:
+        if len(words) <= 8:
             return True
 
     # 2. Explicit multi-word greeting directed to HAL:
     # Requires a greeting word BEFORE "hal" (never bare "hal" or "hal, ...")
+    # Supports common Whisper phonetic transcriptions of HAL (hal, how, al, pal, cal, hell, owl)
+    hal_phonetic = r"(?:hal|how|al|pal|cal|hell|owl)"
     greeting_prefix = r"(?:hey|ok|okay|hi|hello|good\s+(?:morning|evening|afternoon))"
-    if re.search(rf"^{greeting_prefix}\s+hal(?:\s+(?:are\s+you\s+(?:there|awake)|wake\s*up|listen|up|please))?$", clean, re.IGNORECASE):
+    if re.search(rf"\b{greeting_prefix}\s+{hal_phonetic}\b", clean, re.IGNORECASE):
         return True
 
     return False
@@ -149,17 +151,20 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v16':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v16). Triggering remote reload...")
+                        if client_ver != 'v17':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v17). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v16 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v17 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
 
                     if msg.get('type') == 'telemetry':
-                        log(f"📱 [Client Telemetry] {msg.get('message')}")
+                        telemetry_msg = str(msg.get('message', ''))
+                        if '[WakeLock]' in telemetry_msg:
+                            return
+                        log(f"📱 [Client Telemetry] {telemetry_msg}")
                         return
                     if msg.get('type') == 'sleep_state':
                         self.is_client_sleeping = bool(msg.get('sleeping'))
@@ -230,10 +235,10 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Capture history checkpoint before this turn adds anything to memory
             history_checkpoint = hal_brain.get_history_checkpoint(self.chat_session)
 
-            # Standby audio length gate: in sleep mode, reject brief clips < 0.70s (clicks, coughs, room rustle)
+            # Standby audio length gate: in sleep mode, reject brief clips < 0.40s (clicks, room spikes)
             duration_s = len(wav_bytes) / (16000 * 2)
-            if self.is_client_sleeping and duration_s < 0.70:
-                log(f"🔇 [Standby] Discarded brief audio packet ({duration_s:.2f}s < 0.70s threshold). Remaining asleep.")
+            if self.is_client_sleeping and duration_s < 0.40:
+                log(f"🔇 [Standby] Discarded brief audio packet ({duration_s:.2f}s < 0.40s threshold). Remaining asleep.")
                 await self.send(text_data="DONE")
                 return
 

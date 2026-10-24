@@ -220,10 +220,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v16 Clean Architecture).');
+      log('✅ [WS] Connected to HAL backend (v17 Clean Architecture).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v16',
+        version: 'v17',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -293,9 +293,9 @@ function connectWebSocket() {
 // ===========================================================================
 const halAudio = new HalAudio({
   // Vocal RMS feedback -> Directly pulses outer acoustic ring (#layer-ring-on)
-  // Controlled 1:1 by unified ringLevel factor
+  // Controlled 1:1 by unified ringLevel factor (active in both LISTENING and SLEEPING standby)
   onAudioLevel: (ringLevel) => {
-    if (currentState === State.LISTENING && layerRingOn) {
+    if ((currentState === State.LISTENING || currentState === State.SLEEPING) && layerRingOn) {
       layerRingOn.style.opacity = ringLevel > 0 ? ringLevel.toFixed(2) : '0.0';
     }
   },
@@ -405,6 +405,9 @@ function handleDeviceMotion(event) {
   }
 }
 
+// Register motion listener immediately so enclosure knocks work before and after initialization
+window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+
 // ===========================================================================
 // 24/7 SCREEN WAKE LOCK & KEEP-AWAKE MP4
 // ===========================================================================
@@ -496,13 +499,14 @@ async function requestScreenWakeLock() {
         }, 1000);
       });
     } catch (e) {
-      log(`⚠️ [WakeLock] API note: ${e.name} - ${e.message} (Keep-Awake video maintains screen ON).`);
+      // Keep-Awake video maintains screen ON 24/7. Avoid spamming backend logs on routine iOS permission note.
+      console.debug(`[WakeLock] Note: ${e.name} - ${e.message}`);
       wakeLockSentinel = null;
     } finally {
       isAcquiringWakeLock = false;
     }
   } else {
-    log('ℹ️ [WakeLock] Native API unavailable on this browser; Keep-Awake video maintains 24/7 screen ON.');
+    console.debug('[WakeLock] Native API unavailable; Keep-Awake video maintains 24/7 screen ON.');
   }
   ensureKeepAwakeVideoPlaying();
 }

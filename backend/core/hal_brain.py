@@ -85,8 +85,7 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
 
         segments, _ = local_whisper.transcribe(
             audio,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
+            vad_filter=False,
             language="en",
             beam_size=1,
             initial_prompt="HAL, Hey HAL, HAL wake up, Fab Colozzi."
