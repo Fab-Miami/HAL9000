@@ -250,10 +250,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v21 Sequenced Sleep/Wake Transitions).');
+      log('✅ [WS] Connected to HAL backend (v22 Mandatory Sleep Dispatch).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v21',
+        version: 'v22',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
