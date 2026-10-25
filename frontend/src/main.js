@@ -232,6 +232,21 @@ function triggerLedTag(tag) {
   }, duration);
 }
 
+function blinkStandbyDispatchLeds() {
+  if (!layer3LedOn) return;
+  clearLedAnimations();
+  layer3LedOn.style.removeProperty('opacity');
+  layer3LedOn.style.setProperty('--persistent-led', '0.0');
+  void layer3LedOn.offsetWidth;
+  layer3LedOn.classList.add('led-anim-wink');
+  ledAnimTimeout = setTimeout(() => {
+    clearLedAnimations();
+    if (layer3LedOn && currentState === State.SLEEPING) {
+      layer3LedOn.style.opacity = '0.0';
+    }
+  }, 450);
+}
+
 // ===========================================================================
 // WEBSOCKET CLIENT (DAPHNE ASGI CONNECTION)
 // ===========================================================================
@@ -250,10 +265,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v27 Fast Optical Wake Gate).');
+      log('✅ [WS] Connected to HAL backend (v28 Standby Sandwich & Optical Feedback).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v27',
+        version: 'v28',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -383,6 +398,12 @@ const halAudio = new HalAudio({
     log(`🥁 [HAL 9000] Acoustic wake triggered (${reason}).`);
     triggerLedTag('wink');
     wakeUp();
+  },
+
+  // Standby sandwich matched -> Blink 3 auxiliary LEDs as immediate visual feedback
+  onStandbyDispatch: () => {
+    log('🥪 [HalAudio] Sandwich profile matched. Blinking 3 LEDs & dispatching to server.');
+    blinkStandbyDispatchLeds();
   },
 
   onLog: log,

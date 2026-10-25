@@ -5,12 +5,13 @@
  */
 
 export class HalAudio {
-  constructor({ onAudioLevel, onPlaybackLevel, onTurnComplete, onPlaybackStateChange, onWake, onLog }) {
+  constructor({ onAudioLevel, onPlaybackLevel, onTurnComplete, onPlaybackStateChange, onWake, onStandbyDispatch, onLog }) {
     this.onAudioLevel = onAudioLevel || (() => {});
     this.onPlaybackLevel = onPlaybackLevel || (() => {});
     this.onTurnComplete = onTurnComplete || (() => {});
     this.onPlaybackStateChange = onPlaybackStateChange || (() => {});
     this.onWake = onWake || (() => {});
+    this.onStandbyDispatch = onStandbyDispatch || (() => {});
     this.onLog = onLog || console.log;
 
     this.audioContext = null;
@@ -29,6 +30,7 @@ export class HalAudio {
     this.turnBuffer = [];
     this.preRollBuffer = [];
     this.lastVoiceTime = 0;
+    this.standbySilenceStart = performance.now();
     this.noiseFloor = undefined;
     this.SILENCE_DELAY_MS = 1800; // Strict 1.8s natural conversational pause
 
@@ -120,14 +122,20 @@ export class HalAudio {
     this.sleeping = !!sleeping;
     if (this.sleeping) {
       this.turnBuffer = [];
+      this.preRollBuffer = [];
       this.isSpeaking = false;
+      this.consecutiveVoiceFrames = 0;
+      this.standbySilenceStart = performance.now();
     }
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 900 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=2s silence -> <2s speech -> 1s silence).`);
   }
 
   setListeningActive(active) {
     this.isListeningActive = !!active;
     if (this.isListeningActive) {
+      if (this.sleeping) {
+        this.standbySilenceStart = performance.now();
+      }
       // Ensure AudioContext is actively running and not suspended by iOS
       if (this.audioContext && this.audioContext.state === 'suspended') {
         this.audioContext.resume().catch(() => {});
@@ -202,73 +210,140 @@ export class HalAudio {
       : 0.0;
 
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
-    this.onAudioLevel(ringLevel);
+    // STRICT MANDATE: Acoustic ring only pulses during active conversation (State.LISTENING).
+    // In standby / sleeping mode, all optical LEDs are strictly OFF (0.0 opacity).
+    if (!this.sleeping) {
+      this.onAudioLevel(ringLevel);
+    } else {
+      this.onAudioLevel(0.0);
+    }
 
-
-    // =======================================================================
-    // TURN-TAKING ACCUMULATION & 1.8s SILENCE DETECTION
-    // Synchronized 100% to the exact same acoustic factor as the optical ring:
-    // When the acoustic ring is blinking (ringLevel > 0), speech is active!
-    // When the acoustic ring turns off (ringLevel === 0), the 1.8s silence countdown begins.
-    // =======================================================================
     const now = performance.now();
     const hasVocalEnergy = ringLevel > 0;
 
-    if (hasVocalEnergy) {
-      this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
-      if (!this.isSpeaking) {
-        // Require at least 2 consecutive frames (~170ms) of sustained acoustic energy
-        // to initiate a turn. This rejects isolated transient clicks, utensil clinks, and noise spikes!
-        if (this.consecutiveVoiceFrames >= 2) {
-          this.isSpeaking = true;
-          this.turnStartTime = now;
-          this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
-          this.turnBuffer = [];
-          // Prepend rolling pre-roll buffer (0.3s) so onset consonant is preserved
-          for (let i = 0; i < this.preRollBuffer.length; i++) {
-            this.turnBuffer.push(this.preRollBuffer[i]);
+    if (this.sleeping) {
+      // =====================================================================
+      // STANDBY SANDWICH PROFILE VAD:
+      // 1. Preceding continuous silence >= 2.0s
+      // 2. Spoken wake utterance < 2.0s
+      // 3. Trailing silence == 1.0s
+      // =====================================================================
+      if (hasVocalEnergy) {
+        if (!this.isSpeaking) {
+          const silenceDuration = now - this.standbySilenceStart;
+          if (silenceDuration < 2000) {
+            // Preceding continuous silence not met (< 2.0s). TV/room noise dropped, reset silence timer.
+            this.standbySilenceStart = now;
+            this.consecutiveVoiceFrames = 0;
+            this.preRollBuffer = [];
+            return;
           }
-          this.preRollBuffer = [];
+
+          this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
+          // Require 2 consecutive frames (~170ms) of sustained vocal energy to confirm intentional speech onset
+          if (this.consecutiveVoiceFrames >= 2) {
+            this.isSpeaking = true;
+            this.turnStartTime = now;
+            this.lastVoiceTime = now;
+            this.onLog('🗣️ [HalAudio] Standby speech onset detected (preceding silence >= 2.0s satisfied).');
+            this.turnBuffer = [];
+            for (let i = 0; i < this.preRollBuffer.length; i++) {
+              this.turnBuffer.push(this.preRollBuffer[i]);
+            }
+            this.preRollBuffer = [];
+            this.turnBuffer.push(pcmChunk);
+          } else {
+            this.preRollBuffer.push(pcmChunk);
+            if (this.preRollBuffer.length > 6) {
+              this.preRollBuffer.shift();
+            }
+          }
+        } else {
+          // Already speaking in standby
           this.lastVoiceTime = now;
           this.turnBuffer.push(pcmChunk);
+          const utteranceDuration = now - this.turnStartTime;
+          // Sandwich rule #2: utterance must be < 2.0s. If >= 2.0s, it's not a wake phrase!
+          if (utteranceDuration >= 2000) {
+            this.onLog(`🔇 [HalAudio] Standby utterance exceeded 2.0s (${(utteranceDuration / 1000).toFixed(2)}s). Discarding non-wake audio.`);
+            this.turnBuffer = [];
+            this.preRollBuffer = [];
+            this.isSpeaking = false;
+            this.consecutiveVoiceFrames = 0;
+            this.standbySilenceStart = now;
+            return;
+          }
+        }
+      } else {
+        // hasVocalEnergy is FALSE in standby
+        if (this.isSpeaking) {
+          this.turnBuffer.push(pcmChunk);
+          const elapsedSinceVoice = now - this.lastVoiceTime;
+          // Sandwich rule #3: trailing silence >= 1.0s
+          if (elapsedSinceVoice >= 1000) {
+            this.onLog(`🥪 [HalAudio] Sandwich profile matched! Spoken turn: ${((this.lastVoiceTime - this.turnStartTime) / 1000).toFixed(2)}s, trailing silence: ${(elapsedSinceVoice / 1000).toFixed(2)}s.`);
+            this._finalizeTurn(elapsedSinceVoice);
+            this.standbySilenceStart = performance.now();
+          }
         } else {
+          // Ambient quiet in standby
+          if (this.consecutiveVoiceFrames > 0) {
+            // A 1-frame transient noise occurred and vanished; reset silence baseline
+            this.standbySilenceStart = now;
+            this.consecutiveVoiceFrames = 0;
+          }
           this.preRollBuffer.push(pcmChunk);
           if (this.preRollBuffer.length > 6) {
             this.preRollBuffer.shift();
           }
         }
-      } else {
-        this.lastVoiceTime = now;
-        // Standby protection: cap wake phrase turn at strictly 2.0s so standby chunks are compact and fast
-        if (this.sleeping && (now - this.turnStartTime >= 2000)) {
-          this._finalizeTurn(150);
-          return;
-        }
-        // Active conversation protection: cap maximum turn duration at 25s
-        // to prevent continuous TV/media from accumulating huge multi-minute buffers.
-        if (!this.sleeping && (now - this.turnStartTime >= 25000)) {
-          this._finalizeTurn(200);
-          return;
-        }
       }
     } else {
-      this.consecutiveVoiceFrames = 0;
-      if (this.isSpeaking) {
-        // Accumulating silence tail
-        this.turnBuffer.push(pcmChunk);
-        const elapsedSinceVoice = now - this.lastVoiceTime;
-        // In standby mode: 900ms natural silence cutoff for fast wake-up response.
-        // In active conversation: 1800ms natural conversational pause.
-        const requiredDelay = this.sleeping ? 900 : this.SILENCE_DELAY_MS;
-
-        if (elapsedSinceVoice >= requiredDelay) {
-          this._finalizeTurn(elapsedSinceVoice);
+      // =====================================================================
+      // ACTIVE CONVERSATION TURN-TAKING & 1.8s SILENCE DETECTION
+      // =====================================================================
+      if (hasVocalEnergy) {
+        this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
+        if (!this.isSpeaking) {
+          if (this.consecutiveVoiceFrames >= 2) {
+            this.isSpeaking = true;
+            this.turnStartTime = now;
+            this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
+            this.turnBuffer = [];
+            for (let i = 0; i < this.preRollBuffer.length; i++) {
+              this.turnBuffer.push(this.preRollBuffer[i]);
+            }
+            this.preRollBuffer = [];
+            this.lastVoiceTime = now;
+            this.turnBuffer.push(pcmChunk);
+          } else {
+            this.preRollBuffer.push(pcmChunk);
+            if (this.preRollBuffer.length > 6) {
+              this.preRollBuffer.shift();
+            }
+          }
+        } else {
+          this.lastVoiceTime = now;
+          this.turnBuffer.push(pcmChunk);
+          // Active conversation protection: cap maximum turn duration at 25s
+          if (now - this.turnStartTime >= 25000) {
+            this._finalizeTurn(200);
+            return;
+          }
         }
       } else {
-        // Ambient silence: keep rolling 0.5s pre-roll buffer (~6 chunks)
-        this.preRollBuffer.push(pcmChunk);
-        if (this.preRollBuffer.length > 6) {
-          this.preRollBuffer.shift();
+        this.consecutiveVoiceFrames = 0;
+        if (this.isSpeaking) {
+          this.turnBuffer.push(pcmChunk);
+          const elapsedSinceVoice = now - this.lastVoiceTime;
+          if (elapsedSinceVoice >= this.SILENCE_DELAY_MS) {
+            this._finalizeTurn(elapsedSinceVoice);
+          }
+        } else {
+          this.preRollBuffer.push(pcmChunk);
+          if (this.preRollBuffer.length > 6) {
+            this.preRollBuffer.shift();
+          }
         }
       }
     }
@@ -309,12 +384,11 @@ export class HalAudio {
       if (durationSeconds < minDuration) {
         this.onLog(`🔇 [HalAudio] Discarded brief noise glitch (${durationSeconds.toFixed(2)}s).`);
         this.isListeningActive = true;
+        if (this.sleeping) {
+          this.standbySilenceStart = performance.now();
+        }
         return;
       }
-      // Package into clean WAV container for Gemini
-      const wavBytes = this._pcmToWav(fullPcm, 16000);
-      this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching to Gemini.`);
-      this.onTurnComplete(wavBytes);
 
       // Standby safety watchdog: automatically re-arm listening if no speech/playback occurs within 3.5s
       if (this.sleeping) {
@@ -322,9 +396,18 @@ export class HalAudio {
         this._standbySafetyWatchdog = setTimeout(() => {
           if (!this.isPlaying && this.sleeping) {
             this.isListeningActive = true;
+            this.standbySilenceStart = performance.now();
           }
         }, 3500);
+
+        // Blinks the 3 auxiliary LEDs as immediate visual dispatch feedback
+        this.onStandbyDispatch();
       }
+
+      // Package into clean WAV container for Gemini / Whisper
+      const wavBytes = this._pcmToWav(fullPcm, 16000);
+      this.onLog(`🗣️ [HalAudio] Turn finalized (${durationSeconds.toFixed(1)}s speech audio, ${wavBytes.byteLength} bytes). Dispatching.`);
+      this.onTurnComplete(wavBytes);
     } catch (e) {
       this.onLog(`❌ [HalAudio] Turn finalization error: ${e.message}`);
     }

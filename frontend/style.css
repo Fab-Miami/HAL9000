@@ -423,7 +423,7 @@ body.sleep-mode #layer-ring-on {
   transition: opacity 0.15s ease-out !important;
 }
 
-body.sleep-mode #layer-3-led-on {
+body.sleep-mode #layer-3-led-on:not([class*="led-anim-"]) {
   opacity: 0 !important;
   transition: opacity 0.15s ease-out !important;
 }
