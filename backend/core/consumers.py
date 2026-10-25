@@ -3,13 +3,28 @@ import json
 import re
 import time
 import datetime
+import collections
 from channels.generic.websocket import AsyncWebsocketConsumer
 from . import hal_brain
 
+# Global in-memory log buffer & real-time subscriber set for https://hal.tuning.net/logs
+RECENT_LOGS = collections.deque(maxlen=400)
+LOG_SUBSCRIBERS = set()
+
 def log(msg):
-    """Print with immediate flush so journalctl shows output in real time."""
+    """Print with immediate flush so journalctl shows output in real time and broadcasts to live debug viewers."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    entry = {"time": timestamp, "msg": str(msg)}
+    RECENT_LOGS.append(entry)
     print(f"[{timestamp}] {msg}", flush=True)
+
+    if LOG_SUBSCRIBERS:
+        payload = json.dumps({"type": "log", "entry": entry})
+        for sub in list(LOG_SUBSCRIBERS):
+            try:
+                asyncio.create_task(sub.send(text_data=payload))
+            except Exception:
+                LOG_SUBSCRIBERS.discard(sub)
 
 def clean_speech_text(text: str) -> str:
     """
@@ -96,25 +111,41 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
-    # Phonetic variations of HAL heard through glass enclosure: hal, hah, huh, ha, hu, ho, how, haw, hell, hel, al, all, el, ell
-    hal_tokens = r'(?:hal|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|how|haw)'
+    # Phonetic variations of HAL heard through glass enclosure: hal, hah, huh, ha, hu, ho, how, haw, hell, hel, al, all, el, ell, hi, high, hai, hy, hie, hey, hay
+    hal_tokens = r'(?:hal|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|how|haw|hi|high|hai|hy|hie|hey|hay)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
     # "wake up", "wakeup", "waiker", "waker", "wake", "woke up", "woke", "we get (up)", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking"
     wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake|woke\s*up|woke|we\s*get(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
 
     # Direction 1: [HAL variation] + (optional please) + [wake variation]
-    # Matches: "hal wake up", "hal waiker", "hal we get", "hey hal wake up", "hah wake up", "huh waiker", etc.
+    # Matches: "hal wake up", "hi wake up", "hey wake up", "hal waiker", "hal we get", "hey hal wake up", "hah wake up", etc.
     if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+(?:please\s+)?{wake_tokens}\b', clean, re.IGNORECASE):
         return True
 
     # Direction 2: [wake variation] + (optional please) + [HAL variation]
-    # Matches: "wake up hal", "we get hal", "waiker hal", "wake up please hal", "wake hal", "wait up hal", etc.
+    # Matches: "wake up hal", "wake up hi", "wake up hey", "we get hal", "waiker hal", "wake up please hal", "wake hal", etc.
     if re.search(rf'\b{wake_tokens}\s+(?:please\s+)?(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
     return False
 
+
+class LogsConsumer(AsyncWebsocketConsumer):
+    """Real-time log streaming consumer for https://hal.tuning.net/logs debug viewer."""
+    async def connect(self):
+        await self.accept()
+        LOG_SUBSCRIBERS.add(self)
+        history = list(RECENT_LOGS)
+        await self.send(text_data=json.dumps({"type": "history", "logs": history}))
+
+    async def disconnect(self, close_code):
+        LOG_SUBSCRIBERS.discard(self)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        if text_data == "CLEAR":
+            RECENT_LOGS.clear()
+            await self.send(text_data=json.dumps({"type": "history", "logs": []}))
 
 
 class HalConsumer(AsyncWebsocketConsumer):
@@ -166,11 +197,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v29':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v29). Triggering remote reload...")
+                        if client_ver != 'v30':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v30). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v29 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v30 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")

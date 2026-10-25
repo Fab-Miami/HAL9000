@@ -127,7 +127,7 @@ export class HalAudio {
       this.consecutiveVoiceFrames = 0;
       this.standbySilenceStart = performance.now();
     }
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=2s silence -> <2s speech -> 1s silence).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=0.5s silence -> <=3.5s speech -> 0.8s silence).`);
   }
 
   setListeningActive(active) {
@@ -218,12 +218,13 @@ export class HalAudio {
 
     // =======================================================================
     // DYNAMIC SIGNAL-TO-NOISE RATIO (SNR) VOICE GATE
-    // Standby: requires +5 dB (1.80x) above ambient baseline to reject ambient TV chatter
-    // Active: requires +3.5 dB (1.50x) above ambient baseline for natural fluid conversation
+    // Standby: requires +5 dB (1.65x) above ambient baseline to reject ambient TV chatter
+    // Active: requires +3.5 dB (1.45x) above ambient baseline for natural fluid conversation
     // =======================================================================
-    const snrMultiplier = this.sleeping ? 1.80 : 1.50;
-    const safetyMargin = this.sleeping ? 0.0018 : 0.0012;
-    const voiceGate = this.noiseFloor * snrMultiplier + safetyMargin;
+    const snrMultiplier = this.sleeping ? 1.65 : 1.45;
+    const safetyMargin = this.sleeping ? 0.0022 : 0.0012;
+    const baseGateFloor = this.sleeping ? 0.0048 : 0.0020;
+    const voiceGate = Math.max(baseGateFloor, this.noiseFloor * snrMultiplier + safetyMargin);
 
     const voiceDelta = rms - voiceGate;
     const ringLevel = (voiceDelta > 0)
@@ -245,18 +246,21 @@ export class HalAudio {
     if (this.sleeping) {
       // =====================================================================
       // STANDBY SANDWICH PROFILE VAD:
-      // 1. Preceding continuous silence >= 2.0s
-      // 2. Spoken wake utterance < 2.0s
-      // 3. Trailing silence == 1.0s
+      // 1. Preceding continuous silence >= 750ms
+      // 2. Spoken wake utterance <= 3.5s
+      // 3. Trailing silence == 800ms
       // =====================================================================
       if (hasVocalEnergy) {
         if (!this.isSpeaking) {
           const silenceDuration = now - this.standbySilenceStart;
-          if (silenceDuration < 2000) {
-            // Preceding continuous silence not met (< 2.0s). TV/room noise dropped, reset silence timer.
+          if (silenceDuration < 500) {
+            // Preceding continuous silence not met (< 500ms). Reset timer and log (throttled).
+            if (now - (this.lastSilenceRejectLog || 0) > 1500) {
+              this.onLog(`🥪 [Standby Sandwich] Audio above gate (RMS: ${rms.toFixed(4)}, Gate: ${voiceGate.toFixed(4)}), but preceding silence was only ${silenceDuration.toFixed(0)}ms (< 500ms). Resetting silence window.`);
+              this.lastSilenceRejectLog = now;
+            }
             this.standbySilenceStart = now;
             this.consecutiveVoiceFrames = 0;
-            this.preRollBuffer = [];
             return;
           }
 
@@ -284,9 +288,9 @@ export class HalAudio {
           this.lastVoiceTime = now;
           this.turnBuffer.push(pcmChunk);
           const utteranceDuration = now - this.turnStartTime;
-          // Sandwich rule #2: utterance must be < 2.0s. If >= 2.0s, it's not a wake phrase!
-          if (utteranceDuration >= 2000) {
-            this.onLog(`🔇 [HalAudio] Standby utterance exceeded 2.0s (${(utteranceDuration / 1000).toFixed(2)}s). Discarding non-wake audio.`);
+          // Sandwich rule #2: utterance cap at 3.5s (relaxed so natural phrasing is never cut off)
+          if (utteranceDuration >= 3500) {
+            this.onLog(`🔇 [HalAudio] Standby utterance exceeded 3.5s (${(utteranceDuration / 1000).toFixed(2)}s). Discarding non-wake audio.`);
             this.turnBuffer = [];
             this.preRollBuffer = [];
             this.isSpeaking = false;
@@ -300,8 +304,9 @@ export class HalAudio {
         if (this.isSpeaking) {
           this.turnBuffer.push(pcmChunk);
           const elapsedSinceVoice = now - this.lastVoiceTime;
-          // Sandwich rule #3: trailing silence >= 1.0s
-          if (elapsedSinceVoice >= 1000) {
+          // Sandwich rule #3: trailing silence >= 800ms
+          const requiredDelay = this.sleeping ? 800 : this.SILENCE_DELAY_MS;
+          if (elapsedSinceVoice >= requiredDelay) {
             this.onLog(`🥪 [HalAudio] Sandwich profile matched! Spoken turn: ${((this.lastVoiceTime - this.turnStartTime) / 1000).toFixed(2)}s, trailing silence: ${(elapsedSinceVoice / 1000).toFixed(2)}s.`);
             this._finalizeTurn(elapsedSinceVoice);
             this.standbySilenceStart = performance.now();

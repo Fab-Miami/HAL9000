@@ -3,4 +3,5 @@ from . import consumers
 
 websocket_urlpatterns = [
     re_path(r'ws/hal/(?P<client_id>[\w-]+)/$', consumers.HalConsumer.as_asgi()),
+    re_path(r'ws/logs/?$', consumers.LogsConsumer.as_asgi()),
 ]

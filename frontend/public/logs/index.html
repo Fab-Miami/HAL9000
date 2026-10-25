@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HAL 9000 // Real-Time Telemetry & Debug Stream</title>
+  <style>
+    :root {
+      --bg-base: #08090c;
+      --bg-surface: #0e1117;
+      --bg-card: #141822;
+      --border-subtle: #202636;
+      --border-bright: #313b52;
+      --text-main: #e2e8f0;
+      --text-muted: #79869e;
+      --accent-red: #ff3344;
+      --accent-red-glow: rgba(255, 51, 68, 0.35);
+      --accent-green: #10b981;
+      --accent-green-glow: rgba(16, 185, 129, 0.3);
+      --accent-amber: #f59e0b;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #a855f7;
+      --accent-blue: #3b82f6;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* TOP HEADER */
+    header {
+      background: linear-gradient(180deg, #11141c 0%, #0a0c11 100%);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .eye-indicator {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff 0%, #ff2233 40%, #770011 100%);
+      box-shadow: 0 0 10px #ff2233, 0 0 20px var(--accent-red-glow);
+      animation: eyePulse 3s infinite ease-in-out;
+    }
+
+    @keyframes eyePulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50% { opacity: 1.0; transform: scale(1.12); }
+    }
+
+    .brand-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-v30 {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 51, 68, 0.15);
+      border: 1px solid var(--accent-red);
+      color: var(--accent-red);
+      font-weight: bold;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .conn-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+    }
+
+    .conn-dot.connected {
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green-glow);
+    }
+
+    .conn-dot.connecting {
+      background: var(--accent-amber);
+    }
+
+    /* TELEMETRY BAR / VU METER */
+    .telemetry-strip {
+      background: #090b10;
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 6px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .telem-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .telem-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    .telem-val {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .meter-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 140px;
+    }
+
+    .meter-bar-track {
+      flex: 1;
+      height: 6px;
+      background: #171d2b;
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .meter-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ff3344 100%);
+      transition: width 0.1s ease;
+    }
+
+    /* TOOLBAR CONTROLS */
+    .toolbar {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 8px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pill-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-btn:hover {
+      border-color: var(--border-bright);
+      color: var(--text-main);
+    }
+
+    .pill-btn.active {
+      background: #1e2638;
+      border-color: var(--accent-cyan);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    }
+
+    .pill-btn.active.red {
+      border-color: var(--accent-red);
+      box-shadow: 0 0 10px var(--accent-red-glow);
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-input {
+      background: #090b10;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 11px;
+      width: 160px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn:hover {
+      background: #1f2738;
+      border-color: var(--border-bright);
+    }
+
+    .btn.active-toggle {
+      background: #1e293b;
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    /* LOG STREAM CONTAINER */
+    .log-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px 16px;
+      scroll-behavior: smooth;
+    }
+
+    .log-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .log-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      line-height: 1.45;
+      word-break: break-word;
+      transition: background 0.1s;
+    }
+
+    .log-row:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .log-time {
+      color: #55627a;
+      flex-shrink: 0;
+      font-size: 11px;
+      user-select: none;
+      letter-spacing: -0.2px;
+    }
+
+    .log-tag {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      user-select: none;
+    }
+
+    .log-tag.wake {
+      background: rgba(255, 51, 68, 0.2);
+      border: 1px solid #ff3344;
+      color: #ff6677;
+    }
+
+    .log-tag.sandwich {
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid #f59e0b;
+      color: #fbbf24;
+    }
+
+    .log-tag.whisper {
+      background: rgba(6, 182, 212, 0.2);
+      border: 1px solid #06b6d4;
+      color: #67e8f9;
+    }
+
+    .log-tag.telemetry {
+      background: rgba(168, 85, 247, 0.2);
+      border: 1px solid #a855f7;
+      color: #d8b4fe;
+    }
+
+    .log-tag.system {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+    }
+
+    .log-tag.error {
+      background: rgba(239, 68, 68, 0.25);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+    }
+
+    .log-msg {
+      flex: 1;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+    }
+
+    .log-row.highlight-wake {
+      background: rgba(255, 51, 68, 0.08);
+      border-left: 3px solid var(--accent-red);
+    }
+
+    .log-row.highlight-wake .log-msg {
+      color: #ff99aa;
+      font-weight: 600;
+    }
+
+    .log-row.highlight-whisper {
+      background: rgba(6, 182, 212, 0.05);
+      border-left: 3px solid var(--accent-cyan);
+    }
+
+    .log-row.highlight-sandwich {
+      background: rgba(245, 158, 11, 0.05);
+      border-left: 3px solid var(--accent-amber);
+    }
+
+    .log-row.highlight-error {
+      background: rgba(239, 68, 68, 0.12);
+      border-left: 3px solid #ef4444;
+    }
+
+    /* FOOTER BAR */
+    footer {
+      background: #0a0c10;
+      border-top: 1px solid var(--border-subtle);
+      padding: 6px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .empty-state {
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP HEADER -->
+  <header>
+    <div class="brand-section">
+      <div class="eye-indicator"></div>
+      <div class="brand-title">
+        <span>HAL 9000 // TELEMETRY STREAM</span>
+        <span class="badge-v30">v30 ACTIVE</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="conn-status">
+        <div id="connDot" class="conn-dot"></div>
+        <span id="connText">Connecting...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- TELEMETRY STRIP -->
+  <div class="telemetry-strip">
+    <div class="telem-item">
+      <span class="telem-label">Microphone RMS:</span>
+      <span id="telemRms" class="telem-val">--</span>
+    </div>
+    <div class="telem-item">
+      <span class="telem-label">Floor:</span>
+      <span id="telemFloor" class="telem-val">--</span>
+    </div>
+    <div class="telem-item">
+      <span class="telem-label">Gate:</span>
+      <span id="telemGate" class="telem-val">--</span>
+    </div>
+    <div class="telem-item meter-container">
+      <span class="telem-label">VU:</span>
+      <div class="meter-bar-track">
+        <div id="meterFill" class="meter-bar-fill"></div>
+      </div>
+    </div>
+    <div class="telem-item">
+      <span class="telem-label">Client Mode:</span>
+      <span id="telemState" class="telem-val">Standby (Sleeping)</span>
+    </div>
+    <div class="telem-item" style="margin-left: auto;">
+      <span class="telem-label">Total Logs:</span>
+      <span id="logCount" class="telem-val">0</span>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="filter-pills">
+      <button class="pill-btn active" data-filter="all">All</button>
+      <button class="pill-btn red" data-filter="wake">☀️ Wake / Standby</button>
+      <button class="pill-btn" data-filter="sandwich">🥪 Sandwich VAD</button>
+      <button class="pill-btn" data-filter="whisper">🎙️ Whisper</button>
+      <button class="pill-btn" data-filter="client">📱 iPhone Telemetry</button>
+      <button class="pill-btn" data-filter="error">⚠️ Warnings / Errors</button>
+    </div>
+
+    <div class="toolbar-actions">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search filter...">
+      <button id="autoscrollBtn" class="btn active-toggle" title="Automatically keep scrolling to latest entry">Auto-scroll: ON</button>
+      <button id="pauseBtn" class="btn" title="Pause receiving new stream entries">Pause</button>
+      <button id="clearBtn" class="btn" title="Clear logs in view and on server">Clear</button>
+      <button id="copyBtn" class="btn" title="Copy visible logs to clipboard">Copy</button>
+    </div>
+  </div>
+
+  <!-- LOG CONTAINER -->
+  <main class="log-container" id="logContainer">
+    <div class="log-list" id="logList">
+      <div class="empty-state">Connecting to HAL 9000 telemetry socket...</div>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <span>Miami Beach Console // Direct Faster-Whisper + Gemini 3.5 Telemetry</span>
+    <span id="filterStats">Showing 0 entries</span>
+  </footer>
+
+  <script>
+    (function() {
+      const logContainer = document.getElementById('logContainer');
+      const logList = document.getElementById('logList');
+      const connDot = document.getElementById('connDot');
+      const connText = document.getElementById('connText');
+      const telemRms = document.getElementById('telemRms');
+      const telemFloor = document.getElementById('telemFloor');
+      const telemGate = document.getElementById('telemGate');
+      const telemState = document.getElementById('telemState');
+      const meterFill = document.getElementById('meterFill');
+      const logCount = document.getElementById('logCount');
+      const filterStats = document.getElementById('filterStats');
+      const searchInput = document.getElementById('searchInput');
+      const autoscrollBtn = document.getElementById('autoscrollBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const copyBtn = document.getElementById('copyBtn');
+      const pillButtons = document.querySelectorAll('.pill-btn');
+
+      let allLogs = [];
+      let currentFilter = 'all';
+      let searchQuery = '';
+      let autoScroll = true;
+      let isPaused = false;
+      let ws = null;
+      let reconnectAttempts = 0;
+
+      // Classify log messages
+      function classifyLog(msg) {
+        const m = msg.toLowerCase();
+        if (m.includes('wake') || m.includes('sleep') || m.includes('standby mode') || m.includes('☀️') || m.includes('🌙') || m.includes('💤')) {
+          return { tag: 'wake', className: 'wake', highlight: 'highlight-wake' };
+        }
+        if (m.includes('sandwich') || m.includes('speech onset') || m.includes('silence') || m.includes('utterance') || m.includes('🥪')) {
+          return { tag: 'sandwich', className: 'sandwich', highlight: 'highlight-sandwich' };
+        }
+        if (m.includes('whisper') || m.includes('transcript') || m.includes('local pcm') || m.includes('🎙️')) {
+          return { tag: 'whisper', className: 'whisper', highlight: 'highlight-whisper' };
+        }
+        if (m.includes('telemetry') || m.includes('halaudio') || m.includes('volume') || m.includes('📱')) {
+          return { tag: 'client', className: 'telemetry', highlight: '' };
+        }
+        if (m.includes('error') || m.includes('timed out') || m.includes('discard') || m.includes('warning') || m.includes('⚠️') || m.includes('❌')) {
+          return { tag: 'error', className: 'error', highlight: 'highlight-error' };
+        }
+        return { tag: 'system', className: 'system', highlight: '' };
+      }
+
+      function parseTelemetryFromMsg(msg) {
+        // e.g. "Standby speech onset detected (RMS: 0.0421, Floor: 0.0034, Gate: 0.0078)"
+        // or "RMS: 0.0123, Floor: 0.0032, Gate: 0.0075"
+        const rmsMatch = msg.match(/RMS:\s*([0-9.]+)/i);
+        const floorMatch = msg.match(/Floor:\s*([0-9.]+)/i);
+        const gateMatch = msg.match(/Gate:\s*([0-9.]+)/i);
+
+        if (rmsMatch) {
+          const rms = parseFloat(rmsMatch[1]);
+          telemRms.textContent = rms.toFixed(4);
+          // Scale VU meter: 0 to 0.15 is typical voice range
+          const pct = Math.min(100, Math.max(0, (rms / 0.12) * 100));
+          meterFill.style.width = pct + '%';
+        }
+        if (floorMatch) telemFloor.textContent = parseFloat(floorMatch[1]).toFixed(4);
+        if (gateMatch) telemGate.textContent = parseFloat(gateMatch[1]).toFixed(4);
+
+        if (msg.includes('Verified wake phrase') || msg.includes('Optical wake triggered')) {
+          telemState.textContent = 'Active (Awake)';
+          telemState.style.color = '#10b981';
+        } else if (msg.includes('Standby mode set to: true') || msg.includes('Entering Standby now') || msg.includes('Remaining asleep')) {
+          telemState.textContent = 'Standby (Sleeping)';
+          telemState.style.color = '#e2e8f0';
+        }
+      }
+
+      function createLogRow(entry) {
+        const info = classifyLog(entry.msg);
+        parseTelemetryFromMsg(entry.msg);
+
+        const row = document.createElement('div');
+        row.className = `log-row ${info.highlight}`;
+        row.dataset.tag = info.tag;
+        row.dataset.raw = (entry.time + ' ' + entry.msg).toLowerCase();
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'log-time';
+        // Extract time portion if ISO
+        timeSpan.textContent = entry.time.split(' ')[1] || entry.time;
+
+        const tagSpan = document.createElement('span');
+        tagSpan.className = `log-tag ${info.className}`;
+        tagSpan.textContent = info.tag;
+
+        const msgSpan = document.createElement('span');
+        msgSpan.className = 'log-msg';
+        msgSpan.textContent = entry.msg;
+
+        row.appendChild(timeSpan);
+        row.appendChild(tagSpan);
+        row.appendChild(msgSpan);
+
+        return row;
+      }
+
+      function matchesFilter(row) {
+        const tag = row.dataset.tag;
+        if (currentFilter !== 'all') {
+          if (currentFilter === 'wake' && tag !== 'wake') return false;
+          if (currentFilter === 'sandwich' && tag !== 'sandwich') return false;
+          if (currentFilter === 'whisper' && tag !== 'whisper') return false;
+          if (currentFilter === 'client' && tag !== 'client') return false;
+          if (currentFilter === 'error' && tag !== 'error') return false;
+        }
+
+        if (searchQuery) {
+          const raw = row.dataset.raw || '';
+          if (!raw.includes(searchQuery)) return false;
+        }
+
+        return true;
+      }
+
+      function renderLogs() {
+        if (allLogs.length === 0) {
+          logList.innerHTML = '<div class="empty-state">No logs recorded yet. Waiting for events...</div>';
+          filterStats.textContent = 'Showing 0 entries';
+          logCount.textContent = '0';
+          return;
+        }
+
+        logList.innerHTML = '';
+        let visibleCount = 0;
+
+        for (let i = 0; i < allLogs.length; i++) {
+          const row = createLogRow(allLogs[i]);
+          if (matchesFilter(row)) {
+            logList.appendChild(row);
+            visibleCount++;
+          }
+        }
+
+        logCount.textContent = allLogs.length;
+        filterStats.textContent = `Showing ${visibleCount} of ${allLogs.length} entries`;
+
+        if (autoScroll) {
+          logContainer.scrollTop = logContainer.scrollHeight;
+        }
+      }
+
+      function appendLog(entry) {
+        allLogs.push(entry);
+        if (allLogs.length > 600) {
+          allLogs.shift();
+        }
+
+        if (isPaused) return;
+
+        const emptyEl = logList.querySelector('.empty-state');
+        if (emptyEl) emptyEl.remove();
+
+        const row = createLogRow(entry);
+        if (matchesFilter(row)) {
+          logList.appendChild(row);
+        }
+
+        logCount.textContent = allLogs.length;
+        const visibleRows = logList.querySelectorAll('.log-row').length;
+        filterStats.textContent = `Showing ${visibleRows} of ${allLogs.length} entries`;
+
+        if (autoScroll) {
+          logContainer.scrollTop = logContainer.scrollHeight;
+        }
+      }
+
+      // Auto-detect user manual scrolling to pause auto-scroll
+      logContainer.addEventListener('scroll', () => {
+        const threshold = 40;
+        const isNearBottom = (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight) < threshold;
+        if (!isNearBottom && autoScroll) {
+          autoScroll = false;
+          autoscrollBtn.classList.remove('active-toggle');
+          autoscrollBtn.textContent = 'Auto-scroll: OFF';
+        }
+      });
+
+      autoscrollBtn.addEventListener('click', () => {
+        autoScroll = !autoScroll;
+        autoscrollBtn.classList.toggle('active-toggle', autoScroll);
+        autoscrollBtn.textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+        if (autoScroll) {
+          logContainer.scrollTop = logContainer.scrollHeight;
+        }
+      });
+
+      pauseBtn.addEventListener('click', () => {
+        isPaused = !isPaused;
+        pauseBtn.classList.toggle('active-toggle', isPaused);
+        pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+        if (!isPaused) {
+          renderLogs();
+        }
+      });
+
+      clearBtn.addEventListener('click', () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send('CLEAR');
+        }
+        allLogs = [];
+        renderLogs();
+      });
+
+      copyBtn.addEventListener('click', () => {
+        const visibleRows = Array.from(logList.querySelectorAll('.log-row'));
+        const text = visibleRows.map(r => {
+          const t = r.querySelector('.log-time').textContent;
+          const tag = r.querySelector('.log-tag').textContent;
+          const msg = r.querySelector('.log-msg').textContent;
+          return `[${t}] [${tag}] ${msg}`;
+        }).join('\n');
+
+        navigator.clipboard.writeText(text).then(() => {
+          const old = copyBtn.textContent;
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => copyBtn.textContent = old, 1500);
+        });
+      });
+
+      // Filter pills
+      pillButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          pillButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.filter;
+          renderLogs();
+        });
+      });
+
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim().toLowerCase();
+        renderLogs();
+      });
+
+      // WebSocket Connection
+      function connect() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/logs/`;
+
+        connDot.className = 'conn-dot connecting';
+        connText.textContent = 'Connecting...';
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          connDot.className = 'conn-dot connected';
+          connText.textContent = 'Live Connected';
+          reconnectAttempts = 0;
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'history') {
+              allLogs = data.logs || [];
+              renderLogs();
+            } else if (data.type === 'log') {
+              appendLog(data.entry);
+            }
+          } catch (e) {
+            console.error('Parse error:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          connDot.className = 'conn-dot';
+          connText.textContent = 'Disconnected';
+          const delay = Math.min(5000, 1000 * Math.pow(1.5, reconnectAttempts++));
+          setTimeout(connect, delay);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      }
+
+      connect();
+    })();
+  </script>
+</body>
+</html>

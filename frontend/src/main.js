@@ -265,10 +265,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v29 Auto-Adaptive Noise Baseline).');
+      log('✅ [WS] Connected to HAL backend (v30 Real-Time Telemetry & Robust Wake).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v29',
+        version: 'v30',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));
@@ -355,11 +355,10 @@ const halAudio = new HalAudio({
 
   // User finished speaking -> Send audio turn to Gemini
   onTurnComplete: (wavBytes) => {
-    setPersistentLed(false);
-    clearLedAnimations();
-    if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-
     if (currentState !== State.SLEEPING) {
+      setPersistentLed(false);
+      clearLedAnimations();
+      if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
       triggerLedTag('listen-done');
       setHalState(State.THINKING);
       resetSleepTimer();

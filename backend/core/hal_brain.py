@@ -79,23 +79,28 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
     if local_whisper is None or not wav_bytes:
         return ""
     try:
+        t0 = time.time()
         audio = wav_bytes_to_float32(wav_bytes)
         if len(audio) == 0:
             return ""
 
+        peak = float(np.max(np.abs(audio)))
+        # Normalize and boost low-amplitude audio captured through sealed enclosure glass
+        gain = 1.0
+        if peak > 0.003:
+            gain = min(12.0, 0.70 / peak)
+            audio = audio * gain
+
         # INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
         # 1. vad_filter=True is MANDATORY AND MUST NEVER BE DISABLED (NEVER SET vad_filter=False):
         #    Silero VAD drops ambient TV/video noise, music, and room rumble before Whisper decoding.
-        #    Disabling Silero VAD causes Whisper to receive raw room noise and hallucinate words!
-        # 2. initial_prompt="HAL, wake up.": Primes Whisper with both the proper noun HAL and the
-        #    wake command to guide acoustic decoding through enclosure glass and vocal accents.
-        #    Silero VAD (vad_filter=True) strictly drops ambient room noise before Whisper decoding.
+        # 2. initial_prompt="HAL, wake up.": Primes Whisper with proper noun HAL and context.
         # 3. temperature=0.0 and beam_size=1 provide deterministic low-latency CPU transcription.
         segments, _ = local_whisper.transcribe(
             audio,
             initial_prompt="HAL, wake up.",
             vad_filter=True,
-            vad_parameters=dict(threshold=0.5, min_speech_duration_ms=250),
+            vad_parameters=dict(threshold=0.30, min_speech_duration_ms=150),
             temperature=0.0,
             condition_on_previous_text=False,
             repetition_penalty=1.2,
@@ -105,11 +110,14 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
         )
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
         full_text = " ".join(texts).strip()
+        elapsed_ms = int((time.time() - t0) * 1000)
         if full_text:
-            print(f"🎙️ [Standby Whisper] Detected: \"{full_text}\" ($0.00 cloud cost)")
+            print(f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> \"{full_text}\" ($0.00 cloud cost)", flush=True)
+        else:
+            print(f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> [No Speech]", flush=True)
         return full_text
     except Exception as e:
-        print(f"⚠️ [Whisper Error]: {e}")
+        print(f"⚠️ [Whisper Error]: {e}", flush=True)
         return ""
 
 async def transcribe_audio_gemini(wav_bytes: bytes) -> str:
