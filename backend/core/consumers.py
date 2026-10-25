@@ -88,24 +88,25 @@ def split_first_sentence(text: str):
 def is_hal_wake_word(text: str) -> bool:
     if not text:
         return False
-    # Normalize Whisper acronym variations: "H.A.L.", "H. A. L.", "H A L" -> "hal"
-    normalized = re.sub(r'\bh\s*\.?\s*a\s*\.?\s*l\.?\b', 'hal', text, flags=re.IGNORECASE)
+    # Normalize Whisper acronym/hyphen variations: "H.A.L.", "H-A-L", "h-a-l", "H. A. L.", "H A L" -> "hal"
+    normalized = re.sub(r'\bh\s*[\.\-]?\s*a\s*[\.\-]?\s*l[\.\-]?\b', 'hal', text, flags=re.IGNORECASE)
     clean = re.sub(r'[.,!?;:\"\'\-]', ' ', normalized.strip().lower())
     clean = re.sub(r'\bh\s+a\s+l\b', 'hal', clean)
     clean = re.sub(r'\s+', ' ', clean).strip()
     if not clean:
         return False
 
-    hal_tokens = r'(?:hal|hell|al)'
+    # Phonetic variations of HAL heard through glass enclosure: hal, hah, huh, ha, hu, ho, how, haw, hell, hel, al, all, el, ell
+    hal_tokens = r'(?:hal|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|how|haw)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
 
     # Direction 1: [HAL variation] + (optional please) + wake up
-    # Matches: "hal wake up", "hey hal wake up", "hi hal wake up", "hello hal wake up", "ok hal wake up", "hal please wake up", etc.
+    # Matches: "hal wake up", "hey hal wake up", "hi hal wake up", "hello hal wake up", "ok hal wake up", "hah wake up", "huh wake up", etc.
     if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+(?:please\s+)?wake\s*up\b', clean, re.IGNORECASE):
         return True
 
     # Direction 2: wake up + (optional please) + [HAL variation]
-    # Matches: "wake up hal", "wake up please hal", "wake up hey hal", "wake up ok hal", etc.
+    # Matches: "wake up hal", "wake up please hal", "wake up hey hal", "wake up huh", "wake up hah", etc.
     if re.search(rf'\bwake\s*up\s+(?:please\s+)?(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
@@ -162,11 +163,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v24':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v24). Triggering remote reload...")
+                        if client_ver != 'v25':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v25). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v24 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v25 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
