@@ -10,9 +10,11 @@ from . import hal_brain
 # Global in-memory log buffer & real-time subscriber set for https://hal.tuning.net/logs
 RECENT_LOGS = collections.deque(maxlen=400)
 LOG_SUBSCRIBERS = set()
+MAIN_EVENT_LOOP = None
 
 def log(msg):
     """Print with immediate flush so journalctl shows output in real time and broadcasts to live debug viewers."""
+    global MAIN_EVENT_LOOP
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     entry = {"time": timestamp, "msg": str(msg)}
     RECENT_LOGS.append(entry)
@@ -20,11 +22,18 @@ def log(msg):
 
     if LOG_SUBSCRIBERS:
         payload = json.dumps({"type": "log", "entry": entry})
-        for sub in list(LOG_SUBSCRIBERS):
-            try:
-                asyncio.create_task(sub.send(text_data=payload))
-            except Exception:
-                LOG_SUBSCRIBERS.discard(sub)
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = MAIN_EVENT_LOOP
+
+        if loop and loop.is_running():
+            for sub in list(LOG_SUBSCRIBERS):
+                try:
+                    asyncio.run_coroutine_threadsafe(sub.send(text_data=payload), loop)
+                except Exception:
+                    pass
 
 def clean_speech_text(text: str) -> str:
     """
@@ -139,6 +148,8 @@ def is_hal_wake_word(text: str) -> bool:
 class LogsConsumer(AsyncWebsocketConsumer):
     """Real-time log streaming consumer for https://hal.tuning.net/logs debug viewer."""
     async def connect(self):
+        global MAIN_EVENT_LOOP
+        MAIN_EVENT_LOOP = asyncio.get_running_loop()
         await self.accept()
         LOG_SUBSCRIBERS.add(self)
         history = list(RECENT_LOGS)
@@ -160,6 +171,8 @@ class LogsConsumer(AsyncWebsocketConsumer):
 
 class HalConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        global MAIN_EVENT_LOOP
+        MAIN_EVENT_LOOP = asyncio.get_running_loop()
         self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
         log(f"🔌 [HalConsumer] Connection from client: {self.client_id}")
         await self.accept()
