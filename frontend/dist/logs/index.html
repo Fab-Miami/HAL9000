@@ -379,28 +379,97 @@
     }
 
     .log-row.highlight-wake {
-      background: rgba(255, 51, 68, 0.08);
-      border-left: 3px solid var(--accent-red);
+      background: linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(10, 15, 20, 0.6) 100%);
+      border-left: 4px solid var(--accent-green);
+      border-top: 1px solid rgba(16, 185, 129, 0.3);
+      border-bottom: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 6px 10px;
     }
 
     .log-row.highlight-wake .log-msg {
-      color: #ff99aa;
+      color: #6ee7b7;
+      font-weight: 700;
+    }
+
+    .log-row.highlight-wake-rejected {
+      background: linear-gradient(90deg, rgba(239, 68, 68, 0.14) 0%, rgba(10, 15, 20, 0.6) 100%);
+      border-left: 4px solid var(--accent-red);
+      border-top: 1px solid rgba(239, 68, 68, 0.25);
+      border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+      padding: 6px 10px;
+    }
+
+    .log-row.highlight-wake-rejected .log-msg {
+      color: #fca5a5;
       font-weight: 600;
     }
 
     .log-row.highlight-whisper {
-      background: rgba(6, 182, 212, 0.05);
-      border-left: 3px solid var(--accent-cyan);
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.20) 0%, rgba(14, 25, 45, 0.7) 100%);
+      border-left: 4px solid var(--accent-cyan);
+      border-top: 1px solid rgba(6, 182, 212, 0.35);
+      border-bottom: 1px solid rgba(6, 182, 212, 0.35);
+      margin: 4px 0;
+      padding: 8px 12px;
     }
 
-    .log-row.highlight-sandwich {
-      background: rgba(245, 158, 11, 0.05);
-      border-left: 3px solid var(--accent-amber);
+    .log-row.highlight-whisper .log-msg {
+      color: #38bdf8;
+      font-size: 13.5px;
+      font-weight: 700;
     }
 
-    .log-row.highlight-error {
-      background: rgba(239, 68, 68, 0.12);
-      border-left: 3px solid #ef4444;
+    .speech-highlight {
+      background: rgba(254, 240, 138, 0.22);
+      color: #fef08a !important;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(254, 240, 138, 0.55);
+      font-size: 14.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: inline-block;
+      margin: 0 4px;
+      text-shadow: 0 0 10px rgba(254, 240, 138, 0.4);
+    }
+
+    .heard-box {
+      background: rgba(6, 182, 212, 0.14);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 6px;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .telem-heard-text {
+      color: #fef08a;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-matched {
+      background: rgba(16, 185, 129, 0.25);
+      border: 1px solid #10b981;
+      color: #34d399;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 800;
+      margin-left: 6px;
+    }
+
+    .badge-rejected {
+      background: rgba(239, 68, 68, 0.25);
+      border: 1px solid #ef4444;
+      color: #f87171;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 800;
+      margin-left: 6px;
     }
 
     /* FOOTER BAR */
@@ -514,6 +583,10 @@
       <span class="telem-label">Client Mode:</span>
       <span id="telemState" class="telem-val">Standby (Sleeping)</span>
     </div>
+    <div class="telem-item heard-box">
+      <span class="telem-label">👂 LAST HEARD:</span>
+      <span id="telemHeard" class="telem-heard-text">Waiting for speech...</span>
+    </div>
     <div class="telem-item" style="margin-left: auto;">
       <span class="telem-label">Total Logs:</span>
       <span id="logCount" class="telem-val">0</span>
@@ -587,17 +660,25 @@
       let ws = null;
       let reconnectAttempts = 0;
 
+      const telemHeard = document.getElementById('telemHeard');
+
       // Classify log messages
       function classifyLog(msg) {
         const m = msg.toLowerCase();
+        if (m.includes('whisper') || m.includes('transcript') || m.includes('local pcm') || m.includes('🎙️')) {
+          return { tag: 'whisper', className: 'whisper', highlight: 'highlight-whisper' };
+        }
+        if (m.includes('verified wake phrase') || m.includes('optical wake')) {
+          return { tag: 'wake', className: 'wake', highlight: 'highlight-wake' };
+        }
+        if (m.includes('ignored non-wake') || m.includes('remaining asleep')) {
+          return { tag: 'wake', className: 'wake', highlight: 'highlight-wake-rejected' };
+        }
         if (m.includes('wake') || m.includes('sleep') || m.includes('standby mode') || m.includes('☀️') || m.includes('🌙') || m.includes('💤')) {
           return { tag: 'wake', className: 'wake', highlight: 'highlight-wake' };
         }
         if (m.includes('sandwich') || m.includes('speech onset') || m.includes('silence') || m.includes('utterance') || m.includes('🥪')) {
           return { tag: 'sandwich', className: 'sandwich', highlight: 'highlight-sandwich' };
-        }
-        if (m.includes('whisper') || m.includes('transcript') || m.includes('local pcm') || m.includes('🎙️')) {
-          return { tag: 'whisper', className: 'whisper', highlight: 'highlight-whisper' };
         }
         if (m.includes('telemetry') || m.includes('halaudio') || m.includes('volume') || m.includes('📱')) {
           return { tag: 'client', className: 'telemetry', highlight: '' };
@@ -609,8 +690,6 @@
       }
 
       function parseTelemetryFromMsg(msg) {
-        // e.g. "Standby speech onset detected (RMS: 0.0421, Floor: 0.0034, Gate: 0.0078)"
-        // or "RMS: 0.0123, Floor: 0.0032, Gate: 0.0075"
         const rmsMatch = msg.match(/RMS:\s*([0-9.]+)/i);
         const floorMatch = msg.match(/Floor:\s*([0-9.]+)/i);
         const gateMatch = msg.match(/Gate:\s*([0-9.]+)/i);
@@ -618,7 +697,6 @@
         if (rmsMatch) {
           const rms = parseFloat(rmsMatch[1]);
           telemRms.textContent = rms.toFixed(4);
-          // Scale VU meter: 0 to 0.15 is typical voice range
           const pct = Math.min(100, Math.max(0, (rms / 0.12) * 100));
           meterFill.style.width = pct + '%';
         }
@@ -631,6 +709,21 @@
         } else if (msg.includes('Standby mode set to: true') || msg.includes('Entering Standby now') || msg.includes('Remaining asleep')) {
           telemState.textContent = 'Standby (Sleeping)';
           telemState.style.color = '#e2e8f0';
+        }
+
+        // Extract speech transcript for the top banner
+        const quoteMatch = msg.match(/->\s*"([^"]+)"|Transcript\]:\s*"([^"]+)"|audio:\s*"([^"]+)"|phrase:\s*"([^"]+)"/i);
+        if (quoteMatch) {
+          const heard = quoteMatch[1] || quoteMatch[2] || quoteMatch[3] || quoteMatch[4];
+          if (heard && telemHeard) {
+            if (msg.includes('Verified wake phrase') || msg.includes('Optical wake')) {
+              telemHeard.innerHTML = `👉 "${heard}" <span class="badge-matched">✅ WAKE DETECTED</span>`;
+            } else if (msg.includes('Ignored non-wake') || msg.includes('Remaining asleep')) {
+              telemHeard.innerHTML = `👉 "${heard}" <span class="badge-rejected">❌ REJECTED</span>`;
+            } else {
+              telemHeard.innerHTML = `👉 "${heard}"`;
+            }
+          }
         }
       }
 
@@ -645,7 +738,6 @@
 
         const timeSpan = document.createElement('span');
         timeSpan.className = 'log-time';
-        // Extract time portion if ISO
         timeSpan.textContent = entry.time.split(' ')[1] || entry.time;
 
         const tagSpan = document.createElement('span');
@@ -654,7 +746,15 @@
 
         const msgSpan = document.createElement('span');
         msgSpan.className = 'log-msg';
-        msgSpan.textContent = entry.msg;
+
+        const quoteMatch = entry.msg.match(/"([^"]+)"/);
+        if (quoteMatch && (entry.msg.includes('Whisper') || entry.msg.includes('Transcript') || entry.msg.includes('wake') || entry.msg.includes('phrase'))) {
+          const heard = quoteMatch[1];
+          const highlighted = `<span class="speech-highlight">"${heard}"</span>`;
+          msgSpan.innerHTML = entry.msg.replace(`"${heard}"`, highlighted);
+        } else {
+          msgSpan.textContent = entry.msg;
+        }
 
         row.appendChild(timeSpan);
         row.appendChild(tagSpan);

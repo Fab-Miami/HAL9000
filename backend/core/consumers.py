@@ -111,8 +111,8 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
-    # Phonetic variations of HAL heard through glass enclosure: hal, hah, huh, ha, hu, ho, how, haw, hell, hel, al, all, el, ell, hi, high, hai, hy, hie, hey, hay, hug, hugg, hugs
-    hal_tokens = r'(?:hal|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|how|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs)'
+    # Phonetic variations of HAL heard through glass enclosure: hal, hall, hard, heart, hot, how, hold, hawk, paul, park, hole, hell, hel, al, all, el, ell, hah, huh, ha, hu, ho, haw, hi, high, hai, hy, hie, hey, hay, hug, hugg, hugs
+    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|paul|park|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
     # "wake up", "wakeup", "waiker", "waker", "wake", "woke up", "woke", "we get (up)", "we go", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking"
     wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?)'
