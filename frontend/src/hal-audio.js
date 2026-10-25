@@ -184,29 +184,50 @@ export class HalAudio {
       return;
     }
 
-    // Dynamic noise floor tracking (EMA)
+    // =======================================================================
+    // AUTO-ADAPTIVE ACOUSTIC NOISE BASELINE (Asymmetric Leaky Minimum Follower)
+    // Seamlessly adapts to quiet rooms, air conditioning, and room rumble.
+    // =======================================================================
     if (this.noiseFloor === undefined) {
-      this.noiseFloor = rms;
+      this.noiseFloor = Math.max(0.0010, rms);
     } else {
-      if (rms < this.noiseFloor) {
-        this.noiseFloor = this.noiseFloor * 0.95 + rms * 0.05;
+      if (this.isSpeaking) {
+        // PRINCIPLE 1: SPEECH INHIBIT
+        // When speech is actively in progress, FREEZE upward tracking completely.
+        // Never allow user speech or dialogue to drag the ambient floor upward!
+        if (rms < this.noiseFloor) {
+          this.noiseFloor = this.noiseFloor * 0.98 + rms * 0.02;
+        }
       } else {
-        this.noiseFloor = this.noiseFloor * 0.995 + rms * 0.005;
+        // PRINCIPLE 2: ASYMMETRIC AMBIENT TRACKING
+        if (rms < this.noiseFloor) {
+          // Noise dropped (AC turned off, room quieted):
+          // Fast descent (~1.5s recovery) to restore sensitivity immediately.
+          this.noiseFloor = this.noiseFloor * 0.92 + rms * 0.08;
+        } else {
+          // Noise rose (AC turned on, fan running):
+          // Adapt SLOWLY upwards (~10-15s time constant).
+          // If it's a huge transient spike (> 3.5x baseline), don't treat it as baseline yet.
+          const creepRate = (rms > this.noiseFloor * 3.5) ? 0.0005 : 0.0025;
+          this.noiseFloor = this.noiseFloor * (1.0 - creepRate) + rms * creepRate;
+        }
       }
+      // Never drop below physical ADC noise floor
+      if (this.noiseFloor < 0.0010) this.noiseFloor = 0.0010;
     }
 
-    // Calibrated sensitivity for iPhone behind glass inside desktop enclosure:
-    // Dynamic noise gate rejects ambient room hum, air conditioning, and distant rustle.
-    const baseGateFloor = this.sleeping ? 0.007 : 0.006;
-    const noiseMultiplier = this.sleeping ? 1.35 : 1.30;
-    const gateOffset = this.sleeping ? 0.0040 : 0.0035;
-    const noiseGate = Math.max(baseGateFloor, this.noiseFloor * noiseMultiplier + gateOffset);
-    const voiceDelta = rms - noiseGate;
+    // =======================================================================
+    // DYNAMIC SIGNAL-TO-NOISE RATIO (SNR) VOICE GATE
+    // Standby: requires +5 dB (1.80x) above ambient baseline to reject ambient TV chatter
+    // Active: requires +3.5 dB (1.50x) above ambient baseline for natural fluid conversation
+    // =======================================================================
+    const snrMultiplier = this.sleeping ? 1.80 : 1.50;
+    const safetyMargin = this.sleeping ? 0.0018 : 0.0012;
+    const voiceGate = this.noiseFloor * snrMultiplier + safetyMargin;
 
-    // In standby: require intentional vocal volume (0.0025) so ambient video chatter does not trigger turns.
-    const voiceThreshold = this.sleeping ? 0.0025 : 0.0020;
-    const ringLevel = (voiceDelta > voiceThreshold)
-      ? Math.min(1.0, 0.40 + (voiceDelta - voiceThreshold) * 35.0)
+    const voiceDelta = rms - voiceGate;
+    const ringLevel = (voiceDelta > 0)
+      ? Math.min(1.0, 0.35 + (voiceDelta / (this.noiseFloor * 2.0 + 0.01)) * 0.65)
       : 0.0;
 
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
@@ -245,7 +266,7 @@ export class HalAudio {
             this.isSpeaking = true;
             this.turnStartTime = now;
             this.lastVoiceTime = now;
-            this.onLog('🗣️ [HalAudio] Standby speech onset detected (preceding silence >= 2.0s satisfied).');
+            this.onLog(`🗣️ [HalAudio] Standby speech onset detected (RMS: ${rms.toFixed(4)}, Floor: ${this.noiseFloor.toFixed(4)}, Gate: ${voiceGate.toFixed(4)}).`);
             this.turnBuffer = [];
             for (let i = 0; i < this.preRollBuffer.length; i++) {
               this.turnBuffer.push(this.preRollBuffer[i]);
@@ -308,7 +329,7 @@ export class HalAudio {
           if (this.consecutiveVoiceFrames >= 2) {
             this.isSpeaking = true;
             this.turnStartTime = now;
-            this.onLog('🗣️ [HalAudio] User speech detected (Turn started).');
+            this.onLog(`🗣️ [HalAudio] User speech detected (RMS: ${rms.toFixed(4)}, Floor: ${this.noiseFloor.toFixed(4)}, Gate: ${voiceGate.toFixed(4)}).`);
             this.turnBuffer = [];
             for (let i = 0; i < this.preRollBuffer.length; i++) {
               this.turnBuffer.push(this.preRollBuffer[i]);
