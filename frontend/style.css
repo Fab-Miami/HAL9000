@@ -221,17 +221,21 @@ html, body {
 }
 
 #layer-center-on.eye-waking {
-  animation: anim-eye-fade-in 3s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both !important;
+  animation: anim-eye-wake-ignite 2.5s ease-out forwards !important;
 }
 
-@keyframes anim-eye-fade-in {
+@keyframes anim-eye-wake-ignite {
   0% {
-    opacity: 0.0;
-    filter: drop-shadow(0 0 0px rgba(255, 0, 0, 0));
+    opacity: 1.0;
+    filter: drop-shadow(0 0 20px rgba(255, 30, 0, 1.0)) brightness(1.3);
   }
-  50% {
-    opacity: 0.6;
-    filter: drop-shadow(0 0 8px rgba(255, 30, 0, 0.5));
+  20% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 10px rgba(255, 20, 0, 0.7)) brightness(1.1);
+  }
+  60% {
+    opacity: 0.95;
+    filter: drop-shadow(0 0 8px rgba(255, 10, 0, 0.6));
   }
   100% {
     opacity: 1.0;

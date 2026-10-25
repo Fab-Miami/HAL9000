@@ -121,13 +121,13 @@ let eyeWakeTimer = null;
 function wakeUp() {
   pendingSleep = false;
   if (currentState !== State.SLEEPING) return;
-  log('☀️ [HAL 9000] Waking up from Standby (Central eye fading in over 3s).');
+  log('☀️ [HAL 9000] Waking up from Standby (Central eye ignites with immediate optical feedback).');
   setPersistentLed(false);
   clearLedAnimations();
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
   if (halAudio) halAudio.setSleeping(false);
 
-  // Optical assembly: 3-second smooth cinematic fade-in for the central eye
+  // Optical assembly: Immediate ignition flare for the central eye
   setHalState(State.LISTENING);
   if (layerCenterOn) {
     clearTimeout(eyeWakeTimer);
@@ -138,7 +138,7 @@ function wakeUp() {
     layerCenterOn.style.opacity = '1.0';
     eyeWakeTimer = setTimeout(() => {
       if (layerCenterOn) layerCenterOn.classList.remove('eye-waking');
-    }, 3400);
+    }, 2600);
   }
   triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
 
@@ -250,10 +250,10 @@ function connectWebSocket() {
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      log('✅ [WS] Connected to HAL backend (v25 Phonetic Standby Gate).');
+      log('✅ [WS] Connected to HAL backend (v26 Bi-Directional Phonetic Standby Gate).');
       ws.send(JSON.stringify({
         type: 'init',
-        version: 'v25',
+        version: 'v26',
         volume: halAudio.volumeLevel,
         sleeping: currentState === State.SLEEPING,
       }));

@@ -87,12 +87,13 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
         # 1. vad_filter=True is MANDATORY AND MUST NEVER BE DISABLED (NEVER SET vad_filter=False):
         #    Silero VAD drops ambient TV/video noise, music, and room rumble before Whisper decoding.
         #    Disabling Silero VAD causes Whisper to receive raw room noise and hallucinate words!
-        # 2. initial_prompt="HAL.": Whisper is primed strictly with the proper noun "HAL." to recognize
-        #    the name without conversational phrases like "wake up" that could trigger false wakes.
+        # 2. initial_prompt="HAL, wake up.": Primes Whisper with both the proper noun HAL and the
+        #    wake command to guide acoustic decoding through enclosure glass and vocal accents.
+        #    Silero VAD (vad_filter=True) strictly drops ambient room noise before Whisper decoding.
         # 3. temperature=0.0 and beam_size=1 provide deterministic low-latency CPU transcription.
         segments, _ = local_whisper.transcribe(
             audio,
-            initial_prompt="HAL.",
+            initial_prompt="HAL, wake up.",
             vad_filter=True,
             vad_parameters=dict(threshold=0.5, min_speech_duration_ms=250),
             temperature=0.0,

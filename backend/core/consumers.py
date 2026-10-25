@@ -98,16 +98,19 @@ def is_hal_wake_word(text: str) -> bool:
 
     # Phonetic variations of HAL heard through glass enclosure: hal, hah, huh, ha, hu, ho, how, haw, hell, hel, al, all, el, ell
     hal_tokens = r'(?:hal|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|how|haw)'
+    # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
+    # "wake up", "wakeup", "waiker", "waker", "wake", "woke up", "woke", "we get (up)", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking"
+    wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake|woke\s*up|woke|we\s*get(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
 
-    # Direction 1: [HAL variation] + (optional please) + wake up
-    # Matches: "hal wake up", "hey hal wake up", "hi hal wake up", "hello hal wake up", "ok hal wake up", "hah wake up", "huh wake up", etc.
-    if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+(?:please\s+)?wake\s*up\b', clean, re.IGNORECASE):
+    # Direction 1: [HAL variation] + (optional please) + [wake variation]
+    # Matches: "hal wake up", "hal waiker", "hal we get", "hey hal wake up", "hah wake up", "huh waiker", etc.
+    if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+(?:please\s+)?{wake_tokens}\b', clean, re.IGNORECASE):
         return True
 
-    # Direction 2: wake up + (optional please) + [HAL variation]
-    # Matches: "wake up hal", "wake up please hal", "wake up hey hal", "wake up huh", "wake up hah", etc.
-    if re.search(rf'\bwake\s*up\s+(?:please\s+)?(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
+    # Direction 2: [wake variation] + (optional please) + [HAL variation]
+    # Matches: "wake up hal", "we get hal", "waiker hal", "wake up please hal", "wake hal", "wait up hal", etc.
+    if re.search(rf'\b{wake_tokens}\s+(?:please\s+)?(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
     return False
@@ -163,11 +166,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v25':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v25). Triggering remote reload...")
+                        if client_ver != 'v26':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v26). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v25 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v26 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
