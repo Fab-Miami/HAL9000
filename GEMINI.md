@@ -8,17 +8,19 @@
 - **Complete Elimination of `webkitSpeechRecognition`**: Web Speech API is permanently removed. This eliminates all iOS system dictation chimes ("BEEP BEEP"), eliminates Apple's delayed neural buffer lag / echo loops, eliminates Safari session dropouts, and provides native understanding of "HAL", proper nouns ("Fab", "Colozzi", "Mindolog"), and natural vocal inflection.
 - **Physical Muting & Zero Echo**: When HAL is speaking, audio capture is strictly muted. When playback completes, listening resumes instantly. There are ZERO delayed ghost buffers or echo loops.
 - **Strict Half-Duplex (Zero False Barge-In)**: Audio capture is strictly disabled whenever HAL is thinking or speaking. HAL is never interrupted during his turn, completely eliminating self-interruption, echo loops, and accidental cutoffs.
-- **Turn-Taking & Silence Detection**: Handled on the iPhone via vocal RMS. Turns finalize after strictly 1.8 seconds of natural silence during active conversation (`SILENCE_DELAY_MS = 1800`), and 2.5 seconds in standby.
+- **Turn-Taking & Silence Detection**: Handled on the iPhone via vocal RMS. Turns finalize after strictly 1.8 seconds of natural silence during active conversation (`SILENCE_DELAY_MS = 1800`), and 900ms in standby (capped at strictly 2.0s max chunk duration).
 - **Optical Feedback (Active Conversation ONLY)**: The outer acoustic ring (`#layer-ring-on` / `hal2026_ring_on.png`) visibly blinks and pulses in real time with the user's vocal volume RMS ONLY while actively speaking in conversation (`State.LISTENING`).
 - **STRICT ZERO OPTICAL BLINKING IN STANDBY (IF HAL SLEEPS, IT SLEEPS)**: When HAL is asleep in standby (`State.SLEEPING`), ALL LEDs ARE STRICTLY OFF (central red eye `#layer-center-on` = OFF, 3 auxiliary LEDs `#layer-3-led-on` = OFF, outer acoustic ring `#layer-ring-on` = OFF). Under NO circumstances should ANY LED blink, pulse, or illuminate while sleeping. The faceplate background (`#layer-everything-off`) deliberately fades down to 50% opacity (`opacity: 0.5 !important; transition: opacity 2s ease-in-out 0.25s !important;`). KEEP THIS 50% FADE AND ZERO-LED STANDBY PERMANENTLY.
-- **STANDBY WAKE WORD POLICY (MANDATORY COMPOUND PHRASES WITH HAL & WAKE PHONETIC EXPANSIONS)**:
+- **STANDBY WAKE WORD POLICY (SILENT OPTICAL WAKE & FASTER-WHISPER BASE.EN)**:
   Standby wake verification (`is_hal_wake_word`) MUST STRICTLY REQUIRE BOTH HAL's identity/variations (`hal`, `hah`, `huh`, `ha`, `hu`, `ho`, `how`, `haw`, `hell`, `hel`, `al`, `all`, `el`, `ell`) AND the wake command variations (`wake up`, `wakeup`, `waiker`, `waker`, `wake`, `woke up`, `woke`, `we get`, `wait up`, `way cup`, `wick up`, `wack up`, `whack up`, `make up`, `break up`, `waking`).
   Both directions are supported: `[HAL variations] + [WAKE variations]` OR `[WAKE variations] + [HAL variations]`. NEVER allow a single-syllable "HAL" alone, a lone greeting ("Hey HAL"), or a generic "Wake up" without HAL to trigger a wake-up.
+  SILENT OPTICAL WAKE DIRECTIVE:
+  When waking up from standby, HAL DOES NOT TALK. Turning ON the central eye with immediate crimson ignition and winking auxiliary LEDs is 100% of the feedback. Once the eye is ON, HAL enters `State.LISTENING` and only then processes the user's spoken prompt via Gemini 3.5.
   INVIOLABLE RULES FOR STANDBY WHISPER (DO NOT VIOLATE UNDER ANY CIRCUMSTANCES):
   1. `vad_filter=True` is MANDATORY AND MUST NEVER BE DISABLED (NEVER SET `vad_filter=False`):
      Silero VAD is the sole gatekeeper that drops non-speech room noise, video/TV audio, music, and ambient acoustics BEFORE Whisper decoding. Disabling Silero VAD forces raw room noise into Whisper, breaking the system. NEVER, EVER SET `vad_filter=False` FOR ANY REASON.
-  2. `initial_prompt="HAL, wake up."`:
-     Whisper is primed with the exact conversational context `"HAL, wake up."` (never with "9000"). This primes Whisper's acoustic and language model priors to recognize both proper noun and wake command through the sealed enclosure glass and vocal inflections.
+  2. `initial_prompt="HAL, wake up."` with `base.en`:
+     Whisper runs local `base.en` (~500ms inference) primed with `"HAL, wake up."` context (never with "9000").
   3. Acronym & hyphen normalization: Whisper transcribes "HAL" as "H.A.L.", "H-A-L", or "H A L". The wake parser normalizes these variations to "hal" before matching.
 
 

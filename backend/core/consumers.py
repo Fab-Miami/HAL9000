@@ -166,11 +166,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                 if isinstance(msg, dict):
                     if msg.get('type') == 'init':
                         client_ver = msg.get('version')
-                        if client_ver != 'v26':
-                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v26). Triggering remote reload...")
+                        if client_ver != 'v27':
+                            log(f"🔄 [HalConsumer] Legacy client detected (version: {client_ver} != v27). Triggering remote reload...")
                             await self.send(text_data="RELOAD")
                             return
-                        log("✅ [HalConsumer] Verified v26 client architecture connected.")
+                        log("✅ [HalConsumer] Verified v27 client architecture connected.")
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
@@ -277,12 +277,12 @@ class HalConsumer(AsyncWebsocketConsumer):
                     await self.send(text_data="DONE")
                     return
 
-                log(f"☀️ [Standby] Verified wake phrase: \"{local_transcript}\"! Waking HAL from standby.")
+                log(f"☀️ [Standby] Verified wake phrase: \"{local_transcript}\"! Optical wake triggered (silent eye ignition).")
                 self.is_client_sleeping = False
                 await self.send(text_data="WAKE")
                 await self.send(text_data="LED:WINK")
-                await self.send(text_data="THINKING")
-                user_transcript = local_transcript
+                await self.send(text_data="DONE")
+                return
             else:
                 await self.send(text_data="THINKING")
                 # In active conversation: transcribe in the background with Gemini 3.5 Flash-Lite

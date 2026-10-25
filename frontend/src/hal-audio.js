@@ -122,7 +122,7 @@ export class HalAudio {
       this.turnBuffer = [];
       this.isSpeaking = false;
     }
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 1000 : this.SILENCE_DELAY_MS}ms).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Silence delay: ${this.sleeping ? 900 : this.SILENCE_DELAY_MS}ms).`);
   }
 
   setListeningActive(active) {
@@ -239,11 +239,9 @@ export class HalAudio {
         }
       } else {
         this.lastVoiceTime = now;
-        this.turnBuffer.push(pcmChunk);
-        // Standby protection: if user speaks continuously or repeats wake phrases for >4.5s,
-        // force finalize so audio doesn't buffer endlessly waiting for silence!
-        if (this.sleeping && (now - this.turnStartTime >= 4500)) {
-          this._finalizeTurn(200);
+        // Standby protection: cap wake phrase turn at strictly 2.0s so standby chunks are compact and fast
+        if (this.sleeping && (now - this.turnStartTime >= 2000)) {
+          this._finalizeTurn(150);
           return;
         }
         // Active conversation protection: cap maximum turn duration at 25s
@@ -259,9 +257,9 @@ export class HalAudio {
         // Accumulating silence tail
         this.turnBuffer.push(pcmChunk);
         const elapsedSinceVoice = now - this.lastVoiceTime;
-        // In standby mode: compound wake phrase allows natural 2000ms pause to ensure both parts are captured!
+        // In standby mode: 900ms natural silence cutoff for fast wake-up response.
         // In active conversation: 1800ms natural conversational pause.
-        const requiredDelay = this.sleeping ? 2000 : this.SILENCE_DELAY_MS;
+        const requiredDelay = this.sleeping ? 900 : this.SILENCE_DELAY_MS;
 
         if (elapsedSinceVoice >= requiredDelay) {
           this._finalizeTurn(elapsedSinceVoice);
