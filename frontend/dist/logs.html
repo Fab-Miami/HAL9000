@@ -421,6 +421,54 @@
       text-align: center;
       color: var(--text-muted);
     }
+
+    /* FLOATING ACTION BUTTON FOR CLEARING ALL LOGS */
+    .floating-clear-btn {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 1000;
+      background: linear-gradient(135deg, rgba(220, 20, 40, 0.92) 0%, rgba(140, 0, 20, 0.95) 100%);
+      color: #ffffff;
+      border: 1px solid rgba(255, 70, 85, 0.85);
+      border-radius: 50px;
+      padding: 12px 22px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 6px 24px rgba(220, 20, 40, 0.5), 0 0 14px rgba(255, 34, 51, 0.35);
+      backdrop-filter: blur(8px);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+    }
+
+    .floating-clear-btn:hover {
+      background: linear-gradient(135deg, rgba(255, 40, 60, 0.98) 0%, rgba(170, 0, 25, 0.98) 100%);
+      border-color: #ff6677;
+      box-shadow: 0 8px 32px rgba(255, 40, 60, 0.7), 0 0 20px rgba(255, 51, 68, 0.5);
+      transform: translateY(-2px) scale(1.03);
+    }
+
+    .floating-clear-btn:active {
+      transform: translateY(1px) scale(0.97);
+      box-shadow: 0 3px 12px rgba(220, 20, 40, 0.4);
+    }
+
+    .floating-clear-btn.cleared {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(5, 120, 85, 0.98) 100%);
+      border-color: rgba(52, 211, 153, 0.85);
+      box-shadow: 0 6px 24px rgba(16, 185, 129, 0.5), 0 0 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .floating-clear-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
   </style>
 </head>
 <body>
@@ -498,6 +546,12 @@
       <div class="empty-state">Connecting to HAL 9000 telemetry socket...</div>
     </div>
   </main>
+
+  <!-- FLOATING ACTION BUTTON (DELETE EVERYTHING) -->
+  <button id="floatingClearBtn" class="floating-clear-btn" title="Delete all logs on server and screen">
+    <span class="floating-clear-icon">🗑️</span>
+    <span id="floatingClearLabel">Clear All Logs</span>
+  </button>
 
   <!-- FOOTER -->
   <footer>
@@ -708,13 +762,28 @@
         }
       });
 
-      clearBtn.addEventListener('click', () => {
+      const floatingClearBtn = document.getElementById('floatingClearBtn');
+      const floatingClearLabel = document.getElementById('floatingClearLabel');
+
+      function executeClearAll() {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send('CLEAR');
         }
         allLogs = [];
         renderLogs();
-      });
+
+        if (floatingClearBtn && floatingClearLabel) {
+          floatingClearBtn.classList.add('cleared');
+          floatingClearLabel.textContent = 'Cleared Everything!';
+          setTimeout(() => {
+            floatingClearBtn.classList.remove('cleared');
+            floatingClearLabel.textContent = 'Clear All Logs';
+          }, 1400);
+        }
+      }
+
+      if (floatingClearBtn) floatingClearBtn.addEventListener('click', executeClearAll);
+      if (clearBtn) clearBtn.addEventListener('click', executeClearAll);
 
       copyBtn.addEventListener('click', () => {
         const visibleRows = Array.from(logList.querySelectorAll('.log-row'));

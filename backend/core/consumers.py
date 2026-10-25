@@ -145,7 +145,12 @@ class LogsConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         if text_data == "CLEAR":
             RECENT_LOGS.clear()
-            await self.send(text_data=json.dumps({"type": "history", "logs": []}))
+            payload = json.dumps({"type": "history", "logs": []})
+            for sub in list(LOG_SUBSCRIBERS):
+                try:
+                    await sub.send(text_data=payload)
+                except Exception:
+                    LOG_SUBSCRIBERS.discard(sub)
 
 
 class HalConsumer(AsyncWebsocketConsumer):
