@@ -99,7 +99,7 @@ def transcribe_local_pcm(wav_bytes: bytes, log_fn=None) -> str:
         # 3. temperature=0.0 and beam_size=1 provide deterministic low-latency CPU transcription.
         segments, _ = local_whisper.transcribe(
             audio,
-            initial_prompt="HAL, wake up.",
+            initial_prompt="HAL, wake up. Wake up, HAL. Hey HAL, wake up. OK HAL, wake up.",
             vad_filter=True,
             vad_parameters=dict(threshold=0.30, min_speech_duration_ms=150),
             temperature=0.0,

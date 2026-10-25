@@ -120,21 +120,21 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
-    # Phonetic variations of HAL heard through glass enclosure: hal, hall, hard, heart, hot, how, hold, hawk, paul, park, hole, hell, hel, al, all, el, ell, hah, huh, ha, hu, ho, haw, hi, high, hai, hy, hie, hey, hay, hug, hugg, hugs
-    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|paul|park|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs)'
+    # Phonetic variations of HAL heard through glass enclosure: hal, hall, hard, heart, hot, how, hold, hawk, paul, park, hole, hell, hel, al, all, el, ell, hah, huh, ha, hu, ho, haw, hi, high, hai, hy, hie, hey, hay, hug, hugg, hugs, have, hav, half, head, heck, help
+    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|paul|park|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|have|hav|half|head|heck|help)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
-    # "wake up", "wakeup", "waiker", "waker", "wake", "woke up", "woke", "we get (up)", "we go", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking"
-    wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?)'
+    # "wake up", "wakeup", "waiker", "waker", "wake her", "wake in", "wake it", "wait her", "wake", "woke up", "woke", "we get (up)", "we go", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking", "luke it", "look it", "lock it"
+    wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
-    filler = r'(?:do\s+|please\s+|can\s+you\s+|you\s+|to\s+)*'
+    filler = r'(?:do\s+|please\s+|can\s+you\s+|you\s+|to\s+|i\s*m\s+|i\s+am\s+|it\s*s\s+|the\s+|a\s+)*'
 
     # Direction 1: [HAL variation] + [filler] + [wake variation]
-    # Matches: "hal wake up", "hi wake up", "ok how do we get", "how do we go", "hey hal wake up", etc.
+    # Matches: "hal wake up", "have wake her", "hi i m luke it", "hi wake up", "ok how do we get", "how do we go", "hey hal wake up", etc.
     if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+{filler}{wake_tokens}\b', clean, re.IGNORECASE):
         return True
 
     # Direction 2: [wake variation] + [filler] + [HAL variation]
-    # Matches: "wake up hal", "wake up hug", "wake up hi", "we get hal", "waiker hal", etc.
+    # Matches: "wake up hal", "wake her have", "wake up hug", "wake up hi", "we get hal", "waiker hal", etc.
     if re.search(rf'\b{wake_tokens}\s+{filler}(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
