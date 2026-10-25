@@ -2,6 +2,7 @@ import os
 import io
 import wave
 import json
+import time
 import asyncio
 import re
 import zoneinfo
@@ -70,7 +71,7 @@ def wav_bytes_to_float32(wav_bytes: bytes) -> np.ndarray:
             data = data[:-1]
         return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
-def transcribe_local_pcm(wav_bytes: bytes) -> str:
+def transcribe_local_pcm(wav_bytes: bytes, log_fn=None) -> str:
     """
     Transcribes audio locally on Hetzner CPU using faster-whisper.
     Runs at strictly $0.00 cloud cost with zero Gemini API calls.
@@ -111,13 +112,20 @@ def transcribe_local_pcm(wav_bytes: bytes) -> str:
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
         full_text = " ".join(texts).strip()
         elapsed_ms = int((time.time() - t0) * 1000)
-        if full_text:
-            print(f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> \"{full_text}\" ($0.00 cloud cost)", flush=True)
-        else:
-            print(f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> [No Speech]", flush=True)
+        report_msg = (
+            f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> \"{full_text}\" ($0.00 cloud cost)"
+            if full_text else
+            f"🎙️ [Standby Whisper] Peak: {peak:.4f} (boost {gain:.1f}x, {elapsed_ms}ms) -> [No Speech]"
+        )
+        if log_fn:
+            log_fn(report_msg)
+        print(report_msg, flush=True)
         return full_text
     except Exception as e:
-        print(f"⚠️ [Whisper Error]: {e}", flush=True)
+        err_msg = f"⚠️ [Whisper Error]: {e}"
+        if log_fn:
+            log_fn(err_msg)
+        print(err_msg, flush=True)
         return ""
 
 async def transcribe_audio_gemini(wav_bytes: bytes) -> str:

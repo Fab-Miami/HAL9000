@@ -295,7 +295,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             if self.is_client_sleeping:
                 try:
                     local_transcript = await asyncio.wait_for(
-                        asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes),
+                        asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes, log),
                         timeout=3.5
                     )
                 except asyncio.TimeoutError:

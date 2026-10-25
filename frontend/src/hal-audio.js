@@ -127,7 +127,7 @@ export class HalAudio {
       this.consecutiveVoiceFrames = 0;
       this.standbySilenceStart = performance.now();
     }
-    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=0.5s silence -> <=3.5s speech -> 0.8s silence).`);
+    this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=0.5s silence -> <=3.5s speech -> 1.0s silence).`);
   }
 
   setListeningActive(active) {
@@ -304,8 +304,8 @@ export class HalAudio {
         if (this.isSpeaking) {
           this.turnBuffer.push(pcmChunk);
           const elapsedSinceVoice = now - this.lastVoiceTime;
-          // Sandwich rule #3: trailing silence >= 800ms
-          const requiredDelay = this.sleeping ? 800 : this.SILENCE_DELAY_MS;
+          // Sandwich rule #3: trailing silence >= 1000ms
+          const requiredDelay = this.sleeping ? 1000 : this.SILENCE_DELAY_MS;
           if (elapsedSinceVoice >= requiredDelay) {
             this.onLog(`🥪 [HalAudio] Sandwich profile matched! Spoken turn: ${((this.lastVoiceTime - this.turnStartTime) / 1000).toFixed(2)}s, trailing silence: ${(elapsedSinceVoice / 1000).toFixed(2)}s.`);
             this._finalizeTurn(elapsedSinceVoice);
