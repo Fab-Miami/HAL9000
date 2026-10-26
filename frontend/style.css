@@ -140,20 +140,21 @@ html, body {
 }
 
 #layer-3-led-on.led-anim-grace {
+  transition: none;
   animation: anim-led-grace 19s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
 }
 
 @keyframes anim-led-grace {
   0% { opacity: 1.0; }
-  7.89% { opacity: 0.38; }
+  7.89% { opacity: 0.50; }
   15.79% { opacity: 1.0; }
-  23.68% { opacity: 0.38; }
+  23.68% { opacity: 0.50; }
   31.58% { opacity: 1.0; }
-  39.47% { opacity: 0.38; }
+  39.47% { opacity: 0.50; }
   47.37% { opacity: 1.0; }
-  55.26% { opacity: 0.38; }
+  55.26% { opacity: 0.50; }
   63.16% { opacity: 1.0; }
-  71.05% { opacity: 0.38; }
+  71.05% { opacity: 0.50; }
   78.95% { opacity: 1.0; }
   100% { opacity: 0.0; }
 }
