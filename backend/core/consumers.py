@@ -269,6 +269,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
+                            if not self.is_client_sleeping:
+                                now = time.time()
+                                self.last_wake_time = now
+                                self.last_speech_time = now
 
                     if msg.get('type') == 'playback_complete':
                         self.last_speech_time = time.time()
@@ -282,8 +286,18 @@ class HalConsumer(AsyncWebsocketConsumer):
                         log(f"📱 [Client Telemetry] {telemetry_msg}")
                         return
                     if msg.get('type') == 'sleep_state':
+                        was_sleeping = self.is_client_sleeping
                         self.is_client_sleeping = bool(msg.get('sleeping'))
                         log(f"🌙 [HalConsumer] Client sleep state: {self.is_client_sleeping}")
+                        if was_sleeping and not self.is_client_sleeping:
+                            now = time.time()
+                            self.last_wake_time = now
+                            self.last_speech_time = now
+                            log("☀️ [HalConsumer] Client woke up -> 24s Follow-up Grace Period engaged on backend.")
+                        elif not self.is_client_sleeping and getattr(self, 'last_speech_time', 0.0) == 0.0:
+                            now = time.time()
+                            self.last_wake_time = now
+                            self.last_speech_time = now
                         return
                     if 'volume' in msg:
                         self.current_volume = max(1, min(10, int(msg['volume'])))
@@ -418,20 +432,24 @@ class HalConsumer(AsyncWebsocketConsumer):
                 turn_duration_s = len(wav_bytes) / 32000.0  # 16kHz 16-bit Mono WAV PCM: 32000 bytes/sec
                 speech_onset_time = time.time() - turn_duration_s
                 last_spoke = getattr(self, 'last_speech_time', 0.0)
-                if last_spoke > 0:
-                    time_since_speech = speech_onset_time - last_spoke
+                if last_spoke <= 0.0:
+                    last_spoke = getattr(self, 'last_wake_time', 0.0)
+                if last_spoke > 0.0:
+                    time_since_speech = max(0.0, speech_onset_time - last_spoke)
                 else:
-                    time_since_speech = 999999.0
+                    time_since_speech = 0.0
 
                 is_in_grace_period = (time_since_speech <= 24.0)
-                log(f"⏱️ [Follow-Up Gate] Speech onset: {max(0.0, time_since_speech):.1f}s after speech end (Turn: {turn_duration_s:.1f}s, Grace: 24.0s, Active: {is_in_grace_period})")
+                log(f"⏱️ [Follow-Up Gate] Speech onset: {time_since_speech:.1f}s after speech/wake (Turn: {turn_duration_s:.1f}s, Grace: 24.0s, Active: {is_in_grace_period})")
 
                 if not is_in_grace_period:
                     check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
                     if not is_addressed_to_hal(check_text):
-                        log(f"🤫 [Active Idle] Speech not addressed to HAL ({max(0.0, time_since_speech):.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
-                        if time_since_speech > 300.0:
-                            log("🌙 [HalConsumer] Inactivity threshold reached (>300s idle). Dispatching SLEEP to console.")
+                        log(f"🤫 [Active Idle] Speech not addressed to HAL ({time_since_speech:.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
+                        last_active = max(getattr(self, 'last_speech_time', 0.0), getattr(self, 'last_wake_time', 0.0))
+                        idle_duration = (time.time() - last_active) if last_active > 0.0 else 0.0
+                        if idle_duration > 300.0:
+                            log(f"🌙 [HalConsumer] Inactivity threshold reached ({idle_duration:.1f}s > 300s idle). Dispatching SLEEP to console.")
                             await self.send(text_data="SLEEP")
                         else:
                             await self.send(text_data="DONE")
