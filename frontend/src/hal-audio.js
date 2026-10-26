@@ -351,9 +351,9 @@ export class HalAudio {
       if (hasVocalEnergy) {
         this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
         if (!this.isSpeaking) {
-          // DIRECTED ADDRESSING PROTOCOL: 19s Grace Period (15s sinusoidal pulse + 4s fade) & 1.8s Pre-Speech Silence Gate
+          // DIRECTED ADDRESSING PROTOCOL: 24s Grace Period (21s sinusoidal pulse + 3s fade) & 1.8s Pre-Speech Silence Gate
           const timeSinceLastSpeech = now - (this.lastHalSpeechTime || 0);
-          const isGracePeriod = timeSinceLastSpeech <= 19000;
+          const isGracePeriod = timeSinceLastSpeech <= 24000;
           const preSilence = now - (this.activeSilenceStart || now);
 
           if (!isGracePeriod && preSilence < 1800) {

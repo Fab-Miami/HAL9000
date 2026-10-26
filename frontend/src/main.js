@@ -263,7 +263,7 @@ function startGraceLeds() {
   layer3LedOn.style.setProperty('--persistent-led', '0.0');
   void layer3LedOn.offsetWidth; // Force reflow to cleanly start animation
   layer3LedOn.classList.add('led-anim-grace');
-  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (19s Follow-Up Grace Window active).');
+  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (24s Follow-Up Grace Window active).');
 
   ledAnimTimeout = setTimeout(() => {
     clearLedAnimations();
@@ -271,7 +271,7 @@ function startGraceLeds() {
       layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
     }
     log('⏱️ [HAL Hardware] 3 Satellite LEDs extinguished (Active Idle: address HAL).');
-  }, 19000);
+  }, 24000);
 }
 
 // ===========================================================================
@@ -327,8 +327,8 @@ function connectWebSocket() {
         } else if (msg === 'SLEEP') {
           goToSleep(true);
         } else if (msg === 'RELOAD') {
-          log('🔄 [WS] Remote RELOAD received. Refreshing page...');
-          window.location.reload();
+          log('🔄 [WS] Remote RELOAD received. Refreshing page with cache-bust...');
+          window.location.href = window.location.pathname + '?v=' + Date.now();
         } else if (msg.startsWith('VOLUME:')) {
           const vol = parseInt(msg.split(':')[1], 10);
           if (!isNaN(vol)) halAudio.setVolume(vol);
