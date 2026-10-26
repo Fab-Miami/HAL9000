@@ -552,13 +552,16 @@ export class HalAudio {
     if (this._playbackWatchdog) clearTimeout(this._playbackWatchdog);
     this.streamFinished = true;
     if (this.activeSources.length === 0) {
+      const wasPlaying = this.isPlaying;
       this.isPlaying = false;
       this.scheduledTime = 0;
       this.playbackEndTime = performance.now();
       this.turnBuffer = [];
       this.preRollBuffer = [];
       this.isSpeaking = false;
-      this.onPlaybackStateChange(false);
+      if (wasPlaying) {
+        this.onPlaybackStateChange(false);
+      }
     } else {
       const remainingMs = Math.max(100, Math.round(((this.scheduledTime - (this.audioContext ? this.audioContext.currentTime : 0)) * 1000) + 200));
       setTimeout(() => {

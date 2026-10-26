@@ -412,23 +412,28 @@ const halAudio = new HalAudio({
       clearLedAnimations();
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
 
+      if (pendingSleep) {
+        log('🌙 [HAL 9000] Speech playback completed. Entering Standby now.');
+        goToSleep(true);
+        return;
+      }
+
+      if (currentState === State.SLEEPING) {
+        // In standby sleep mode: strictly remain asleep! Never start grace LEDs or notify playback_complete!
+        if (halAudio) halAudio.setListeningActive(true);
+        return;
+      }
+
+      // Active conversation mode: speech playback actually completed on speaker
       if (ws && ws.readyState === WebSocket.OPEN) {
         log('⏱️ [HAL 9000] Speech playback finished -> Grace clock starts NOW.');
         ws.send(JSON.stringify({ type: 'playback_complete' }));
       }
 
-      if (pendingSleep) {
-        log('🌙 [HAL 9000] Speech playback completed. Entering Standby now.');
-        goToSleep(true);
-      } else if (currentState !== State.SLEEPING) {
-        setHalState(State.LISTENING);
-        resetSleepTimer();
-        if (halAudio) halAudio.notifySpeechFinished();
-        startGraceLeds();
-      } else {
-        // Standby sleep mode: re-engage listening for wake phrases
-        halAudio.setListeningActive(true);
-      }
+      setHalState(State.LISTENING);
+      resetSleepTimer();
+      if (halAudio) halAudio.notifySpeechFinished();
+      startGraceLeds();
     }
   },
 
@@ -483,7 +488,9 @@ function handleDeviceMotion(event) {
 
       if (!isSystemInitialized) {
         log('💥 [Motion] Knock on uninitialized system -> Auto-starting system...');
-        initializeSystem();
+        initializeSystem().then(() => {
+          wakeUp();
+        });
         return;
       }
 
@@ -649,8 +656,7 @@ async function initializeSystem() {
 
     // 3. Initialize Unified Web Audio Engine (Microphone permission prompt)
     await halAudio.initialize();
-    setHalState(State.LISTENING);
-    resetSleepTimer();
+    goToSleep(true);
 
     // 4. Accelerometer knock sensor
     window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
@@ -712,7 +718,9 @@ function onInitializeGesture(e) {
   initKeepAwakeVideo();
   requestScreenWakeLock();
 
-  initializeSystem();
+  initializeSystem().then(() => {
+    wakeUp();
+  });
 }
 
 if (initOverlay) {
