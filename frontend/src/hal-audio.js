@@ -126,8 +126,16 @@ export class HalAudio {
       this.isSpeaking = false;
       this.consecutiveVoiceFrames = 0;
       this.standbySilenceStart = performance.now();
+    } else {
+      this.lastHalSpeechTime = performance.now();
+      this.activeSilenceStart = performance.now();
     }
     this.onLog(`🌙 [HalAudio] Standby mode set to: ${this.sleeping} (Sandwich: >=0.5s silence -> <=3.5s speech -> 1.0s silence).`);
+  }
+
+  notifySpeechFinished() {
+    this.lastHalSpeechTime = performance.now();
+    this.activeSilenceStart = performance.now();
   }
 
   setListeningActive(active) {
@@ -307,7 +315,18 @@ export class HalAudio {
           // Sandwich rule #3: trailing silence >= 1000ms
           const requiredDelay = this.sleeping ? 1000 : this.SILENCE_DELAY_MS;
           if (elapsedSinceVoice >= requiredDelay) {
-            this.onLog(`🥪 [HalAudio] Sandwich profile matched! Spoken turn: ${((this.lastVoiceTime - this.turnStartTime) / 1000).toFixed(2)}s, trailing silence: ${(elapsedSinceVoice / 1000).toFixed(2)}s.`);
+            const spokenDuration = (this.lastVoiceTime - this.turnStartTime) / 1000;
+            // CRITICAL DEFENSE: Drop phantom blips (< 0.40s) in standby right on the phone
+            if (this.sleeping && spokenDuration < 0.40) {
+              this.onLog(`🔇 [HalAudio] Standby phantom blip discarded (spoken: ${spokenDuration.toFixed(2)}s < 0.40s).`);
+              this.turnBuffer = [];
+              this.preRollBuffer = [];
+              this.isSpeaking = false;
+              this.consecutiveVoiceFrames = 0;
+              this.standbySilenceStart = performance.now();
+              return;
+            }
+            this.onLog(`🥪 [HalAudio] Sandwich profile matched! Spoken turn: ${spokenDuration.toFixed(2)}s, trailing silence: ${(elapsedSinceVoice / 1000).toFixed(2)}s.`);
             this._finalizeTurn(elapsedSinceVoice);
             this.standbySilenceStart = performance.now();
           }
@@ -331,10 +350,22 @@ export class HalAudio {
       if (hasVocalEnergy) {
         this.consecutiveVoiceFrames = (this.consecutiveVoiceFrames || 0) + 1;
         if (!this.isSpeaking) {
+          // DIRECTED ADDRESSING PROTOCOL: 15s Grace Period & 1.8s Pre-Speech Silence Gate
+          const timeSinceLastSpeech = now - (this.lastHalSpeechTime || 0);
+          const isGracePeriod = timeSinceLastSpeech <= 15000;
+          const preSilence = now - (this.activeSilenceStart || now);
+
+          if (!isGracePeriod && preSilence < 1800) {
+            // In idle mode, require at least 1.8s of silence before speech onset to ignore mid-sentence room/phone chatter
+            this.activeSilenceStart = now;
+            this.consecutiveVoiceFrames = 0;
+            return;
+          }
+
           if (this.consecutiveVoiceFrames >= 2) {
             this.isSpeaking = true;
             this.turnStartTime = now;
-            this.onLog(`🗣️ [HalAudio] User speech detected (RMS: ${rms.toFixed(4)}, Floor: ${this.noiseFloor.toFixed(4)}, Gate: ${voiceGate.toFixed(4)}).`);
+            this.onLog(`🗣️ [HalAudio] User speech detected (RMS: ${rms.toFixed(4)}, Floor: ${this.noiseFloor.toFixed(4)}, Gate: ${voiceGate.toFixed(4)}, Grace: ${isGracePeriod ? 'YES' : 'NO'}).`);
             this.turnBuffer = [];
             for (let i = 0; i < this.preRollBuffer.length; i++) {
               this.turnBuffer.push(this.preRollBuffer[i]);
@@ -364,8 +395,12 @@ export class HalAudio {
           const elapsedSinceVoice = now - this.lastVoiceTime;
           if (elapsedSinceVoice >= this.SILENCE_DELAY_MS) {
             this._finalizeTurn(elapsedSinceVoice);
+            this.activeSilenceStart = performance.now();
           }
         } else {
+          if (!this.activeSilenceStart) {
+            this.activeSilenceStart = now;
+          }
           this.preRollBuffer.push(pcmChunk);
           if (this.preRollBuffer.length > 6) {
             this.preRollBuffer.shift();

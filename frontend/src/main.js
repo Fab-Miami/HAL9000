@@ -125,7 +125,10 @@ function wakeUp() {
   setPersistentLed(false);
   clearLedAnimations();
   if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-  if (halAudio) halAudio.setSleeping(false);
+  if (halAudio) {
+    halAudio.setSleeping(false);
+    halAudio.notifySpeechFinished();
+  }
 
   // Optical assembly: Immediate ignition flare for the central eye
   setHalState(State.LISTENING);
@@ -385,6 +388,7 @@ const halAudio = new HalAudio({
       } else if (currentState !== State.SLEEPING) {
         setHalState(State.LISTENING);
         resetSleepTimer();
+        if (halAudio) halAudio.notifySpeechFinished();
       } else {
         // Standby sleep mode: re-engage listening for wake phrases
         halAudio.setListeningActive(true);

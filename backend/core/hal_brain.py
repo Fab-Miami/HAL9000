@@ -93,23 +93,37 @@ def transcribe_local_pcm(wav_bytes: bytes, log_fn=None) -> str:
             audio = audio * gain
 
         # INVIOLABLE ARCHITECTURAL DIRECTIVE (FAB COLOZZI - DO NOT MODIFY):
-        # 1. vad_filter=True is MANDATORY AND MUST NEVER BE DISABLED (NEVER SET vad_filter=False):
+        # 1. vad_filter=True is MANDATORY AND MUST NEVER BE DISABLED:
         #    Silero VAD drops ambient TV/video noise, music, and room rumble before Whisper decoding.
-        # 2. initial_prompt="HAL, wake up.": Primes Whisper with proper noun HAL and context.
+        # 2. initial_prompt="HAL, wake up.": Primes Whisper with proper noun HAL without repeating phrases.
         # 3. temperature=0.0 and beam_size=1 provide deterministic low-latency CPU transcription.
+        # 4. compression_ratio_threshold=2.2 drops autoregressive repetition loops on silence.
         segments, _ = local_whisper.transcribe(
             audio,
-            initial_prompt="HAL, wake up. Wake up, HAL. Hey HAL, wake up. OK HAL, wake up.",
+            initial_prompt="HAL, wake up.",
             vad_filter=True,
             vad_parameters=dict(threshold=0.30, min_speech_duration_ms=150),
             temperature=0.0,
             condition_on_previous_text=False,
-            repetition_penalty=1.2,
+            repetition_penalty=1.3,
+            compression_ratio_threshold=2.2,
             no_speech_threshold=0.6,
             language="en",
             beam_size=1
         )
         texts = [s.text.strip() for s in segments if s.text and s.text.strip()]
+
+        # Anti-hallucination guard: if Whisper loops identical phrases on silence
+        if len(texts) > 2:
+            first_norm = re.sub(r'[^a-z]', '', texts[0].lower())
+            duplicate_count = sum(1 for t in texts if re.sub(r'[^a-z]', '', t.lower()) == first_norm)
+            if duplicate_count >= 3:
+                report_msg = f"🔇 [Whisper] Suppressed autoregressive loop hallucination ({len(texts)} repetitions)."
+                if log_fn:
+                    log_fn(report_msg)
+                print(report_msg, flush=True)
+                return ""
+
         full_text = " ".join(texts).strip()
         elapsed_ms = int((time.time() - t0) * 1000)
         report_msg = (

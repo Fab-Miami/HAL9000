@@ -120,21 +120,18 @@ def is_hal_wake_word(text: str) -> bool:
     if not clean:
         return False
 
-    # Phonetic variations of HAL heard through glass enclosure: hal, hall, hard, heart, hot, how, hold, hawk, paul, park, hole, hell, hel, al, all, el, ell, hah, huh, ha, hu, ho, haw, hi, high, hai, hy, hie, hey, hay, hug, hugg, hugs, have, hav, half, head, heck, help
-    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|paul|park|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|have|hav|half|head|heck|help)'
+    # Phonetic variations of HAL heard through glass enclosure (pruned of common words like 'have'):
+    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
-    # "wake up", "wakeup", "waiker", "waker", "wake her", "wake in", "wake it", "wait her", "wake", "woke up", "woke", "we get (up)", "we go", "wait up", "way cup", "wick up", "wack up", "whack up", "make up", "break up", "waking", "luke it", "look it", "lock it"
     wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
     filler = r'(?:do\s+|please\s+|can\s+you\s+|you\s+|to\s+|i\s*m\s+|i\s+am\s+|it\s*s\s+|the\s+|a\s+)*'
 
     # Direction 1: [HAL variation] + [filler] + [wake variation]
-    # Matches: "hal wake up", "have wake her", "hi i m luke it", "hi wake up", "ok how do we get", "how do we go", "hey hal wake up", etc.
     if re.search(rf'\b(?:{greetings}\s+)?{hal_tokens}\s+{filler}{wake_tokens}\b', clean, re.IGNORECASE):
         return True
 
     # Direction 2: [wake variation] + [filler] + [HAL variation]
-    # Matches: "wake up hal", "wake her have", "wake up hug", "wake up hi", "we get hal", "waiker hal", etc.
     if re.search(rf'\b{wake_tokens}\s+{filler}(?:{greetings}\s+)?{hal_tokens}\b', clean, re.IGNORECASE):
         return True
 
@@ -143,6 +140,29 @@ def is_hal_wake_word(text: str) -> bool:
         return True
 
     return False
+
+
+def is_addressed_to_hal(text: str) -> bool:
+    """
+    Checks if an utterance is explicitly addressed to HAL.
+    Used during active idle mode (> 15s since last interaction) to prevent HAL
+    from picking up background room conversations, phone calls, or video audio.
+    """
+    if not text:
+        return False
+    normalized = re.sub(r'\bh\s*[\.\-]?\s*a\s*[\.\-]?\s*l[\.\-]?\b', 'hal', text, flags=re.IGNORECASE)
+    clean = re.sub(r'[.,!?;:\"\'\-]', ' ', normalized.strip().lower())
+    clean = re.sub(r'\bh\s+a\s+l\b', 'hal', clean)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    if not clean:
+        return False
+
+    hal_names = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|hole|hell|hel|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|half)'
+    greetings = r'(?:hey|hi|hello|ok|okay|so|well|dear|please)'
+
+    # Anchor to start of speech: must begin directly with HAL or Greeting + HAL
+    pattern = rf'^(?:{greetings}\s+)?{hal_names}\b'
+    return bool(re.search(pattern, clean))
 
 
 class LogsConsumer(AsyncWebsocketConsumer):
@@ -326,6 +346,15 @@ class HalConsumer(AsyncWebsocketConsumer):
                     await self.send(text_data="DONE")
                     return
 
+                # DIRECTIVE (FAB COLOZZI): Reject any transcript exceeding 6 words in standby!
+                # Wake phrases ("HAL wake up", "Hey HAL wake up") are at most 3-4 words.
+                # Transcripts > 6 words are ambient room conversations or Whisper hallucination loops.
+                words = local_transcript.strip().split()
+                if len(words) > 6:
+                    log(f"💤 [Standby] Rejected transcript exceeding 6 words ({len(words)} words): \"{local_transcript[:60]}...\" ($0.00 cost). Remaining asleep.")
+                    await self.send(text_data="DONE")
+                    return
+
                 if not is_hal_wake_word(local_transcript):
                     log(f"💤 [Standby] Ignored non-wake audio: \"{local_transcript or '[No Speech]'}\" ($0.00 cost). Remaining asleep.")
                     await self.send(text_data="DONE")
@@ -334,6 +363,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 log(f"☀️ [Standby] Verified wake phrase: \"{local_transcript}\"! Optical wake triggered (silent eye ignition).")
                 self.is_client_sleeping = False
                 self.last_wake_time = time.time()
+                self.last_speech_time = time.time()
                 await self.send(text_data="WAKE")
                 await self.send(text_data="LED:WINK")
                 await self.send(text_data="DONE")
@@ -352,6 +382,22 @@ class HalConsumer(AsyncWebsocketConsumer):
                         await self.send(text_data="LED:WINK")
                         await self.send(text_data="DONE")
                         return
+
+                # DIRECTED ADDRESSING PROTOCOL (FAB COLOZZI DIRECTIVE):
+                # Follow-Up Grace Period: 15.0 seconds.
+                # If HAL spoke within the last 15s (or just woke up), Fab can speak freely without saying "HAL".
+                # If more than 15s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
+                # Non-addressed background conversations (phone calls, TV, thinking aloud) are silently dropped at $0.00 cost.
+                time_since_speech = time.time() - getattr(self, 'last_speech_time', 0)
+                is_in_grace_period = time_since_speech <= 15.0
+
+                if not is_in_grace_period:
+                    check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
+                    if not is_addressed_to_hal(check_text):
+                        log(f"🤫 [Active Idle] Speech not addressed to HAL ({time_since_speech:.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
+                        await self.send(text_data="DONE")
+                        return
+                    log(f"🗣️ [Active Idle] Addressing HAL verified: \"{check_text}\"! Engaging conversation.")
 
                 await self.send(text_data="THINKING")
                 # In active conversation: transcribe in the background with Gemini 3.5 Flash-Lite
@@ -493,6 +539,8 @@ class HalConsumer(AsyncWebsocketConsumer):
                 hal_brain.restore_history_checkpoint(self.chat_session, history_checkpoint)
                 log("🧹 [HalConsumer] Restored chat_session checkpoint: silent turn completely purged.")
             else:
+                if full_response_text.strip():
+                    self.last_speech_time = time.time()
                 # Asynchronous background persistence: process user transcript & save to SQLite without blocking client
                 async def _save_turn_background(t_task, model_text):
                     u_transcript = ""
