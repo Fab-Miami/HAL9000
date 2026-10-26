@@ -395,7 +395,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                     check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
                     if not is_addressed_to_hal(check_text):
                         log(f"🤫 [Active Idle] Speech not addressed to HAL ({time_since_speech:.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
-                        await self.send(text_data="DONE")
+                        if time_since_speech > 60.0:
+                            log("🌙 [HalConsumer] Inactivity threshold reached (>60s idle). Dispatching SLEEP to console.")
+                            await self.send(text_data="SLEEP")
+                        else:
+                            await self.send(text_data="DONE")
                         return
                     log(f"🗣️ [Active Idle] Addressing HAL verified: \"{check_text}\"! Engaging conversation.")
 

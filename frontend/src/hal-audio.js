@@ -220,18 +220,19 @@ export class HalAudio {
           this.noiseFloor = this.noiseFloor * (1.0 - creepRate) + rms * creepRate;
         }
       }
-      // Never drop below physical ADC noise floor
-      if (this.noiseFloor < 0.0010) this.noiseFloor = 0.0010;
+      // Calibrated physical noise floor baseline (never drop below 0.0025)
+      if (this.noiseFloor < 0.0025) this.noiseFloor = 0.0025;
     }
 
     // =======================================================================
     // DYNAMIC SIGNAL-TO-NOISE RATIO (SNR) VOICE GATE
-    // Standby: requires +5 dB (1.65x) above ambient baseline to reject ambient TV chatter
-    // Active: requires +3.5 dB (1.45x) above ambient baseline for natural fluid conversation
+    // Calibrated for Miami Beach apartment console behind sealed glass enclosure:
+    // Standby: baseGateFloor 0.0120 (drops room air/TV; real wake word is >= 0.017-0.050)
+    // Active: baseGateFloor 0.0085 (drops room ambient 0.002-0.004; real speech is >= 0.015-0.045)
     // =======================================================================
-    const snrMultiplier = this.sleeping ? 1.65 : 1.45;
-    const safetyMargin = this.sleeping ? 0.0022 : 0.0012;
-    const baseGateFloor = this.sleeping ? 0.0048 : 0.0020;
+    const snrMultiplier = this.sleeping ? 1.85 : 1.60;
+    const safetyMargin = this.sleeping ? 0.0050 : 0.0035;
+    const baseGateFloor = this.sleeping ? 0.0120 : 0.0085;
     const voiceGate = Math.max(baseGateFloor, this.noiseFloor * snrMultiplier + safetyMargin);
 
     const voiceDelta = rms - voiceGate;

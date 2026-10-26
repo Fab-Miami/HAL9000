@@ -32,7 +32,7 @@ let currentState = State.IDLE;
 let persistentLedOn = false;
 let ledAnimTimeout = null;
 let sleepTimer = null;
-const SLEEP_TIMEOUT_MS = 120000; // 2 minutes inactivity timeout
+const SLEEP_TIMEOUT_MS = 60000; // 60 seconds inactivity timeout
 
 // Telemetry & WebSocket
 let ws = null;
@@ -364,7 +364,6 @@ const halAudio = new HalAudio({
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
       triggerLedTag('listen-done');
       setHalState(State.THINKING);
-      resetSleepTimer();
     }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
