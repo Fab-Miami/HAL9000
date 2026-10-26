@@ -32,7 +32,7 @@ let currentState = State.IDLE;
 let persistentLedOn = false;
 let ledAnimTimeout = null;
 let sleepTimer = null;
-const SLEEP_TIMEOUT_MS = 60000; // 60 seconds inactivity timeout
+const SLEEP_TIMEOUT_MS = 300000; // 5 minutes inactivity timeout (Active Idle before Deep Standby)
 
 // Telemetry & WebSocket
 let ws = null;
@@ -144,6 +144,11 @@ function wakeUp() {
     }, 2600);
   }
   triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
+  setTimeout(() => {
+    if (currentState === State.LISTENING) {
+      startGraceLeds();
+    }
+  }, 480);
 
   resetSleepTimer();
   requestScreenWakeLock();
@@ -191,7 +196,7 @@ function clearLedAnimations() {
     'led-anim-chuckle', 'led-anim-laugh', 'led-anim-wink',
     'led-anim-ponder', 'led-anim-breathe', 'led-anim-warm',
     'led-anim-alert', 'led-anim-heartbeat', 'led-anim-listen-done',
-    'led-anim-search', 'led-anim-api'
+    'led-anim-search', 'led-anim-api', 'led-anim-grace'
   );
 }
 
@@ -249,6 +254,24 @@ function blinkStandbyDispatchLeds() {
       layer3LedOn.style.opacity = '0.0';
     }
   }, 450);
+}
+
+function startGraceLeds() {
+  if (!layer3LedOn || currentState === State.SLEEPING) return;
+  clearLedAnimations();
+  layer3LedOn.style.removeProperty('opacity');
+  layer3LedOn.style.setProperty('--persistent-led', '0.0');
+  void layer3LedOn.offsetWidth; // Force reflow to cleanly start animation
+  layer3LedOn.classList.add('led-anim-grace');
+  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (19s Follow-Up Grace Window active).');
+
+  ledAnimTimeout = setTimeout(() => {
+    clearLedAnimations();
+    if (layer3LedOn && currentState !== State.SLEEPING) {
+      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+    }
+    log('⏱️ [HAL Hardware] 3 Satellite LEDs extinguished (Active Idle: address HAL).');
+  }, 19000);
 }
 
 // ===========================================================================
@@ -401,6 +424,7 @@ const halAudio = new HalAudio({
         setHalState(State.LISTENING);
         resetSleepTimer();
         if (halAudio) halAudio.notifySpeechFinished();
+        startGraceLeds();
       } else {
         // Standby sleep mode: re-engage listening for wake phrases
         halAudio.setListeningActive(true);

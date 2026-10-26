@@ -272,7 +272,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                     if msg.get('type') == 'playback_complete':
                         self.last_speech_time = time.time()
-                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 15s Follow-up Grace Period active.")
+                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 19s Follow-up Grace Period active.")
                         return
 
                     if msg.get('type') == 'telemetry':
@@ -410,10 +410,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                         return
 
                 # DIRECTED ADDRESSING PROTOCOL (FAB COLOZZI DIRECTIVE):
-                # Follow-Up Grace Period: 15.0 seconds.
+                # Follow-Up Grace Period: 19.0 seconds (15s sinusoidal pulse + 4s fade).
                 # The Grace Clock starts strictly at the END of HAL's vocal response on the iPhone speaker.
-                # If Fab begins speaking within 15s after HAL finished speaking, Fab can speak freely without saying "HAL".
-                # If more than 15s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
+                # If Fab begins speaking within 19s after HAL finished speaking, Fab can speak freely without saying "HAL".
+                # If more than 19s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
                 # Non-addressed background conversations (phone calls, TV, thinking aloud) are silently dropped at $0.00 cost.
                 turn_duration_s = len(wav_bytes) / 32000.0  # 16kHz 16-bit Mono WAV PCM: 32000 bytes/sec
                 speech_onset_time = time.time() - turn_duration_s
@@ -423,15 +423,15 @@ class HalConsumer(AsyncWebsocketConsumer):
                 else:
                     time_since_speech = 999999.0
 
-                is_in_grace_period = (time_since_speech <= 15.0)
-                log(f"⏱️ [Follow-Up Gate] Speech onset: {max(0.0, time_since_speech):.1f}s after speech end (Turn: {turn_duration_s:.1f}s, Grace: 15.0s, Active: {is_in_grace_period})")
+                is_in_grace_period = (time_since_speech <= 19.0)
+                log(f"⏱️ [Follow-Up Gate] Speech onset: {max(0.0, time_since_speech):.1f}s after speech end (Turn: {turn_duration_s:.1f}s, Grace: 19.0s, Active: {is_in_grace_period})")
 
                 if not is_in_grace_period:
                     check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
                     if not is_addressed_to_hal(check_text):
                         log(f"🤫 [Active Idle] Speech not addressed to HAL ({max(0.0, time_since_speech):.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
-                        if time_since_speech > 60.0:
-                            log("🌙 [HalConsumer] Inactivity threshold reached (>60s idle). Dispatching SLEEP to console.")
+                        if time_since_speech > 300.0:
+                            log("🌙 [HalConsumer] Inactivity threshold reached (>300s idle). Dispatching SLEEP to console.")
                             await self.send(text_data="SLEEP")
                         else:
                             await self.send(text_data="DONE")
