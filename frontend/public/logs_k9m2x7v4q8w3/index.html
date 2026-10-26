@@ -620,11 +620,21 @@
     </div>
   </main>
 
-  <!-- FLOATING ACTION BUTTON (DELETE EVERYTHING) -->
-  <button id="floatingClearBtn" class="floating-clear-btn" title="Delete all logs on server and screen">
-    <span class="floating-clear-icon">🗑️</span>
-    <span id="floatingClearLabel">Clear All Logs</span>
-  </button>
+  <!-- FLOATING ACTION BUTTONS (REMOTE CONTROL & CLEANUP) -->
+  <div style="position: fixed; bottom: 28px; right: 28px; z-index: 1000; display: flex; gap: 10px; align-items: center;">
+    <button id="floatingSleepBtn" class="floating-clear-btn" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98)); border-color: rgba(148, 163, 184, 0.6);" title="Remotely put HAL console into Standby / Sleep">
+      <span>🌙</span>
+      <span>Sleep Console</span>
+    </button>
+    <button id="floatingReloadBtn" class="floating-clear-btn" style="background: linear-gradient(135deg, rgba(2, 132, 199, 0.95), rgba(3, 105, 161, 0.98)); border-color: rgba(56, 189, 248, 0.7);" title="Remotely reload HAL console Safari page">
+      <span>🔄</span>
+      <span>Reload Console</span>
+    </button>
+    <button id="floatingClearBtn" class="floating-clear-btn" title="Delete all logs on server and screen">
+      <span class="floating-clear-icon">🗑️</span>
+      <span id="floatingClearLabel">Clear All Logs</span>
+    </button>
+  </div>
 
   <!-- FOOTER -->
   <footer>
@@ -884,6 +894,28 @@
 
       if (floatingClearBtn) floatingClearBtn.addEventListener('click', executeClearAll);
       if (clearBtn) clearBtn.addEventListener('click', executeClearAll);
+
+      const floatingSleepBtn = document.getElementById('floatingSleepBtn');
+      if (floatingSleepBtn) {
+        floatingSleepBtn.addEventListener('click', () => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('SLEEP');
+            floatingSleepBtn.style.opacity = '0.5';
+            setTimeout(() => { floatingSleepBtn.style.opacity = '1.0'; }, 800);
+          }
+        });
+      }
+
+      const floatingReloadBtn = document.getElementById('floatingReloadBtn');
+      if (floatingReloadBtn) {
+        floatingReloadBtn.addEventListener('click', () => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('RELOAD');
+            floatingReloadBtn.style.opacity = '0.5';
+            setTimeout(() => { floatingReloadBtn.style.opacity = '1.0'; }, 800);
+          }
+        });
+      }
 
       copyBtn.addEventListener('click', () => {
         const visibleRows = Array.from(logList.querySelectorAll('.log-row'));

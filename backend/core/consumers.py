@@ -165,6 +165,9 @@ def is_addressed_to_hal(text: str) -> bool:
     return bool(re.search(pattern, clean))
 
 
+ACTIVE_HAL_CLIENTS = set()
+
+
 class LogsConsumer(AsyncWebsocketConsumer):
     """Real-time log streaming consumer for https://hal.tuning.net/logs debug viewer."""
     async def connect(self):
@@ -187,6 +190,20 @@ class LogsConsumer(AsyncWebsocketConsumer):
                     await sub.send(text_data=payload)
                 except Exception:
                     LOG_SUBSCRIBERS.discard(sub)
+        elif text_data == "SLEEP":
+            log("🌙 [Remote Control] SLEEP command received from logs page. Putting console to sleep.")
+            for client in list(ACTIVE_HAL_CLIENTS):
+                try:
+                    await client.send(text_data="SLEEP")
+                except Exception:
+                    ACTIVE_HAL_CLIENTS.discard(client)
+        elif text_data == "RELOAD":
+            log("🔄 [Remote Control] RELOAD command received from logs page. Reloading console.")
+            for client in list(ACTIVE_HAL_CLIENTS):
+                try:
+                    await client.send(text_data="RELOAD")
+                except Exception:
+                    ACTIVE_HAL_CLIENTS.discard(client)
 
 
 class HalConsumer(AsyncWebsocketConsumer):
@@ -196,6 +213,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.client_id = self.scope['url_route']['kwargs'].get('client_id', 'anonymous')
         log(f"🔌 [HalConsumer] Connection from client: {self.client_id}")
         await self.accept()
+        ACTIVE_HAL_CLIENTS.add(self)
         log(f"✅ [HalConsumer] Accepted connection for {self.client_id}.")
 
         self.processing_task = None
@@ -219,6 +237,7 @@ class HalConsumer(AsyncWebsocketConsumer):
         register_tool_callback(self._tool_callback)
 
     async def disconnect(self, close_code):
+        ACTIVE_HAL_CLIENTS.discard(self)
         log(f"🔴 [HalConsumer] Client disconnected (Code: {close_code}).")
         from .tool_events import unregister_tool_callback
         if hasattr(self, '_tool_callback'):
