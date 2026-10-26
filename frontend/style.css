@@ -362,6 +362,14 @@ body.mode-enclosure #hal-stage {
   }
 }
 
+.init-text-container {
+  transform: rotate(180deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
 .init-title {
   font-size: 13px;
   font-weight: 600;
