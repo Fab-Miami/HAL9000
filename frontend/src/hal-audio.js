@@ -514,12 +514,12 @@ export class HalAudio {
       this.onPlaybackStateChange(true);
     }
 
-    // Safety Watchdog: If no new chunk arrives within 2.5s and all active sources finished,
-    // automatically unfreeze isPlaying so HAL never stays stuck in playback!
+    // Safety Watchdog: Deadman failsafe if no new chunk arrives within 7.0s while stream is active.
+    // Generous timeout ensures multi-second CPU synthesis gaps between sentences never trigger premature cutoff!
     if (this._playbackWatchdog) clearTimeout(this._playbackWatchdog);
     this._playbackWatchdog = setTimeout(() => {
-      if (this.isPlaying && this.activeSources.length === 0) {
-        this.onLog('⚠️ [HalAudio] Watchdog: Recovered from unfinalized playback state.');
+      if (this.isPlaying && this.activeSources.length === 0 && !this.streamFinished) {
+        this.onLog('⚠️ [HalAudio] Watchdog: Recovered from stalled stream (>7s inter-chunk gap).');
         this.isPlaying = false;
         this.scheduledTime = 0;
         this.playbackEndTime = performance.now();
@@ -528,7 +528,7 @@ export class HalAudio {
         this.isSpeaking = false;
         this.onPlaybackStateChange(false);
       }
-    }, 2500);
+    }, 7000);
 
     source.onended = () => {
       const idx = this.activeSources.indexOf(source);
