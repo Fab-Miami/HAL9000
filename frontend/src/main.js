@@ -389,6 +389,11 @@ const halAudio = new HalAudio({
       clearLedAnimations();
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
 
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        log('⏱️ [HAL 9000] Speech playback finished -> Grace clock starts NOW.');
+        ws.send(JSON.stringify({ type: 'playback_complete' }));
+      }
+
       if (pendingSleep) {
         log('🌙 [HAL 9000] Speech playback completed. Entering Standby now.');
         goToSleep(true);

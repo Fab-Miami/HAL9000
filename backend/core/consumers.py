@@ -219,6 +219,8 @@ class HalConsumer(AsyncWebsocketConsumer):
         self.processing_task = None
         self.current_volume = 5
         self.is_client_sleeping = False
+        self.last_wake_time = 0.0
+        self.last_speech_time = 0.0
 
         # Load 3-tier memory and initialize Gemini chat session
         self.history, self.summaries = await asyncio.to_thread(hal_brain.load_memory, self.client_id)
@@ -267,6 +269,11 @@ class HalConsumer(AsyncWebsocketConsumer):
                         if 'sleeping' in msg:
                             self.is_client_sleeping = bool(msg.get('sleeping'))
                             log(f"🌙 [HalConsumer] Initial client sleep state synced: {self.is_client_sleeping}")
+
+                    if msg.get('type') == 'playback_complete':
+                        self.last_speech_time = time.time()
+                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 15s Follow-up Grace Period active.")
+                        return
 
                     if msg.get('type') == 'telemetry':
                         telemetry_msg = str(msg.get('message', ''))
@@ -404,16 +411,25 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                 # DIRECTED ADDRESSING PROTOCOL (FAB COLOZZI DIRECTIVE):
                 # Follow-Up Grace Period: 15.0 seconds.
-                # If HAL spoke within the last 15s (or just woke up), Fab can speak freely without saying "HAL".
+                # The Grace Clock starts strictly at the END of HAL's vocal response on the iPhone speaker.
+                # If Fab begins speaking within 15s after HAL finished speaking, Fab can speak freely without saying "HAL".
                 # If more than 15s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
                 # Non-addressed background conversations (phone calls, TV, thinking aloud) are silently dropped at $0.00 cost.
-                time_since_speech = time.time() - getattr(self, 'last_speech_time', 0)
-                is_in_grace_period = time_since_speech <= 15.0
+                turn_duration_s = len(wav_bytes) / 32000.0  # 16kHz 16-bit Mono WAV PCM: 32000 bytes/sec
+                speech_onset_time = time.time() - turn_duration_s
+                last_spoke = getattr(self, 'last_speech_time', 0.0)
+                if last_spoke > 0:
+                    time_since_speech = speech_onset_time - last_spoke
+                else:
+                    time_since_speech = 999999.0
+
+                is_in_grace_period = (time_since_speech <= 15.0)
+                log(f"⏱️ [Follow-Up Gate] Speech onset: {max(0.0, time_since_speech):.1f}s after speech end (Turn: {turn_duration_s:.1f}s, Grace: 15.0s, Active: {is_in_grace_period})")
 
                 if not is_in_grace_period:
                     check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
                     if not is_addressed_to_hal(check_text):
-                        log(f"🤫 [Active Idle] Speech not addressed to HAL ({time_since_speech:.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
+                        log(f"🤫 [Active Idle] Speech not addressed to HAL ({max(0.0, time_since_speech):.1f}s idle): \"{check_text or '[No Speech]'}\" ($0.00 cost). Remaining silent.")
                         if time_since_speech > 60.0:
                             log("🌙 [HalConsumer] Inactivity threshold reached (>60s idle). Dispatching SLEEP to console.")
                             await self.send(text_data="SLEEP")
@@ -430,7 +446,9 @@ class HalConsumer(AsyncWebsocketConsumer):
             sentence_queue = asyncio.Queue()
 
             # Dedicated TTS Streaming Worker Task
+            total_tts_bytes = 0
             async def tts_worker():
+                nonlocal total_tts_bytes
                 sentence_count = 0
                 while True:
                     sentence = await sentence_queue.get()
@@ -462,6 +480,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                     log(f"🗣️ [HalConsumer] Synthesizing sentence #{sentence_count}: {speech_text}")
                     async for audio_chunk in hal_brain.synthesize_tts_stream(speech_text):
+                        total_tts_bytes += len(audio_chunk)
                         await self.send(bytes_data=audio_chunk)
 
                     sentence_queue.task_done()
@@ -542,6 +561,14 @@ class HalConsumer(AsyncWebsocketConsumer):
             await sentence_queue.put(None)
             await tts_task
 
+            # If Kokoro produced speech audio, estimate when playback on the client speaker will finish.
+            # 24kHz 16-bit Mono PCM = 48,000 bytes per second.
+            # This ensures the grace clock does not start until the end of HAL's answer, even before client confirmation.
+            if total_tts_bytes > 0:
+                est_playback_duration = total_tts_bytes / 48000.0
+                self.last_speech_time = time.time() + est_playback_duration
+                log(f"⏱️ [HalConsumer] Dispatched {total_tts_bytes} bytes of voice audio (~{est_playback_duration:.1f}s). Grace clock estimated to start at +{est_playback_duration:.1f}s.")
+
             # Send SLEEP before DONE so client registers pendingSleep before playback finishes
             if self._turn_should_sleep:
                 self._turn_should_sleep = False
@@ -562,8 +589,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                 hal_brain.restore_history_checkpoint(self.chat_session, history_checkpoint)
                 log("🧹 [HalConsumer] Restored chat_session checkpoint: silent turn completely purged.")
             else:
-                if full_response_text.strip():
-                    self.last_speech_time = time.time()
+                # Note: self.last_speech_time was stamped at audio end (estimated + confirmed via client playback_complete)
                 # Asynchronous background persistence: process user transcript & save to SQLite without blocking client
                 async def _save_turn_background(t_task, model_text):
                     u_transcript = ""
