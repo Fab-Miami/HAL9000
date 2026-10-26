@@ -154,11 +154,12 @@ function wakeUp() {
 }
 
 function goToSleep(force = false) {
-  if (!force && (currentState === State.THINKING || currentState === State.SPEAKING)) {
-    log('🌙 [HAL 9000] Sleep requested. Will enter Standby once speech finishes.');
+  if (!force && halAudio && halAudio.isPlaying) {
+    log('🌙 [HAL 9000] Speech playing. Will enter Standby once playback finishes.');
     pendingSleep = true;
     return;
   }
+  clearTimeout(window._thinkingSafetyTimer);
   pendingSleep = false;
   log('🌙 [HAL 9000] Entering Standby (Listening for wake word).');
   if (persistentLedOn) setPersistentLed(false);
@@ -301,7 +302,7 @@ function connectWebSocket() {
         } else if (msg === 'WAKE') {
           wakeUp();
         } else if (msg === 'SLEEP') {
-          goToSleep();
+          goToSleep(true);
         } else if (msg === 'RELOAD') {
           log('🔄 [WS] Remote RELOAD received. Refreshing page...');
           window.location.reload();
@@ -364,6 +365,13 @@ const halAudio = new HalAudio({
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
       triggerLedTag('listen-done');
       setHalState(State.THINKING);
+      clearTimeout(window._thinkingSafetyTimer);
+      window._thinkingSafetyTimer = setTimeout(() => {
+        if (currentState === State.THINKING) {
+          log('⚠️ [State Safety] Thinking timeout (6s) -> Restoring LISTENING.');
+          setHalState(State.LISTENING);
+        }
+      }, 6000);
     }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
