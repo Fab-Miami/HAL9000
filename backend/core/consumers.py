@@ -121,7 +121,7 @@ def is_hal_wake_word(text: str) -> bool:
         return False
 
     # Phonetic variations of HAL heard through glass enclosure (pruned of common words like 'have'):
-    hal_tokens = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
+    hal_tokens = r'(?:hal|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
     wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
@@ -157,12 +157,23 @@ def is_addressed_to_hal(text: str) -> bool:
     if not clean:
         return False
 
-    hal_names = r'(?:hal|hall|hard|heart|hot|how|hold|hawk|hole|hell|hel|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|half)'
-    greetings = r'(?:hey|hi|hello|ok|okay|so|well|dear|please)'
+    hal_names = r'(?:hal|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|half)'
+    greetings = r'(?:hey|hi|hello|ok|okay|so|well|dear|please|listen|excuse\s*me)'
 
-    # Anchor to start of speech: must begin directly with HAL or Greeting + HAL
-    pattern = rf'^(?:{greetings}\s+)?{hal_names}\b'
-    return bool(re.search(pattern, clean))
+    # Matches:
+    # 1. At start: "HAL...", "Hey HAL...", "So HAL...", "Han, are you there?"
+    if re.search(rf'^(?:{greetings}\s+)?{hal_names}\b', clean):
+        return True
+
+    # 2. At end: "... are you there HAL", "... can you hear me HAL", "... answer me Han"
+    if re.search(rf'\b{hal_names}$', clean):
+        return True
+
+    # 3. Addressed anywhere with greeting: "... hey HAL ...", "... ok HAL ..."
+    if re.search(rf'\b(?:{greetings}\s+){hal_names}\b', clean):
+        return True
+
+    return False
 
 
 ACTIVE_HAL_CLIENTS = set()
@@ -586,6 +597,10 @@ class HalConsumer(AsyncWebsocketConsumer):
                 est_playback_duration = total_tts_bytes / 48000.0
                 self.last_speech_time = time.time() + est_playback_duration
                 log(f"⏱️ [HalConsumer] Dispatched {total_tts_bytes} bytes of voice audio (~{est_playback_duration:.1f}s). Grace clock estimated to start at +{est_playback_duration:.1f}s.")
+            else:
+                # Turn produced 0 audio bytes (e.g. [SILENCE] protocol or non-vocal response)
+                self.last_speech_time = time.time()
+                log("⏱️ [HalConsumer] Silent turn completed. 24s Follow-up Grace Period active.")
 
             # Send SLEEP before DONE so client registers pendingSleep before playback finishes
             if self._turn_should_sleep:

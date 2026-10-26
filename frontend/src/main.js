@@ -312,6 +312,17 @@ function connectWebSocket() {
         if (msg === 'DONE') {
           log('🏁 [WS] Received DONE from server.');
           halAudio.finishStream();
+          // If HAL was THINKING and no audio was received (silent turn), immediately restore LISTENING and engage grace window
+          if (currentState === State.THINKING && !halAudio.isPlaying && halAudio.activeSources.length === 0) {
+            clearTimeout(window._thinkingSafetyTimer);
+            setHalState(State.LISTENING);
+            resetStandbyInactivityTimer();
+            halAudio && halAudio.notifySpeechFinished();
+            startGraceLeds();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'playback_complete' }));
+            }
+          }
           if (pendingSleep && !halAudio.isPlaying) {
             goToSleep(true);
           }
@@ -391,10 +402,11 @@ const halAudio = new HalAudio({
       clearTimeout(window._thinkingSafetyTimer);
       window._thinkingSafetyTimer = setTimeout(() => {
         if (currentState === State.THINKING) {
-          log('⚠️ [State Safety] Thinking timeout (15s) -> Restoring LISTENING.');
+          log('⚠️ [State Safety] Thinking safety watchdog triggered -> Restoring LISTENING.');
           setHalState(State.LISTENING);
+          startGraceLeds();
         }
-      }, 15000);
+      }, 30000);
     }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
