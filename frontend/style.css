@@ -146,13 +146,13 @@ html, body {
 
 @keyframes anim-led-grace {
   0% { opacity: 0.0; }
-  12.5% { opacity: 0.60; }
+  12.5% { opacity: 0.40; }
   25% { opacity: 0.30; }
-  37.5% { opacity: 0.60; }
+  37.5% { opacity: 0.40; }
   50% { opacity: 0.30; }
-  62.5% { opacity: 0.60; }
+  62.5% { opacity: 0.40; }
   75% { opacity: 0.30; }
-  87.5% { opacity: 0.60; }
+  87.5% { opacity: 0.40; }
   100% { opacity: 0.0; }
 }
 
