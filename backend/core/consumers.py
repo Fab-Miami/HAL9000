@@ -287,7 +287,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                     if msg.get('type') == 'playback_complete':
                         self.last_speech_time = time.time()
-                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 24s Follow-up Grace Period active.")
+                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 20s Follow-up Grace Period active.")
                         return
 
                     if msg.get('type') == 'telemetry':
@@ -304,7 +304,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                             now = time.time()
                             self.last_wake_time = now
                             self.last_speech_time = now
-                            log("☀️ [HalConsumer] Client woke up -> 24s Follow-up Grace Period engaged on backend.")
+                            log("☀️ [HalConsumer] Client woke up -> 20s Follow-up Grace Period engaged on backend.")
                         elif not self.is_client_sleeping and getattr(self, 'last_speech_time', 0.0) == 0.0:
                             now = time.time()
                             self.last_wake_time = now
@@ -431,14 +431,14 @@ class HalConsumer(AsyncWebsocketConsumer):
                     if is_hal_wake_word(check_text) or re.search(r'\b(?:wake\s*up|wakeup|waker|waiker)\b', check_text, re.IGNORECASE):
                         log(f"☀️ [Active] Ignored redundant wake phrase \"{check_text}\" spoken while waking up. Remaining silent.")
                         await self.send(text_data="LED:WINK")
-                        await self.send(text_data="DONE")
+                        await self.send(text_data="UNADDRESSED")
                         return
 
                 # DIRECTED ADDRESSING PROTOCOL (FAB COLOZZI DIRECTIVE):
-                # Follow-Up Grace Period: 24.0 seconds (21s sinusoidal pulse + 3s fade).
+                # Follow-Up Grace Period: 20.0 seconds.
                 # The Grace Clock starts strictly at the END of HAL's vocal response on the iPhone speaker.
-                # If Fab begins speaking within 24s after HAL finished speaking, Fab can speak freely without saying "HAL".
-                # If more than 24s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
+                # If Fab begins speaking within 20s after HAL finished speaking, Fab can speak freely without saying "HAL".
+                # If more than 20s have passed (idle while awake), Fab MUST explicitly address HAL to trigger speech.
                 # Non-addressed background conversations (phone calls, TV, thinking aloud) are silently dropped at $0.00 cost.
                 turn_duration_s = len(wav_bytes) / 32000.0  # 16kHz 16-bit Mono WAV PCM: 32000 bytes/sec
                 speech_onset_time = time.time() - turn_duration_s
@@ -450,8 +450,8 @@ class HalConsumer(AsyncWebsocketConsumer):
                 else:
                     time_since_speech = 0.0
 
-                is_in_grace_period = (time_since_speech <= 24.0)
-                log(f"⏱️ [Follow-Up Gate] Speech onset: {time_since_speech:.1f}s after speech/wake (Turn: {turn_duration_s:.1f}s, Grace: 24.0s, Active: {is_in_grace_period})")
+                is_in_grace_period = (time_since_speech <= 20.5)
+                log(f"⏱️ [Follow-Up Gate] Speech onset: {time_since_speech:.1f}s after speech/wake (Turn: {turn_duration_s:.1f}s, Grace: 20.0s, Active: {is_in_grace_period})")
 
                 if not is_in_grace_period:
                     check_text = await asyncio.to_thread(hal_brain.transcribe_local_pcm, wav_bytes)
@@ -463,7 +463,7 @@ class HalConsumer(AsyncWebsocketConsumer):
                             log(f"🌙 [HalConsumer] Inactivity threshold reached ({idle_duration:.1f}s > 300s idle). Dispatching SLEEP to console.")
                             await self.send(text_data="SLEEP")
                         else:
-                            await self.send(text_data="DONE")
+                            await self.send(text_data="UNADDRESSED")
                         return
                     log(f"🗣️ [Active Idle] Addressing HAL verified: \"{check_text}\"! Engaging conversation.")
 
@@ -600,7 +600,7 @@ class HalConsumer(AsyncWebsocketConsumer):
             else:
                 # Turn produced 0 audio bytes (e.g. [SILENCE] protocol or non-vocal response)
                 self.last_speech_time = time.time()
-                log("⏱️ [HalConsumer] Silent turn completed. 24s Follow-up Grace Period active.")
+                log("⏱️ [HalConsumer] Silent turn completed. 20s Follow-up Grace Period active.")
 
             # Send SLEEP before DONE so client registers pendingSleep before playback finishes
             if self._turn_should_sleep:

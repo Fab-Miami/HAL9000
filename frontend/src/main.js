@@ -263,7 +263,7 @@ function startGraceLeds() {
   layer3LedOn.style.setProperty('--persistent-led', '0.0');
   void layer3LedOn.offsetWidth; // Force reflow to cleanly start animation
   layer3LedOn.classList.add('led-anim-grace');
-  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (24s Follow-Up Grace Window active).');
+  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (20s Follow-Up Grace Window active).');
 
   ledAnimTimeout = setTimeout(() => {
     clearLedAnimations();
@@ -271,7 +271,7 @@ function startGraceLeds() {
       layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
     }
     log('⏱️ [HAL Hardware] 3 Satellite LEDs extinguished (Active Idle: address HAL).');
-  }, 24000);
+  }, 20000);
 }
 
 // ===========================================================================
@@ -312,11 +312,11 @@ function connectWebSocket() {
         if (msg === 'DONE') {
           log('🏁 [WS] Received DONE from server.');
           halAudio.finishStream();
-          // If HAL was THINKING and no audio was received (silent turn), immediately restore LISTENING and engage grace window
-          if (currentState === State.THINKING && !halAudio.isPlaying && halAudio.activeSources.length === 0) {
+          // If HAL was THINKING or SPEAKING and no audio was received (silent turn) or playback completed, immediately restore LISTENING and engage grace window
+          if ((currentState === State.THINKING || currentState === State.SPEAKING) && !halAudio.isPlaying && halAudio.activeSources.length === 0) {
             clearTimeout(window._thinkingSafetyTimer);
             setHalState(State.LISTENING);
-            resetStandbyInactivityTimer();
+            resetSleepTimer();
             halAudio && halAudio.notifySpeechFinished();
             startGraceLeds();
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -328,6 +328,13 @@ function connectWebSocket() {
           }
           if (currentState === State.SLEEPING) {
             halAudio.setListeningActive(true);
+          }
+        } else if (msg === 'UNADDRESSED') {
+          log('🤫 [WS] Received UNADDRESSED from server -> Restoring LISTENING.');
+          clearTimeout(window._thinkingSafetyTimer);
+          if (currentState === State.THINKING) {
+            setHalState(State.LISTENING);
+            resetSleepTimer();
           }
         } else if (msg === 'THINKING') {
           if (currentState !== State.SLEEPING) {
@@ -402,11 +409,12 @@ const halAudio = new HalAudio({
       clearTimeout(window._thinkingSafetyTimer);
       window._thinkingSafetyTimer = setTimeout(() => {
         if (currentState === State.THINKING) {
-          log('⚠️ [State Safety] Thinking safety watchdog triggered -> Restoring LISTENING.');
+          log('⚠️ [State Safety] Thinking safety watchdog (20s) -> Restoring LISTENING.');
           setHalState(State.LISTENING);
+          resetSleepTimer();
           startGraceLeds();
         }
-      }, 30000);
+      }, 20000);
     }
 
     if (ws && ws.readyState === WebSocket.OPEN) {
