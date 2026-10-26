@@ -391,10 +391,10 @@ const halAudio = new HalAudio({
       clearTimeout(window._thinkingSafetyTimer);
       window._thinkingSafetyTimer = setTimeout(() => {
         if (currentState === State.THINKING) {
-          log('⚠️ [State Safety] Thinking timeout (6s) -> Restoring LISTENING.');
+          log('⚠️ [State Safety] Thinking timeout (15s) -> Restoring LISTENING.');
           setHalState(State.LISTENING);
         }
-      }, 6000);
+      }, 15000);
     }
 
     if (ws && ws.readyState === WebSocket.OPEN) {

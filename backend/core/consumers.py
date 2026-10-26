@@ -272,7 +272,7 @@ class HalConsumer(AsyncWebsocketConsumer):
 
                     if msg.get('type') == 'playback_complete':
                         self.last_speech_time = time.time()
-                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 19s Follow-up Grace Period active.")
+                        log("⏱️ [HalConsumer] Client voice playback completed on phone speaker. 24s Follow-up Grace Period active.")
                         return
 
                     if msg.get('type') == 'telemetry':
