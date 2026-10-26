@@ -304,6 +304,7 @@ body.mode-enclosure #hal-stage {
 
 .init-modal-card {
   position: relative;
+  transform: translateY(-100px);
   display: flex;
   flex-direction: column;
   align-items: center;
