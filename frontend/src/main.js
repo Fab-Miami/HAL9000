@@ -186,7 +186,7 @@ function setPersistentLed(on) {
   if (layer3LedOn && currentState !== State.SLEEPING) {
     layer3LedOn.style.opacity = on ? '1.0' : '0.0';
   }
-  log(`💡 [HAL Hardware] 3 Auxiliary LEDs ${on ? 'LOCKED ON' : 'TURNED OFF'}.`);
+  log(`💡 [HAL Hardware] 4 Auxiliary LEDs ${on ? 'LOCKED ON' : 'TURNED OFF'}.`);
 }
 
 function clearLedAnimations() {
@@ -263,14 +263,14 @@ function startGraceLeds() {
   layer3LedOn.style.setProperty('--persistent-led', '0.0');
   void layer3LedOn.offsetWidth; // Force reflow to cleanly start animation
   layer3LedOn.classList.add('led-anim-grace');
-  log('✨ [HAL Hardware] 3 Satellite LEDs pulsing (20s Follow-Up Grace Window active).');
+  log('✨ [HAL Hardware] 4 Satellite LEDs pulsing (20s Follow-Up Grace Window active).');
 
   ledAnimTimeout = setTimeout(() => {
     clearLedAnimations();
     if (layer3LedOn && currentState !== State.SLEEPING) {
       layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
     }
-    log('⏱️ [HAL Hardware] 3 Satellite LEDs extinguished (Active Idle: address HAL).');
+    log('⏱️ [HAL Hardware] 4 Satellite LEDs extinguished (Active Idle: address HAL).');
   }, 20000);
 }
 
