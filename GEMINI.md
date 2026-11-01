@@ -35,4 +35,31 @@
 ## CRITICAL MANDATE #3: NEVER BREAK ARCHITECTURE WITHOUT PERMISSION
 - Do not refactor core subsystems, communication protocols, or listening architecture without explicit permission from Fab.
 - Do not write unit tests.
-- Always automatically commit, push, and deploy to Hetzner via `/home/docdoc1/deploy_hal9000.sh` when completing changes.
+
+## CRITICAL MANDATE #4: BUILD & DEPLOYMENT INSTRUCTIONS
+Always automatically build, commit, push, and deploy to Hetzner when completing changes:
+
+1. **Frontend Build (MANDATORY for any frontend change)**:
+   Nginx on Hetzner directly serves `/var/www/hal9000/frontend/dist`. The build MUST be run locally before committing:
+   ```bash
+   cd /Users/c/Desktop/HALnosync/frontend && npm run build
+   ```
+
+2. **Git Commit & Push**:
+   ```bash
+   git add -A && git commit -m "..." && git push origin main
+   ```
+
+3. **Deploy on Hetzner Server**:
+   ```bash
+   ssh -t docdoc1@87.99.142.137 './deploy_hal9000.sh'
+   ```
+   *(Server shell access if needed: `ssh -t docdoc1@87.99.142.137 'exec bash -l'`)*
+
+4. **Service Health Check**:
+   ```bash
+   ssh docdoc1@87.99.142.137 'systemctl status hal9000.service --no-pager | head -n 15'
+   ```
+
+5. **Live App URL**:
+   `https://hal.tuning.net/`
