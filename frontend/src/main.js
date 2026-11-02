@@ -157,7 +157,7 @@ function wakeUp() {
 }
 
 function goToSleep(force = false) {
-  if (!force && halAudio && halAudio.isPlaying) {
+  if (!force && halAudio && (halAudio.isPlaying || (halAudio.activeSources && halAudio.activeSources.length > 0))) {
     log('🌙 [HAL 9000] Speech playing. Will enter Standby once playback finishes.');
     pendingSleep = true;
     return;
@@ -325,7 +325,7 @@ function connectWebSocket() {
         } else if (msg === 'WAKE') {
           wakeUp();
         } else if (msg === 'SLEEP') {
-          goToSleep(true);
+          goToSleep(false);
         } else if (msg === 'RELOAD') {
           log('🔄 [WS] Remote RELOAD received. Refreshing page with cache-bust...');
           window.location.href = window.location.pathname + '?v=' + Date.now();

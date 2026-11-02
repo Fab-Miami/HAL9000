@@ -121,9 +121,9 @@ def is_hal_wake_word(text: str) -> bool:
         return False
 
     # Phonetic variations of HAL heard through glass enclosure (pruned of common words like 'have'):
-    hal_tokens = r'(?:hal|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
+    hal_tokens = r'(?:hal|halle|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
-    wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
+    wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got|cook)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
     filler = r'(?:do\s+|please\s+|can\s+you\s+|you\s+|to\s+|i\s*m\s+|i\s+am\s+|it\s*s\s+|the\s+|a\s+)*'
 
@@ -605,8 +605,20 @@ class HalConsumer(AsyncWebsocketConsumer):
             # Send SLEEP before DONE so client registers pendingSleep before playback finishes
             if self._turn_should_sleep:
                 self._turn_should_sleep = False
-                log("🌙 [HalConsumer] Dispatched SLEEP signal to client.")
-                await self.send(text_data="SLEEP")
+                # Verify against background user transcript if available so HAL never puts himself to sleep
+                # when merely joking about sleep unless the user actually requested sleep/goodnight/standby
+                allow_sleep = True
+                if transcribe_task:
+                    try:
+                        u_check = (await asyncio.wait_for(asyncio.shield(transcribe_task), timeout=1.5) or "").lower()
+                        if u_check and not re.search(r'\b(sleep|standby|good\s*night|night|rest|shut\s*down|off|bye|goodbye|later|nap|bed|quiet|hush|stop)\b', u_check):
+                            log(f"🛡️ [HalConsumer] Blocked hallucinated [SLEEP] tag (user said: \"{u_check}\" without requesting sleep).")
+                            allow_sleep = False
+                    except Exception:
+                        pass
+                if allow_sleep:
+                    log("🌙 [HalConsumer] Dispatched SLEEP signal to client.")
+                    await self.send(text_data="SLEEP")
 
             # CRITICAL MANDATE: Send DONE immediately when speech generation is complete!
             # Never block client playback or state transitions waiting for background CPU transcription.
