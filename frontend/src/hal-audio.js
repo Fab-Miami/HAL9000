@@ -65,15 +65,17 @@ export class HalAudio {
     }
 
     if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
+      this.audioContext.resume().catch(() => {});
     }
 
     // Play 1-sample silent buffer to unlock iOS Safari Web Audio hardware pipeline
-    const silentBuffer = this.audioContext.createBuffer(1, 1, 24000);
-    const silentSource = this.audioContext.createBufferSource();
-    silentSource.buffer = silentBuffer;
-    silentSource.connect(this.gainNode);
-    silentSource.start();
+    try {
+      const silentBuffer = this.audioContext.createBuffer(1, 1, 24000);
+      const silentSource = this.audioContext.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(this.gainNode);
+      silentSource.start();
+    } catch {}
 
     // Acquire microphone stream
     if (!this.mediaStream) {
@@ -86,6 +88,13 @@ export class HalAudio {
         },
         video: false,
       });
+    }
+
+    if (this.audioContext.state === 'suspended') {
+      await Promise.race([
+        this.audioContext.resume().catch(() => {}),
+        new Promise((r) => setTimeout(r, 400)),
+      ]);
     }
 
     this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);

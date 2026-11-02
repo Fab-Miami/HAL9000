@@ -657,15 +657,13 @@ async function initializeSystem() {
   requestScreenWakeLock();
 
   try {
-    // 2. Connect WebSocket
+    // 2. Connect WebSocket & Accelerometer knock sensor immediately
     connectWebSocket();
+    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
 
     // 3. Initialize Unified Web Audio Engine (Microphone permission prompt)
     await halAudio.initialize();
     goToSleep(true);
-
-    // 4. Accelerometer knock sensor
-    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
 
     // 5. Dismiss overlay now that permissions were granted and system is operational
     const overlay = document.getElementById('init-overlay');

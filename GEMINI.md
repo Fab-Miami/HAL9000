@@ -61,5 +61,16 @@ Always automatically build, commit, push, and deploy to Hetzner when completing 
    ssh docdoc1@87.99.142.137 'systemctl status hal9000.service --no-pager | head -n 15'
    ```
 
-5. **Live App URL**:
+5. **Remote Reload on iPhone Console (MANDATORY after any frontend change — always execute automatically without asking)**:
+   Because the iPhone is sealed inside the desktop enclosure, it keeps its existing page open across WebSocket reconnects unless explicitly instructed to reload. Always run this after deploying frontend changes so the phone immediately loads the new JS/CSS bundle:
+   ```bash
+   ssh docdoc1@87.99.142.137 '/var/www/hal9000/backend/.venv/bin/python3 -c "import asyncio, websockets; asyncio.run((lambda: (lambda ws_coro: ws_coro)())())" 2>/dev/null || /var/www/hal9000/backend/.venv/bin/python3 -c "import asyncio, websockets
+   async def r():
+       async with websockets.connect(\"ws://127.0.0.1:8001/ws/logs/\") as ws:
+           await ws.send(\"RELOAD\")
+           await asyncio.sleep(0.3)
+   asyncio.run(r())"'
+   ```
+
+6. **Live App URL**:
    `https://hal.tuning.net/`
