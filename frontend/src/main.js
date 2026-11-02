@@ -76,6 +76,7 @@ function setHalState(newState) {
   if (newState === State.SLEEPING) {
     document.body.classList.add('sleep-mode');
     document.body.classList.remove('state-thinking');
+    clearLedAnimations();
     // Standby: ALL LEDs strictly OFF (0.0 opacity). Faceplate background dims to 50% opacity via .sleep-mode CSS.
     if (layerCenterOn) {
       clearTimeout(eyeWakeTimer);
@@ -97,13 +98,14 @@ function setHalState(newState) {
     if (layerCenterOn) {
       layerCenterOn.style.opacity = '1.0';
     }
-    if (newState !== State.LISTENING && layerRingOn) {
+    // Acoustic ring is strictly OFF whenever not in LISTENING (and starts at 0.0 in LISTENING until user speaks)
+    if (layerRingOn) {
       layerRingOn.style.opacity = '0.0';
     }
-    if (layer3LedOn) {
-      if (!layer3LedOn.className.includes('led-anim-')) {
-        layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
-      }
+    // 4 Auxiliary LEDs are strictly OFF in SPEAKING and LISTENING
+    if (newState === State.SPEAKING || newState === State.LISTENING) {
+      clearLedAnimations();
+      if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
     }
   }
 }
@@ -117,6 +119,7 @@ function resetSleepTimer() {
 
 let pendingSleep = false;
 let eyeWakeTimer = null;
+let thinkingLedTimer = null;
 
 function wakeUp() {
   pendingSleep = false;
@@ -143,12 +146,7 @@ function wakeUp() {
       if (layerCenterOn) layerCenterOn.classList.remove('eye-waking');
     }, 2600);
   }
-  triggerLedTag('wink'); // Immediate visual acknowledgement that wake call was identified
-  setTimeout(() => {
-    if (currentState === State.LISTENING) {
-      startGraceLeds();
-    }
-  }, 480);
+  triggerLedTag('wink'); // Single brief blink acknowledging wake call
 
   resetSleepTimer();
   requestScreenWakeLock();
@@ -179,64 +177,55 @@ function goToSleep(force = false) {
 }
 
 // ===========================================================================
-// 3 AUXILIARY SATELLITE LEDS (EMOTIONAL BODY LANGUAGE)
+// 4 AUXILIARY SATELLITE LEDS (TURN ACKNOWLEDGEMENT & SERVER WAIT FEEDBACK)
 // ===========================================================================
 function setPersistentLed(on) {
-  persistentLedOn = on;
-  if (layer3LedOn && currentState !== State.SLEEPING) {
-    layer3LedOn.style.opacity = on ? '1.0' : '0.0';
+  persistentLedOn = false;
+  if (layer3LedOn && !on) {
+    layer3LedOn.style.opacity = '0.0';
   }
-  log(`💡 [HAL Hardware] 4 Auxiliary LEDs ${on ? 'LOCKED ON' : 'TURNED OFF'}.`);
 }
 
 function clearLedAnimations() {
   clearTimeout(ledAnimTimeout);
+  clearTimeout(thinkingLedTimer);
   if (!layer3LedOn) return;
   layer3LedOn.classList.remove(
     'led-anim-chuckle', 'led-anim-laugh', 'led-anim-wink',
     'led-anim-ponder', 'led-anim-breathe', 'led-anim-warm',
     'led-anim-alert', 'led-anim-heartbeat', 'led-anim-listen-done',
-    'led-anim-search', 'led-anim-api', 'led-anim-grace'
+    'led-anim-search', 'led-anim-api', 'led-anim-thinking'
   );
 }
 
 function triggerLedTag(tag) {
-  if (!layer3LedOn || currentState === State.SLEEPING) return;
-  const t = (tag || '').toLowerCase().trim();
+  if (!layer3LedOn || currentState === State.SLEEPING || currentState === State.SPEAKING) return;
+  // Never turn on 4 LEDs if acoustic ring is active
+  if (layerRingOn && parseFloat(layerRingOn.style.opacity || '0') > 0) return;
 
-  if (t === 'on' || t === 'led_on' || t === 'lights_on') {
-    clearLedAnimations();
-    setPersistentLed(true);
-    return;
-  }
+  const t = (tag || '').toLowerCase().trim();
   if (t === 'off' || t === 'led_off' || t === 'lights_off') {
     clearLedAnimations();
-    setPersistentLed(false);
+    layer3LedOn.style.opacity = '0.0';
     return;
   }
 
   clearLedAnimations();
   layer3LedOn.style.removeProperty('opacity');
-  layer3LedOn.style.setProperty('--persistent-led', persistentLedOn ? '1.0' : '0.0');
+  layer3LedOn.style.setProperty('--persistent-led', '0.0');
   void layer3LedOn.offsetWidth; // Reflow to restart animation
 
-  let animName = 'wink';
+  let animName = 'listen-done';
   let duration = 450;
 
-  if (t.includes('chuckle') || t.includes('laugh')) { animName = 'chuckle'; duration = 750; }
-  else if (t.includes('ponder') || t.includes('breathe') || t.includes('think')) { animName = 'breathe'; duration = 1900; }
-  else if (t.includes('warm') || t.includes('glow')) { animName = 'warm'; duration = 2500; }
-  else if (t.includes('alert') || t.includes('danger') || t.includes('warn')) { animName = 'alert'; duration = 550; }
-  else if (t.includes('heartbeat') || t.includes('love')) { animName = 'heartbeat'; duration = 950; }
-  else if (t.includes('search') || t.includes('web')) { animName = 'search'; duration = 1600; }
-  else if (t.includes('api') || t.includes('task') || t.includes('calendar')) { animName = 'api'; duration = 600; }
-  else if (t.includes('listen-done') || t.includes('ack')) { animName = 'listen-done'; duration = 400; }
+  if (t.includes('wink')) { animName = 'wink'; duration = 450; }
+  else if (t.includes('listen-done') || t.includes('ack')) { animName = 'listen-done'; duration = 450; }
 
   layer3LedOn.classList.add(`led-anim-${animName}`);
   ledAnimTimeout = setTimeout(() => {
-    clearLedAnimations();
-    if (layer3LedOn && currentState !== State.SLEEPING) {
-      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
+    if (layer3LedOn && !layer3LedOn.classList.contains('led-anim-thinking')) {
+      clearLedAnimations();
+      layer3LedOn.style.opacity = '0.0';
     }
   }, duration);
 }
@@ -250,28 +239,21 @@ function blinkStandbyDispatchLeds() {
   layer3LedOn.classList.add('led-anim-wink');
   ledAnimTimeout = setTimeout(() => {
     clearLedAnimations();
-    if (layer3LedOn && currentState === State.SLEEPING) {
+    if (layer3LedOn) {
       layer3LedOn.style.opacity = '0.0';
     }
   }, 450);
 }
 
-function startGraceLeds() {
-  if (!layer3LedOn || currentState === State.SLEEPING) return;
+function startThinkingLeds() {
+  if (!layer3LedOn || currentState !== State.THINKING) return;
   clearLedAnimations();
+  if (layerRingOn) layerRingOn.style.opacity = '0.0';
   layer3LedOn.style.removeProperty('opacity');
   layer3LedOn.style.setProperty('--persistent-led', '0.0');
   void layer3LedOn.offsetWidth; // Force reflow to cleanly start animation
-  layer3LedOn.classList.add('led-anim-grace');
-  log('✨ [HAL Hardware] 4 Satellite LEDs pulsing (20s Follow-Up Grace Window active).');
-
-  ledAnimTimeout = setTimeout(() => {
-    clearLedAnimations();
-    if (layer3LedOn && currentState !== State.SLEEPING) {
-      layer3LedOn.style.opacity = persistentLedOn ? '1.0' : '0.0';
-    }
-    log('⏱️ [HAL Hardware] 4 Satellite LEDs extinguished (Active Idle: address HAL).');
-  }, 20000);
+  layer3LedOn.classList.add('led-anim-thinking');
+  log('⏳ [HAL Hardware] 4 Auxiliary LEDs blinking slowly (Waiting for server data).');
 }
 
 // ===========================================================================
@@ -312,13 +294,12 @@ function connectWebSocket() {
         if (msg === 'DONE') {
           log('🏁 [WS] Received DONE from server.');
           halAudio.finishStream();
-          // If HAL was THINKING or SPEAKING and no audio was received (silent turn) or playback completed, immediately restore LISTENING and engage grace window
+          // If HAL was THINKING or SPEAKING and no audio was received (silent turn) or playback completed, immediately restore LISTENING
           if ((currentState === State.THINKING || currentState === State.SPEAKING) && !halAudio.isPlaying && halAudio.activeSources.length === 0) {
             clearTimeout(window._thinkingSafetyTimer);
             setHalState(State.LISTENING);
             resetSleepTimer();
             halAudio && halAudio.notifySpeechFinished();
-            startGraceLeds();
             if (ws && ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'playback_complete' }));
             }
@@ -337,8 +318,9 @@ function connectWebSocket() {
             resetSleepTimer();
           }
         } else if (msg === 'THINKING') {
-          if (currentState !== State.SLEEPING) {
+          if (currentState !== State.SLEEPING && currentState !== State.THINKING) {
             setHalState(State.THINKING);
+            startThinkingLeds();
           }
         } else if (msg === 'WAKE') {
           wakeUp();
@@ -350,17 +332,8 @@ function connectWebSocket() {
         } else if (msg.startsWith('VOLUME:')) {
           const vol = parseInt(msg.split(':')[1], 10);
           if (!isNaN(vol)) halAudio.setVolume(vol);
-        } else if (msg.startsWith('LED:')) {
-          const val = msg.substring(4).trim().toUpperCase();
-          if (val === 'ON') triggerLedTag('warm');
-          else if (val === 'OFF') {
-            setPersistentLed(false);
-            clearLedAnimations();
-            if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-          }
-          else triggerLedTag(val);
-        } else if (msg.startsWith('TAG:')) {
-          triggerLedTag(msg.substring(4).trim());
+        } else if (msg.startsWith('LED:') || msg.startsWith('TAG:')) {
+          // Strict LED policy: 4 LEDs are only used for turn-end acknowledgement and server-wait blinking
         }
       }
     };
@@ -382,37 +355,51 @@ function connectWebSocket() {
 // UNIFIED HAL AUDIO ENGINE INSTANTIATION
 // ===========================================================================
 const halAudio = new HalAudio({
-  // Vocal RMS feedback -> Directly pulses outer acoustic ring (#layer-ring-on)
+  // Vocal RMS feedback -> Directly pulses outer acoustic ring (#layer-ring-on) between 70% and 100%
   // STRICT INVIOLABLE DIRECTIVE: Only pulses during active conversation (State.LISTENING).
-  // In Standby / Sleeping mode, all LEDs are strictly OFF (0.0 opacity). NO BLINKING IN STANDBY.
+  // NEVER have hal2026_4_led_on and hal2026_ring_on ON at the same time.
   onAudioLevel: (ringLevel) => {
     if (currentState === State.LISTENING && layerRingOn) {
-      layerRingOn.style.opacity = ringLevel > 0 ? ringLevel.toFixed(2) : '0.0';
+      if (ringLevel > 0) {
+        if (layer3LedOn) {
+          clearLedAnimations();
+          layer3LedOn.style.opacity = '0.0';
+        }
+        const clampedRing = Math.min(1.0, Math.max(0.70, ringLevel));
+        layerRingOn.style.opacity = clampedRing.toFixed(2);
+      } else {
+        layerRingOn.style.opacity = '0.0';
+      }
     }
   },
 
-  // Playback RMS feedback -> Pulses central eye (#layer-center-on)
+  // Playback RMS feedback -> Pulses ONLY central eye (#layer-center-on) with x1.5 amplitude (0.58 to 1.00)
   onPlaybackLevel: (intensity) => {
     if (currentState === State.SPEAKING && layerCenterOn) {
-      layerCenterOn.style.opacity = (0.72 + intensity * 0.28).toFixed(2);
+      layerCenterOn.style.opacity = (0.58 + intensity * 0.42).toFixed(2);
     }
   },
 
-  // User finished speaking -> Send audio turn to Gemini
+  // User finished speaking -> Blink 4 LEDs once, then blink slowly while waiting for server data
   onTurnComplete: (wavBytes) => {
     if (currentState !== State.SLEEPING) {
+      if (layerRingOn) layerRingOn.style.opacity = '0.0';
       setPersistentLed(false);
       clearLedAnimations();
       if (layer3LedOn) layer3LedOn.style.opacity = '0.0';
-      triggerLedTag('listen-done');
       setHalState(State.THINKING);
+      triggerLedTag('listen-done'); // Blink once (450ms) when finished listening
+      thinkingLedTimer = setTimeout(() => {
+        if (currentState === State.THINKING) {
+          startThinkingLeds(); // Then blink slowly while waiting for / receiving server data
+        }
+      }, 800);
       clearTimeout(window._thinkingSafetyTimer);
       window._thinkingSafetyTimer = setTimeout(() => {
         if (currentState === State.THINKING) {
           log('⚠️ [State Safety] Thinking safety watchdog (20s) -> Restoring LISTENING.');
           setHalState(State.LISTENING);
           resetSleepTimer();
-          startGraceLeds();
         }
       }, 20000);
     }
@@ -439,7 +426,7 @@ const halAudio = new HalAudio({
       }
 
       if (currentState === State.SLEEPING) {
-        // In standby sleep mode: strictly remain asleep! Never start grace LEDs or notify playback_complete!
+        // In standby sleep mode: strictly remain asleep!
         if (halAudio) halAudio.setListeningActive(true);
         return;
       }
@@ -453,7 +440,6 @@ const halAudio = new HalAudio({
       setHalState(State.LISTENING);
       resetSleepTimer();
       if (halAudio) halAudio.notifySpeechFinished();
-      startGraceLeds();
     }
   },
 

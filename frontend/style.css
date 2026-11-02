@@ -126,9 +126,15 @@ html, body {
   animation: anim-led-heartbeat 0.9s ease-out forwards;
 }
 
-/* System Hardware Feedback Animations */
+/* System Hardware Feedback Animations (1970 Light-Tube Thermal Inertia: 0% <-> 100%) */
 #layer-3-led-on.led-anim-listen-done {
-  animation: anim-led-listen-done 0.4s ease-out forwards;
+  transition: none !important;
+  animation: anim-led-listen-done 0.45s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+#layer-3-led-on.led-anim-thinking {
+  transition: none !important;
+  animation: anim-led-thinking 2.0s cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
 }
 
 #layer-3-led-on.led-anim-search {
@@ -139,29 +145,19 @@ html, body {
   animation: anim-led-api 0.55s ease-out forwards;
 }
 
-#layer-3-led-on.led-anim-grace {
-  transition: none !important;
-  animation: anim-led-grace 20s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
-}
-
-@keyframes anim-led-grace {
+@keyframes anim-led-listen-done {
   0% { opacity: 0.0; }
-  5% { opacity: 0.70; }
-  15% { opacity: 1.0; }
-  30% { opacity: 0.70; }
-  45% { opacity: 1.0; }
-  60% { opacity: 0.70; }
-  75% { opacity: 1.0; }
-  90% { opacity: 0.70; }
+  35% { opacity: 1.0; }
+  55% { opacity: 1.0; }
   100% { opacity: 0.0; }
 }
 
-@keyframes anim-led-listen-done {
-  0% { opacity: 0; }
-  25% { opacity: 1.0; }
-  45% { opacity: 0.15; }
-  70% { opacity: 1.0; }
-  100% { opacity: var(--persistent-led, 0.0); }
+@keyframes anim-led-thinking {
+  0% { opacity: 0.0; }
+  15% { opacity: 1.0; }
+  45% { opacity: 1.0; }
+  60% { opacity: 0.0; }
+  100% { opacity: 0.0; }
 }
 
 @keyframes anim-led-search {
@@ -257,21 +253,6 @@ html, body {
   100% {
     opacity: 1.0;
     filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.4));
-  }
-}
-
-body.state-thinking #layer-center-on:not(.eye-waking) {
-  animation: anim-eye-thinking 1.8s ease-in-out infinite;
-}
-
-@keyframes anim-eye-thinking {
-  0%, 100% {
-    opacity: 0.82;
-    filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.35));
-  }
-  50% {
-    opacity: 1.0;
-    filter: drop-shadow(0 0 12px rgba(255, 30, 0, 0.8)) brightness(1.15);
   }
 }
 

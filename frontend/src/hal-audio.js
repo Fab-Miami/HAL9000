@@ -237,7 +237,7 @@ export class HalAudio {
 
     const voiceDelta = rms - voiceGate;
     const ringLevel = (voiceDelta > 0)
-      ? Math.min(1.0, 0.35 + (voiceDelta / (this.noiseFloor * 2.0 + 0.01)) * 0.65)
+      ? Math.min(1.0, 0.70 + (voiceDelta / (this.noiseFloor * 2.0 + 0.01)) * 0.30)
       : 0.0;
 
     // Real-time optical pulse of the outer acoustic ring (#layer-ring-on)
