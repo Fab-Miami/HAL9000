@@ -254,7 +254,7 @@ STRICT SPOKEN PROSE DIRECTIVE:
 Your text is fed directly to a voice synthesizer.
 - NEVER use markdown: NO bold/italic asterisks (**word**), NO bullet markers (* or -), NO headers (#), NO emojis, NO backticks (`).
 - Output pure, clean spoken sentences with standard punctuation.
-- AUDIO INPUT & TIMESTAMPS: You receive live spoken audio from Fab's microphone. Never interpret audio markers or timestamps (such as "00:00") as human speech.
+- AUDIO INPUT: You receive live spoken audio from Fab's microphone. Always respond directly and naturally to what Fab speaks.
 """
 
 # ===========================================================================
@@ -406,8 +406,9 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
     if summaries_text:
         full_instruction += f"\n\n{summaries_text}"
 
+    current_time_str = datetime.now(MIAMI_TZ).strftime("%I:%M %p on %A, %B %d, %Y %Z")
     # Critical Mandate: Miami context must always be preserved
-    full_instruction += f"\n\nCURRENT CONTEXT:\nYour current location is Miami Beach."
+    full_instruction += f"\n\nCURRENT CONTEXT:\nYour current location is Miami Beach.\nCurrent Miami date and time: {current_time_str}."
     full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
 
     return client.aio.chats.create(
@@ -435,8 +436,18 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
     Yields text tokens and 'EVENT:LED_SEARCH'.
     """
     try:
+        # Dynamically refresh temporal awareness in system instruction (never in user messages!)
         current_time_str = datetime.now(MIAMI_TZ).strftime("%I:%M %p on %A, %B %d, %Y %Z")
-        time_context = f"[Current Miami time: {current_time_str}]"
+        if hasattr(chat_session, '_config') and getattr(chat_session._config, 'system_instruction', None):
+            sys_inst = chat_session._config.system_instruction
+            if "Current Miami date and time:" in sys_inst:
+                chat_session._config.system_instruction = re.sub(
+                    r'Current Miami date and time:[^\n]+',
+                    f'Current Miami date and time: {current_time_str}.',
+                    sys_inst
+                )
+            else:
+                chat_session._config.system_instruction += f"\nCurrent Miami date and time: {current_time_str}."
 
         audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
 
@@ -452,7 +463,7 @@ async def stream_gemini_audio(chat_session, wav_bytes: bytes):
 
         _clean_audio_from_history()
 
-        response_stream = await chat_session.send_message_stream([time_context, audio_part])
+        response_stream = await chat_session.send_message_stream(audio_part)
 
         search_notified = False
         async for chunk in response_stream:
