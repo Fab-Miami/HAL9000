@@ -121,7 +121,7 @@ def is_hal_wake_word(text: str) -> bool:
         return False
 
     # Phonetic variations of HAL heard through glass enclosure (pruned of common words like 'have'):
-    hal_tokens = r'(?:hal|halle|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half)'
+    hal_tokens = r'(?:hal|halle|hall|haul|han|hann|hound|howl|hard|heart|hot|how|hold|hawk|hole|hell|hel|al|all|el|ell|hah|huh|ha|hu|ho|haw|hi|high|hai|hy|hie|hey|hay|hug|hugg|hugs|half|dont|don|dawn|do)'
     # Phonetic variations of WAKE UP heard through glass enclosure and vocal inflections:
     wake_tokens = r'(?:wake\s*up|wakeup|waiker|waker|wake\s*her|wake\s*in|wake\s*it|wait\s*her|wake|woke\s*up|woke|we\s*(?:get|go|got|cook)(?:\s*up)?|wait\s*up|way\s*cup|wick\s*up|wack\s*up|whack\s*up|make\s*up|break\s*up|waking(?:\s*up)?|(?:luke|look|lock)\s*it|(?:luke|look|lock)\s*at|wake\s*cup)'
     greetings = r'(?:hey|hi|hello|ok|okay)'
@@ -206,6 +206,18 @@ class LogsConsumer(AsyncWebsocketConsumer):
             for client in list(ACTIVE_HAL_CLIENTS):
                 try:
                     await client.send(text_data="SLEEP")
+                except Exception:
+                    ACTIVE_HAL_CLIENTS.discard(client)
+        elif text_data == "WAKE":
+            log("☀️ [Remote Control] WAKE command received from logs page. Waking console up.")
+            for client in list(ACTIVE_HAL_CLIENTS):
+                try:
+                    client.is_client_sleeping = False
+                    client.last_wake_time = time.time()
+                    client.last_speech_time = time.time()
+                    await client.send(text_data="WAKE")
+                    await client.send(text_data="LED:WINK")
+                    await client.send(text_data="DONE")
                 except Exception:
                     ACTIVE_HAL_CLIENTS.discard(client)
         elif text_data == "RELOAD":
