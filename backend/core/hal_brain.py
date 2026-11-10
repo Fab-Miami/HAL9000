@@ -411,20 +411,23 @@ def create_chat_session(history=None, summaries_text="", current_volume=5):
     full_instruction += f"\n\nCURRENT CONTEXT:\nYour current location is Miami Beach.\nCurrent Miami date and time: {current_time_str}."
     full_instruction += f"\n\nCURRENT HARDWARE STATUS:\nCurrent vocal volume level is {current_volume}/10."
 
+    active_tools = [
+        read_web_page,
+        get_calendar_events,
+        create_calendar_event,
+        get_shopping_list_tasks,
+        add_task_to_shopping_list,
+        remove_task_from_shopping_list,
+    ]
+    if os.environ.get("ENABLE_GEMINI_SEARCH", "").lower() in ("true", "1"):
+        active_tools.append(types.Tool(google_search=types.GoogleSearch()))
+
     return client.aio.chats.create(
         model=MODEL_NAME,
         config=types.GenerateContentConfig(
             system_instruction=full_instruction,
             temperature=0.7,
-            tools=[
-                read_web_page,
-                get_calendar_events,
-                create_calendar_event,
-                get_shopping_list_tasks,
-                add_task_to_shopping_list,
-                remove_task_from_shopping_list,
-                types.Tool(google_search=types.GoogleSearch())
-            ],
+            tools=active_tools,
             tool_config=types.ToolConfig(include_server_side_tool_invocations=True),
         ),
         history=history or []
